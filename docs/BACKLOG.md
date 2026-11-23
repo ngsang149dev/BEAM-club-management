@@ -6,8 +6,8 @@
 |---|---|---|---|
 | **E0** | Thiết kế: Wireframe (0A), CSDL (0B), OpenAPI & truy vết (0C) | HANDOFF 11.2–11.5 | Done |
 | **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | Done |
-| **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Chờ duyệt |
-| **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Backlog |
+| **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Done |
+| **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | In progress |
 | **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Backlog |
 | **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | Backlog |
 | **E6** | Kanban kéo thả (`@dnd-kit`), priority 1–4, lọc/tìm kiếm | FR-22, FR-25, FR-27 | Backlog |
@@ -107,7 +107,7 @@
 
 ---
 
-## Epic E2 — Xác thực bằng MSSV & Session *(Chờ duyệt merge)*
+## Epic E2 — Xác thực bằng MSSV & Session *(Done, đã merge vào `main`)*
 
 ### E2-01
 - **ID:** `E2-01`
@@ -121,7 +121,7 @@
 - **Kiểm thử bắt buộc (viết trước):** MSSV lạ (`AC-01`), tài khoản khóa (`AC-02`), rate limit IP (`AC-12`), session TTL 2 chế độ + trượt (`AC-05`, `AC-13`), thu hồi quyền hiệu lực ngay (`AC-07`), chống open-redirect `returnTo`, không lộ MSSV trong log/error.
 - **Ngoài phạm vi:** Quản trị thành viên (`E3`), màn hình phân quyền (`E4`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (hoàn tất trên nhánh `feat/E2-auth-and-session`; `typecheck`/`lint`/`arch:check`/`openapi:check`, 40 unit test backend/shared, 6 integration test auth trên PostgreSQL `beam_test`, và audit `qa-reviewer` PASS)
+- **Trạng thái:** `Done` (hoàn tất trên `feat/E2-auth-and-session` & đã merge vào `main`; `typecheck`/`lint`/`arch:check`/`openapi:check`, 40 unit test backend/shared, 6 integration test auth trên PostgreSQL `beam_test`, và audit `qa-reviewer` PASS)
 
 ### E2-02
 - **ID:** `E2-02`
@@ -135,7 +135,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test form đăng nhập, `AuthGuard`, `LanguageSwitch`, `ProfileView`, `returnTo`, parity `vi`/`en`.
 - **Ngoài phạm vi:** Trang danh sách thành viên (`E3`), trang phân quyền (`E4`).
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Chờ duyệt` (hoàn tất trên nhánh `feat/E2-auth-and-session`; 43 unit test frontend + `next build` xanh + audit `qa-reviewer` PASS)
+- **Trạng thái:** `Done` (hoàn tất trên `feat/E2-auth-and-session` & đã merge vào `main`; 43 unit test frontend + `next build` xanh + audit `qa-reviewer` PASS)
 
 ### E2-03
 - **ID:** `E2-03`
@@ -149,11 +149,11 @@
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome luồng login/logout/session.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp (nếu lỗi thì báo Coordinator giao tác giả sửa).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (83 unit test / 18 file + 8 integration test PostgreSQL / 3 file + 4 E2E Chrome trên `beam_test` xanh; `qa-reviewer` ngữ cảnh sạch ra kết luận `PASS` sau khi khắc phục 6 Major & 5 Minor)
+- **Trạng thái:** `Done` (83 unit test / 18 file + 8 integration test PostgreSQL / 3 file + 4 E2E Chrome trên `beam_test` xanh; `qa-reviewer` ngữ cảnh sạch ra kết luận `PASS` sau khi khắc phục 6 Major & 5 Minor)
 
 ---
 
-## Dự thảo Epic E3 — Thành viên & 20 ban *(Chờ chủ dự án duyệt)*
+## Epic E3 — Thành viên & 20 ban *(Đã duyệt bởi chủ dự án)*
 
 ### E3-01
 - **ID:** `E3-01`
@@ -162,12 +162,12 @@
 - **Liên quan:** `FR-10`, `FR-13`, `FR-19`, `FR-42`, `FR-43`, `AC-09`, `AC-11`, `AC-14`, `WQ-10`, `WQ-21`
 - **Phụ thuộc:** Epic E2 merged vào `main`
 - **Mục tài liệu cần đọc:** `HANDOFF` mục 3.2, 3.3, 4.1 (`FR-10`, `FR-13`, `FR-19`, `FR-42`, `FR-43`), 8.1, 8.6, 11.5 (`GET/POST /members`, `GET/PATCH /members/{id}`, `POST /members/{id}/deactivate`, `POST /members/{id}/activate`, `GET/POST /departments`, `PATCH/DELETE /departments/{id}`)
-- **Phạm vi file được sửa:** `src/lib/members.ts` (hoặc schema dùng chung), `src/server/modules/members/*`, `src/server/modules/departments/*`, `src/server/shared/composition.ts`, `src/app/api/v1/members/*`, `src/app/api/v1/departments/*`, `tests/unit/members/*`, `tests/unit/departments/*`, `tests/integration/members/*`, `tests/integration/departments/*`
+- **Phạm vi file được sửa:** `src/lib/members.ts`, `src/server/modules/audit/*`, `src/server/modules/members/*`, `src/server/modules/departments/*`, `src/server/shared/auth-http.ts`, `src/server/shared/composition.ts`, `src/app/api/v1/members/*`, `src/app/api/v1/departments/*`, `tests/unit/members/*`, `tests/unit/departments/*`, `tests/integration/members/*`, `tests/integration/departments/*`
 - **Tiêu chí chấp nhận:** Mọi endpoint qua `authorize`; mapper tách biệt `MemberPublicSummary` (không chứa `studentId`/`email`) và `MemberDetail` (chỉ khi có `member.view_detail`, `AC-11`); tạo/sửa thành viên kiểm tra `@eiu.edu.vn` từ `Config.allowedEmailDomain` (`AC-14`); `studentId` không đổi sau khi tạo (`WQ-21`); tạo thành viên mới tự cấp `DEFAULT_MEMBER_PERMISSIONS` (`FR-19`); khóa thành viên thu hồi mọi `sessions` hoạt động + chặn khóa admin hoạt động cuối (`409`, `AC-09`); xóa ban đang có thành viên hoặc board trả `409` (`WQ-10`); mọi thao tác quản trị ghi `audit_logs` trong cùng transaction.
 - **Kiểm thử bắt buộc (viết trước):** Allow/deny 6 mã quyền (`member.view`, `member.view_detail`, `member.create`, `member.update`, `member.deactivate`, `department.manage`), che MSSV/email (`AC-11`), chặn email sai domain (`AC-14`), chặn gỡ/khóa admin cuối (`AC-09`), khóa ban đang dùng (`409`), không đổi `studentId`, thu hồi session khi khóa, kiểm tra `audit_logs` & không lộ PII trong log.
 - **Ngoài phạm vi:** Màn hình phân quyền & áp mẫu quyền (`E4`), board/task (`E5`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
 
 ### E3-02
 - **ID:** `E3-02`
@@ -181,7 +181,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test `S07` ẩn MSSV/email & nhãn `"(đã rời)"`, `S09` khóa trường `studentId` khi sửa & validate email, `S11` xử lý `409`, kiểm tra parity `vi`/`en`.
 - **Ngoài phạm vi:** Màn hình phân quyền `S10` & nhật ký `S13` (`E4`).
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
 
 ### E3-03
 - **ID:** `E3-03`
@@ -195,4 +195,4 @@
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
