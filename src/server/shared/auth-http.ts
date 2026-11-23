@@ -1,0 +1,174 @@
+import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
+import type { NextResponse } from 'next/server';
+import { LOCALE_COOKIE } from '@/i18n/locale';
+import { SESSION_COOKIE_NAME } from '@/lib/auth';
+import { badRequest } from '@/lib/errors';
+import type { Config } from './config';
+
+const SECONDS_PER_DAY = 86_400;
+const LOCALE_COOKIE_MAX_AGE = 31_536_000;
+
+function extractValidIp(rawHeader: string | null, splitComma: boolean): string | null {
+  if (!rawHeader) {
+    return null;
+  }
+  const candidate = (splitComma ? rawHeader.split(',')[0] : rawHeader)?.trim();
+  if (!candidate || isIP(candidate) === 0) {
+    return null;
+  }
+  return candidate;
+}
+
+export function extractClientIp(request: Request): string {
+  return (
+    extractValidIp(request.headers.get('x-vercel-forwarded-for'), true) ??
+    extractValidIp(request.headers.get('x-real-ip'), false) ??
+    extractValidIp(request.headers.get('x-forwarded-for'), true) ??
+    'unknown'
+  );
+}
+
+function decodeCookieValue(rawValue: string): string {
+  try {
+    return decodeURIComponent(rawValue);
+  } catch {
+    return rawValue;
+  }
+}
+
+export function readSessionCookie(request: Request): string | null {
+  const cookieHeader = request.headers.get('cookie');
+  if (!cookieHeader) {
+    return null;
+  }
+  for (const part of cookieHeader.split(';')) {
+    const eqIndex = part.indexOf('=');
+    if (eqIndex <= 0) {
+      continue;
+    }
+    const name = part.slice(0, eqIndex).trim();
+    if (name !== SESSION_COOKIE_NAME) {
+      continue;
+    }
+    const value = decodeCookieValue(part.slice(eqIndex + 1).trim());
+    return value.length > 0 ? value : null;
+  }
+  return null;
+}
+
+export function shouldUseSecureCookie(
+  request: Request,
+  config: Pick<Config, 'nodeEnv'>,
+): boolean {
+  if (config.nodeEnv === 'production') {
+    return true;
+  }
+  const forwardedProto = request.headers
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
+    ?.trim()
+    .toLowerCase();
+  if (forwardedProto === 'https') {
+    return true;
+  }
+  try {
+    return new URL(request.url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function attachSessionCookie(
+  response: NextResponse,
+  options: {
+    readonly rawToken: string;
+    readonly rememberMe: boolean;
+    readonly request: Request;
+    readonly config: Pick<Config, 'nodeEnv' | 'sessionTtlRememberDays'>;
+  },
+): void {
+  const baseAttributes = {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    path: '/',
+    secure: shouldUseSecureCookie(options.request, options.config),
+  };
+
+  if (options.rememberMe) {
+    response.cookies.set(SESSION_COOKIE_NAME, options.rawToken, {
+      ...baseAttributes,
+      maxAge: options.config.sessionTtlRememberDays * SECONDS_PER_DAY,
+    });
+    return;
+  }
+
+  response.cookies.set(SESSION_COOKIE_NAME, options.rawToken, baseAttributes);
+}
+
+export function refreshSessionCookieIfRemembered(
+  response: NextResponse,
+  options: {
+    readonly rawToken: string | null;
+    readonly rememberMe: boolean;
+    readonly request: Request;
+    readonly config: Pick<Config, 'nodeEnv' | 'sessionTtlRememberDays'>;
+  },
+): void {
+  if (!options.rawToken || !options.rememberMe) {
+    return;
+  }
+  attachSessionCookie(response, {
+    rawToken: options.rawToken,
+    rememberMe: true,
+    request: options.request,
+    config: options.config,
+  });
+}
+
+export function clearSessionCookie(
+  response: NextResponse,
+  request: Request,
+  config: Pick<Config, 'nodeEnv'>,
+): void {
+  response.cookies.set(SESSION_COOKIE_NAME, '', {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    secure: shouldUseSecureCookie(request, config),
+    maxAge: 0,
+  });
+}
+
+export function attachLocaleCookie(
+  response: NextResponse,
+  options: {
+    readonly locale: 'vi' | 'en';
+    readonly request: Request;
+    readonly config: Pick<Config, 'nodeEnv'>;
+  },
+): void {
+  response.cookies.set(LOCALE_COOKIE, options.locale, {
+    httpOnly: false,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: LOCALE_COOKIE_MAX_AGE,
+    secure: shouldUseSecureCookie(options.request, options.config),
+  });
+}
+
+export function getRequestId(request: Request): string {
+  const incoming = request.headers.get('x-request-id')?.trim();
+  if (incoming && incoming.length <= 128 && !/[\r\n]/.test(incoming)) {
+    return incoming;
+  }
+  return randomUUID();
+}
+
+export async function parseJsonBody(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch {
+    throw badRequest('errors.badRequest', {}, 'INVALID_JSON');
+  }
+}

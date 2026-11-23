@@ -21,7 +21,7 @@ module.exports = {
       comment: 'Domain policy.ts files must stay pure without DB, repository, or HTTP imports.',
       from: { path: '^src/server/modules/[^/]+/policy\\.ts$' },
       to: {
-        path: '^(node_modules/(drizzle-orm|pg|next/server)|src/server/shared/(db|transaction|http)\\.ts$|src/server/modules/[^/]+/repository\\.ts$|db/)',
+        path: '^(node_modules/(drizzle-orm|pg|next/server)|src/server/shared/(db|transaction|http|auth-http)\\.ts$|src/server/modules/[^/]+/repository\\.ts$|db/)',
       },
     },
     {
@@ -29,7 +29,7 @@ module.exports = {
       severity: 'error',
       comment: 'Service layer must not depend on HTTP/Next delivery wrappers.',
       from: { path: '^src/server/modules/[^/]+/service\\.ts$' },
-      to: { path: '^(node_modules/next/server|src/server/shared/http\\.ts$)' },
+      to: { path: '^(node_modules/next/server|src/server/shared/(http|auth-http)\\.ts$)' },
     },
     {
       name: 'no-sql-outside-repository',

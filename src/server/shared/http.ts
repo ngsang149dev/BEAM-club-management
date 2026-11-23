@@ -43,7 +43,12 @@ function jsonError({
   details,
   requestId,
 }: JsonErrorOptions): NextResponse<ApiErrorPayload> {
-  const headers = requestId ? { 'x-request-id': requestId } : undefined;
+  const headers: Record<string, string> = {
+    'Cache-Control': 'no-store',
+  };
+  if (requestId) {
+    headers['x-request-id'] = requestId;
+  }
   return NextResponse.json(
     {
       error: {
