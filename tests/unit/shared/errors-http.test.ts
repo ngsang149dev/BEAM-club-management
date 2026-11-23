@@ -49,6 +49,7 @@ describe('AppError factories and toErrorResponse', () => {
 
     expect(response.status).toBe(409);
     expect(response.headers.get('x-request-id')).toBe('req-409');
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(body).toEqual({
       error: {
         code: 'VERSION_CONFLICT',
@@ -90,6 +91,8 @@ describe('AppError factories and toErrorResponse', () => {
     const resUnexpected = toErrorResponse(boom, logger, 'req-500-a');
     const bodyUnexpected = await resUnexpected.json();
     expect(resUnexpected.status).toBe(500);
+    expect(resUnexpected.headers.get('cache-control')).toBe('no-store');
+    expect(resUnexpected.headers.get('x-request-id')).toBe('req-500-a');
     expect(bodyUnexpected).toEqual({
       error: {
         code: 'INTERNAL_ERROR',

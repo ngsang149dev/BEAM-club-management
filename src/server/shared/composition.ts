@@ -1,3 +1,8 @@
+import {
+  type AuthRepository,
+  AuthService,
+  DrizzleAuthRepository,
+} from '@/server/modules/auth';
 import { type Clock, SystemClock } from './clock';
 import { type Config, loadConfig } from './config';
 import { createDatabaseClient, type Database } from './db';
@@ -12,6 +17,7 @@ export interface ServerContainer {
   readonly mailer: Mailer;
   readonly db: Database;
   readonly transactionRunner: TransactionRunner;
+  readonly authService: AuthService;
   dispose(): Promise<void>;
 }
 
@@ -22,6 +28,8 @@ export interface ContainerOverrides {
   readonly mailer?: Mailer;
   readonly db?: Database;
   readonly transactionRunner?: TransactionRunner;
+  readonly authRepo?: AuthRepository;
+  readonly authService?: AuthService;
 }
 
 const globalForContainer = globalThis as typeof globalThis & {
@@ -53,6 +61,10 @@ export function createContainer(overrides: ContainerOverrides = {}): ServerConta
   const { db, dispose } = resolveDatabase(config, overrides.db);
   const transactionRunner =
     overrides.transactionRunner ?? new DrizzleTransactionRunner(db);
+  const authRepo = overrides.authRepo ?? new DrizzleAuthRepository(db);
+  const authService =
+    overrides.authService ??
+    new AuthService({ authRepo, clock, config, logger });
 
   return {
     config,
@@ -61,6 +73,7 @@ export function createContainer(overrides: ContainerOverrides = {}): ServerConta
     mailer,
     db,
     transactionRunner,
+    authService,
     dispose,
   };
 }
@@ -70,4 +83,10 @@ export function getContainer(): ServerContainer {
     globalForContainer.__beamServerContainer = createContainer();
   }
   return globalForContainer.__beamServerContainer;
+}
+
+export function setContainerForTesting(
+  container: ServerContainer | undefined,
+): void {
+  globalForContainer.__beamServerContainer = container;
 }

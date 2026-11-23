@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { PERMISSIONS } from '@/lib/permissions';
 
 type MessageTree = { [key: string]: string | MessageTree };
 
@@ -100,5 +101,56 @@ describe('i18n message dictionaries (vi/en)', () => {
 
     expect(viEntries.get('member.leftBadge')).toBe('(đã rời)');
     expect(enEntries.get('member.leftBadge')).toBe('(left)');
+  });
+
+  it('includes auth, profile, and all 18 permission catalog keys in both locales', () => {
+    const viEntries = collectLeafEntries(loadMessages('vi'));
+    const enEntries = collectLeafEntries(loadMessages('en'));
+
+    const authAndProfileKeys = [
+      'auth.title',
+      'auth.subtitle',
+      'auth.studentIdLabel',
+      'auth.studentIdPlaceholder',
+      'auth.rememberLabel',
+      'auth.rememberHint',
+      'auth.signInButton',
+      'auth.signingIn',
+      'auth.invalidCredentials',
+      'auth.rateLimited',
+      'auth.sessionExpiredTitle',
+      'auth.sessionExpiredBody',
+      'auth.networkError',
+      'profile.title',
+      'profile.contactTitle',
+      'profile.onlyYouAndAdmins',
+      'profile.studentIdLabel',
+      'profile.emailLabel',
+      'profile.departmentsTitle',
+      'profile.departmentsManagedByAdmin',
+      'profile.permissionsTitle',
+      'profile.permissionsManagedByAdmin',
+      'profile.adminAllPermissions',
+      'profile.sessionTitle',
+      'profile.rememberLabel',
+      'profile.rememberOn',
+      'profile.rememberOff',
+      'profile.expiresAtLabel',
+      'profile.signOutButton',
+      'profile.signingOut',
+      'profile.languageTitle',
+      'profile.languageSyncedNote',
+    ];
+
+    for (const key of authAndProfileKeys) {
+      expect(viEntries.has(key), `Missing vi key: ${key}`).toBe(true);
+      expect(enEntries.has(key), `Missing en key: ${key}`).toBe(true);
+    }
+
+    expect(PERMISSIONS).toHaveLength(18);
+    for (const perm of PERMISSIONS) {
+      expect(viEntries.has(perm.descriptionKey), `Missing vi key: ${perm.descriptionKey}`).toBe(true);
+      expect(enEntries.has(perm.descriptionKey), `Missing en key: ${perm.descriptionKey}`).toBe(true);
+    }
   });
 });

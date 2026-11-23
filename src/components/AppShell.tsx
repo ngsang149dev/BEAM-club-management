@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { usePermissions, type PermissionCode } from '@/features/shared/permissions/can';
+import type { AppLocale } from '@/i18n/locale';
 import { LanguageSwitch } from './LanguageSwitch';
 
 export type AppNavKey =
@@ -31,6 +32,7 @@ export interface AppShellProps {
   actions?: ReactNode;
   user?: AppShellUser | null;
   onSignOut?: () => void;
+  onLocaleChange?: (locale: AppLocale) => unknown | Promise<unknown>;
   children: ReactNode;
 }
 
@@ -158,10 +160,20 @@ interface SidebarContentProps {
   pathname: string;
   user?: AppShellUser | null;
   onSignOut?: () => void;
+  onLocaleChange?: (locale: AppLocale) => unknown | Promise<unknown>;
   onNavigate?: () => void;
 }
 
-function SidebarContent({ workspaceItems, adminItems, activeNav, pathname, user, onSignOut, onNavigate }: SidebarContentProps) {
+function SidebarContent({
+  workspaceItems,
+  adminItems,
+  activeNav,
+  pathname,
+  user,
+  onSignOut,
+  onLocaleChange,
+  onNavigate,
+}: SidebarContentProps) {
   const tApp = useTranslations('app');
   const tNav = useTranslations('nav');
   const tLang = useTranslations('language');
@@ -180,14 +192,26 @@ function SidebarContent({ workspaceItems, adminItems, activeNav, pathname, user,
         </>
       ) : null}
       <div className="app-side-foot">
-        <div className="app-side-lang"><span>{tLang('label')}</span><LanguageSwitch /></div>
+        <div className="app-side-lang"><span>{tLang('label')}</span><LanguageSwitch onLocaleChange={onLocaleChange} /></div>
         {user ? <SidebarUserRow user={user} onSignOut={onSignOut} /> : null}
+        {!user && onSignOut ? (
+          <button type="button" className="ui-btn ghost is-sm" onClick={onSignOut}>
+            {tNav('signOut')}
+          </button>
+        ) : null}
       </div>
     </>
   );
 }
 
-function AppTopBar(props: { drawerOpen: boolean; onOpenMenu: () => void; breadcrumb?: string; title?: string; actions?: ReactNode }) {
+function AppTopBar(props: {
+  drawerOpen: boolean;
+  onOpenMenu: () => void;
+  breadcrumb?: string;
+  title?: string;
+  actions?: ReactNode;
+  onLocaleChange?: (locale: AppLocale) => unknown | Promise<unknown>;
+}) {
   const tApp = useTranslations('app');
   const tNav = useTranslations('nav');
   return (
@@ -204,13 +228,13 @@ function AppTopBar(props: { drawerOpen: boolean; onOpenMenu: () => void; breadcr
       </div>
       <div className="app-top-right">
         {props.actions}
-        <div className="app-top-lang"><LanguageSwitch /></div>
+        <div className="app-top-lang"><LanguageSwitch onLocaleChange={props.onLocaleChange} /></div>
       </div>
     </header>
   );
 }
 
-export function AppShell({ activeNav, title, breadcrumb, actions, user, onSignOut, children }: AppShellProps) {
+export function AppShell({ activeNav, title, breadcrumb, actions, user, onSignOut, onLocaleChange, children }: AppShellProps) {
   const pathname = usePathname() ?? '/';
   const tApp = useTranslations('app');
   const tNav = useTranslations('nav');
@@ -237,18 +261,18 @@ export function AppShell({ activeNav, title, breadcrumb, actions, user, onSignOu
     <div className="app-shell" data-component="AppShell">
       <a className="skip" href="#main-content">{tApp('skipToContent')}</a>
       <aside className="app-side" data-component="AppSidebar">
-        <SidebarContent workspaceItems={workspaceItems} adminItems={adminItems} activeNav={activeNav} pathname={pathname} user={user} onSignOut={onSignOut} />
+        <SidebarContent workspaceItems={workspaceItems} adminItems={adminItems} activeNav={activeNav} pathname={pathname} user={user} onSignOut={onSignOut} onLocaleChange={onLocaleChange} />
       </aside>
       {drawerOpen ? (
         <div className="app-drawer-layer" role="dialog" aria-modal="true" aria-label={tNav('drawerAriaLabel')}>
           <button type="button" className="app-drawer-scrim" aria-label={tNav('closeMenu')} onClick={() => setDrawerOpen(false)} />
           <aside className="app-drawer">
-            <SidebarContent workspaceItems={workspaceItems} adminItems={adminItems} activeNav={activeNav} pathname={pathname} user={user} onSignOut={onSignOut} onNavigate={() => setDrawerOpen(false)} />
+            <SidebarContent workspaceItems={workspaceItems} adminItems={adminItems} activeNav={activeNav} pathname={pathname} user={user} onSignOut={onSignOut} onLocaleChange={onLocaleChange} onNavigate={() => setDrawerOpen(false)} />
           </aside>
         </div>
       ) : null}
       <div className="app-main">
-        <AppTopBar drawerOpen={drawerOpen} onOpenMenu={() => setDrawerOpen(true)} breadcrumb={breadcrumb} title={title} actions={actions} />
+        <AppTopBar drawerOpen={drawerOpen} onOpenMenu={() => setDrawerOpen(true)} breadcrumb={breadcrumb} title={title} actions={actions} onLocaleChange={onLocaleChange} />
         <main id="main-content" className="app-scroll">{children}</main>
         <nav className="app-mtabs" data-component="MobileTabBar" aria-label={tNav('mobileTabsAriaLabel')}>
           {workspaceItems.map((item) => {
