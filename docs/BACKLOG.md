@@ -4,8 +4,8 @@
 
 | Epic | Nội dung | FR / NFR chính | Trạng thái |
 |---|---|---|---|
-| **E0** | Thiết kế: Wireframe (0A), CSDL (0B), OpenAPI & truy vết (0C) | HANDOFF 11.2–11.5 | Chờ duyệt |
-| **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | Chờ duyệt E1 |
+| **E0** | Thiết kế: Wireframe (0A), CSDL (0B), OpenAPI & truy vết (0C) | HANDOFF 11.2–11.5 | Done |
+| **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | In progress |
 | **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Backlog |
 | **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Backlog |
 | **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Backlog |
@@ -29,7 +29,7 @@
 - **Phạm vi file được sửa:** `wireframes/_build/screens/system.mjs`, `wireframes/s15-trash.html`, `docs/DECISIONS.md`
 - **Tiêu chí chấp nhận:** Toàn bộ câu hỏi mở 0A được chốt; màn hình `S15` bỏ giả định tự dọn 30 ngày khớp `Q39`, bỏ nút Đổi mật khẩu ở `S08`, đồng bộ mã FR/AC/WQ.
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Chờ duyệt` (đã đạt kiểm tra độc lập `qa-reviewer`)
+- **Trạng thái:** `Done` (đã chốt và đạt kiểm tra độc lập `qa-reviewer`)
 
 ### E0-02
 - **ID:** `E0-02`
@@ -43,7 +43,7 @@
 - **Kiểm thử bắt buộc:** Script SQL trên `beam_test` kiểm tra tất cả trigger, unique, check constraint và idempotency của `seed.sql`.
 - **Ngoài phạm vi:** Drizzle ORM TypeScript code (thuộc E1-02).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (tài liệu/DDL/seed đạt audit độc lập `qa-reviewer`; chờ bật PostgreSQL/Docker để chạy kiểm thử SQL trực tiếp)
+- **Trạng thái:** `Done` (chạy sạch 2 lần trên `beam_dev` & `beam_test`; toàn bộ 9 bất biến trigger/constraint đạt trên PostgreSQL 16 + audit `qa-reviewer`)
 
 ### E0-03
 - **ID:** `E0-03`
@@ -57,11 +57,11 @@
 - **Kiểm thử bắt buộc:** Validate YAML cú pháp hợp lệ; audit chéo 100% FR/AC bởi `qa-reviewer`.
 - **Ngoài phạm vi:** Triển khai Route Handlers (thuộc E2–E8).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (đạt audit độc lập `qa-reviewer` và kiểm tra YAML `$ref`)
+- **Trạng thái:** `Done` (đạt audit độc lập `qa-reviewer` và kiểm tra YAML `$ref`)
 
 ---
 
-## Dự thảo Epic E1 — Nền tảng & Khung kiến trúc *(Chờ chủ dự án duyệt trước khi triển khai)*
+## Epic E1 — Nền tảng & Khung kiến trúc *(Đã duyệt bởi chủ dự án)*
 
 ### E1-01
 - **ID:** `E1-01`
@@ -75,7 +75,7 @@
 - **Kiểm thử bắt buộc:** Smoke test Vitest + test quy tắc `dependency-cruiser` (bắt được import trái hướng).
 - **Ngoài phạm vi:** Nghiệp vụ auth, bảng CSDL chi tiết, giao diện tính năng.
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
 
 ### E1-02
 - **ID:** `E1-02`
@@ -89,7 +89,7 @@
 - **Kiểm thử bắt buộc:** Unit test cho `Config`, `Logger` (chặn PII), `AppError` mapping, `PERMISSIONS` registry.
 - **Ngoài phạm vi:** Các use case đăng nhập, quản lý thành viên, task.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
 
 ### E1-03
 - **ID:** `E1-03`
@@ -103,4 +103,4 @@
 - **Kiểm thử bắt buộc:** Test kiểm tra đồng bộ key `vi.json` == `en.json` và test render component shell/error.
 - **Ngoài phạm vi:** Màn hình login, board, quản trị chi tiết.
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`

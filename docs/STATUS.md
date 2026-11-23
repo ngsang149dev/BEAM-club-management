@@ -1,28 +1,21 @@
 # STATUS
 
 Cập nhật: 2026-11-23 · Phiên: 1
-Epic hiện tại: E0 · Item đang làm: E0-01, E0-02, E0-03 · Trạng thái: Chờ duyệt
+Epic hiện tại: E1 · Item đang làm: E1-01, E1-02, E1-03 · Trạng thái: In progress
 
 ## Đã xong gần đây
-- Khởi tạo nhánh `feat/E0-multi-agent-and-design` và cấu hình git `safe.directory`.
-- Chốt các câu hỏi mở `Q36–Q41`, `WQ-01..WQ-35` và tech stack tại `docs/DECISIONS.md`.
-- Thiết lập môi trường multi sub-agents: `AGENTS.md` v1.4 (21,044 bytes), 4 skill tại `.agents/skills/` (`beam-coordinator`, `beam-backend-db`, `beam-frontend`, `beam-qa-reviewer`), `.gitignore`, `.env.example`, `.env.local`, `docker-compose.yml`.
-- Đồng bộ lại bộ wireframe `wireframes/` (`_build/*`, `s01..s15`, `e01`, `index.html`, `OPEN-QUESTIONS.md`) khớp `HANDOFF` v1.4 và `DECISIONS.md` (bỏ nút Đổi mật khẩu ở `S08`, bỏ giả định tự dọn 30 ngày ở `S15` theo `Q39`, sửa mã FR/AC/WQ và số quyền preset `hr_manager` = 7).
-- Hoàn thành Stage 0B (`docs/ERD.md`, `db/migrations/0001_initial_schema.sql`, `db/seed.sql`) và Stage 0C (`docs/openapi.yaml`, `docs/TRACEABILITY.md`).
-- Hoàn thành audit độc lập trên ngữ cảnh sạch bởi `qa-reviewer`: phát hiện và khắc phục 1 lỗi Critical (trigger `prevent_last_active_admin_update`/`delete` dùng `AFTER STATEMENT` transition table), 2 lỗi Major và các điểm nhỏ khác; kết quả tái kiểm tra đạt `PASS`.
+- Hoàn thành và kiểm thử trực tiếp Giai đoạn 0B trên container PostgreSQL 16.16 (`beam-postgres` qua Docker Desktop):
+  - `db/migrations/0001_initial_schema.sql` chạy sạch và chạy lại không lỗi trên `beam_dev` và `beam_test` (19 bảng gồm 18 bảng miền + `schema_migrations`).
+  - `db/seed.sql` chạy lại 2 lần idempotent trên `beam_dev` (18 quyền, 3 preset, 5 profile giả, 4 ban, 1 board, 4 cột, 4 task).
+  - Kiểm thử trực tiếp 9/9 bất biến SQL trên `beam_test`: chặn `UPDATE`/`DELETE`/`TRUNCATE` trên `task_events` & `audit_logs` (`APPEND_ONLY_TABLE`), chặn đổi `student_id` (`STUDENT_ID_IMMUTABLE`), chặn gỡ/khóa admin cuối cả single-row và multi-row `UPDATE`/`DELETE` (`LAST_ACTIVE_ADMIN`), chặn trùng `reminders (task_id, user_id, kind)`, `tasks.priority` 1–4, `departments.name` không phân biệt hoa thường/khoảng trắng.
+- Chủ dự án đã duyệt đóng Giai đoạn 0 (`E0-01`, `E0-02`, `E0-03`), merge nhánh `feat/E0-multi-agent-and-design` vào `main` và duyệt triển khai Epic E1 (`E1-01`, `E1-02`, `E1-03`).
 
-## Đang thực hiện / Lưu ý chưa chạy được
-- **Cài đặt PostgreSQL 16 cục bộ chưa tự động hoàn tất được trên máy:**
-  - `winget install PostgreSQL.PostgreSQL.16` thất bại với lỗi mạng `0x80190193 : Forbidden (403)` từ `get.enterprisedb.com`.
-  - Docker Desktop có sẵn trên máy nhưng engine Linux không tự khởi chạy được trong phiên nền không tương tác.
-  - Đã tạo sẵn `docker-compose.yml` và `.env.local` (trỏ `beam_dev` / `beam_test`). **Việc chạy thử `0001_initial_schema.sql` và `seed.sql` trực tiếp trên PostgreSQL sống chưa thực hiện được ở phiên này**, sẽ chạy ngay khi bạn bật Docker Desktop (`docker compose up -d`) hoặc cài PostgreSQL 16 thủ công.
+## Đang thực hiện
+- Mở nhánh `feat/E1-foundation-and-architecture` và triển khai `E1-01` (Next.js, TypeScript `strict`, ESLint 6A.6, `dependency-cruiser` 6A.2, Vitest, CI).
+- Sau khi `E1-01` xong, chạy song song `backend-db` (`E1-02`) và `frontend` (`E1-03`), sau đó kiểm thử + audit độc lập với `qa-reviewer`.
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Không bị chặn nghiệp vụ; đang chờ chủ dự án:
-  1. **Duyệt cổng Stage 0 (`E0-01`, `E0-02`, `E0-03`)** để đóng giai đoạn thiết kế 0A/0B/0C.
-  2. **Duyệt danh sách item Epic E1 (`E1-01`, `E1-02`, `E1-03`)** trong `docs/BACKLOG.md`.
-  3. **Bật Docker Desktop** (hoặc cài PostgreSQL 16 / cung cấp `DATABASE_URL` + `TEST_DATABASE_URL` Neon dev/test) để chạy migration, seed và integration test CSDL.
+- Không có.
 
 ## Việc tiếp theo
-- Chờ chủ dự án duyệt cổng E0 & backlog Epic E1 (và duyệt PR nhánh `feat/E0-multi-agent-and-design` trước khi merge vào `main`).
-- Ngay sau khi được duyệt, khởi chạy Epic E1 (`E1-01` → song song `E1-02` & `E1-03`) và chạy kiểm thử SQL `0001_initial_schema.sql` + `seed.sql` trên PostgreSQL thật.
+- Hoàn tất `E1-01`, `E1-02`, `E1-03`, chạy toàn bộ check (`typecheck`, `lint`, `arch:check`, `openapi:check`, `test:unit`, `test:integration`, `build`), audit bằng `qa-reviewer` ngữ cảnh sạch và gửi PR Epic E1 chờ duyệt.
