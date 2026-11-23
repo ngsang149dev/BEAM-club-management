@@ -5,8 +5,8 @@
 | Epic | Nội dung | FR / NFR chính | Trạng thái |
 |---|---|---|---|
 | **E0** | Thiết kế: Wireframe (0A), CSDL (0B), OpenAPI & truy vết (0C) | HANDOFF 11.2–11.5 | Done |
-| **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | Chờ duyệt |
-| **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Backlog |
+| **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | Done |
+| **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | In progress |
 | **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Backlog |
 | **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Backlog |
 | **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | Backlog |
@@ -61,7 +61,7 @@
 
 ---
 
-## Epic E1 — Nền tảng & Khung kiến trúc *(Đã duyệt triển khai; đang chờ duyệt PR)*
+## Epic E1 — Nền tảng & Khung kiến trúc *(Đã duyệt và merge vào `main`)*
 
 ### E1-01
 - **ID:** `E1-01`
@@ -75,7 +75,7 @@
 - **Kiểm thử bắt buộc:** Smoke test Vitest + test quy tắc `dependency-cruiser` (bắt được import trái hướng).
 - **Ngoài phạm vi:** Nghiệp vụ auth, bảng CSDL chi tiết, giao diện tính năng.
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Chờ duyệt` (CI/lint/typecheck/arch/openapi/build xanh + audit `qa-reviewer` PASS)
+- **Trạng thái:** `Done` (CI/lint/typecheck/arch/openapi/build xanh + audit `qa-reviewer` PASS)
 
 ### E1-02
 - **ID:** `E1-02`
@@ -89,7 +89,7 @@
 - **Kiểm thử bắt buộc:** Unit test cho `Config`, `Logger` (chặn PII), `AppError` mapping, `PERMISSIONS` registry.
 - **Ngoài phạm vi:** Các use case đăng nhập, quản lý thành viên, task.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (16 unit test + 2 integration test PostgreSQL xanh + audit `qa-reviewer` PASS)
+- **Trạng thái:** `Done` (16 unit test + 2 integration test PostgreSQL xanh + audit `qa-reviewer` PASS)
 
 ### E1-03
 - **ID:** `E1-03`
@@ -103,11 +103,11 @@
 - **Kiểm thử bắt buộc:** Test kiểm tra đồng bộ key `vi.json` == `en.json` và test render component shell/error.
 - **Ngoài phạm vi:** Màn hình login, board, quản trị chi tiết.
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Chờ duyệt` (20 unit test frontend + parity `vi`/`en` + `next build` xanh + audit `qa-reviewer` PASS)
+- **Trạng thái:** `Done` (20 unit test frontend + parity `vi`/`en` + `next build` xanh + audit `qa-reviewer` PASS)
 
 ---
 
-## Dự thảo Epic E2 — Xác thực bằng MSSV & Session *(Chờ chủ dự án duyệt trước khi triển khai)*
+## Dự thảo Epic E2 — Xác thực bằng MSSV & Session *(Đã duyệt bởi chủ dự án)*
 
 ### E2-01
 - **ID:** `E2-01`
@@ -121,7 +121,7 @@
 - **Kiểm thử bắt buộc (viết trước):** MSSV lạ (`AC-01`), tài khoản khóa (`AC-02`), rate limit IP (`AC-12`), session TTL 2 chế độ + trượt (`AC-05`, `AC-13`), thu hồi quyền hiệu lực ngay (`AC-07`), chống open-redirect `returnTo`, không lộ MSSV trong log/error.
 - **Ngoài phạm vi:** Quản trị thành viên (`E3`), màn hình phân quyền (`E4`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
 
 ### E2-02
 - **ID:** `E2-02`
@@ -135,7 +135,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test form đăng nhập (`remember` mặc định false, thông báo chung, `returnTo` whitelist), test parity `vi`/`en` mới, test `S08` ẩn thông tin nhạy cảm khi chưa có dữ liệu.
 - **Ngoài phạm vi:** Trang danh sách thành viên (`E3`), trang phân quyền (`E4`).
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
 
 ### E2-03
 - **ID:** `E2-03`
@@ -149,4 +149,4 @@
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E luồng login/logout/session.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp (nếu lỗi thì báo Coordinator giao tác giả sửa).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog`
+- **Trạng thái:** `Ready`
