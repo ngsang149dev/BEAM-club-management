@@ -131,7 +131,7 @@ export const permissionGroups = [
 export const presets = [
   { key: 'basic', vi: 'Thành viên cơ bản', en: 'Basic member', count: 3, descVi: 'Xem thành viên, sửa task được giao, bình luận.', descEn: 'See members, edit assigned tasks, comment.' },
   { key: 'lead', vi: 'Trưởng ban', en: 'Department lead', count: 9, descVi: 'Cơ bản + quản lý board, task, giao việc, xem MSSV/email.', descEn: 'Basic + boards, tasks, assignment, member detail.' },
-  { key: 'people', vi: 'Quản lý nhân sự', en: 'People manager', count: 6, descVi: 'Cơ bản + thêm, sửa, khóa thành viên, xem MSSV/email.', descEn: 'Basic + add, edit and deactivate members, member detail.' }
+  { key: 'people', vi: 'Quản lý nhân sự', en: 'People manager', count: 7, descVi: 'Cơ bản + thêm, sửa, khóa thành viên, xem MSSV/email.', descEn: 'Basic + add, edit and deactivate members, member detail.' }
 ];
 
 export const defaultPermissions = ['member.view', 'task.update_assigned', 'comment.create'];

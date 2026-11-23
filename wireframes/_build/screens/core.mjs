@@ -164,7 +164,7 @@ const myTasksDesktop = () =>
   appDesktop('A', 'mytasks',
     '<div class="ui-top"><div class="ui-top-bread"><b ' + A('Task của tôi', 'My tasks') + '>Task của tôi</b></div><div class="ui-top-right">' + uiIconBtn('search', 'Tìm kiếm', 'Search') + '</div></div>' +
     '<div class="ui-scroll"><div class="ui-pagehead"><div class="ui-pagehead-text"><h1 class="ui-h1" ' + A('Task của tôi', 'My tasks') + '>Task của tôi</h1><span class="ui-sub" ' + A('7 task đang mở · 1 quá hạn · 1 đến hạn hôm nay', '7 open tasks · 1 overdue · due today') + '>7 task đang mở · 1 quá hạn · 1 đến hạn hôm nay</span></div><div class="ui-pagehead-actions">' + uiSelect('Priority: tất cả', 'Priority: all', { iconName: 'alert-circle' }) + uiSelect('Board: tất cả', 'Board: all', { iconName: 'board' }) + '</div></div>' +
-    '<div class="my-list">' + myGroup('overdue', 'Quá hạn', 'Overdue') + myGroup('today', 'Hôm nay', 'Today') + myGroup('week', 'Tuần này', 'This week', ['7 ngày tới', 'Next 7 days']) + myGroup('later', 'Sau đó', 'Later') + myGroup('none', 'Không có hạn', 'No due date') + '</div>' +
+    '<div class="my-list">' + myGroup('overdue', 'Quá hạn', 'Overdue') + myGroup('today', 'Hôm nay', 'Today') + myGroup('week', 'Tuần này', 'This week', ['Thứ Hai – Chủ nhật', 'Mon – Sun']) + myGroup('later', 'Sau đó', 'Later') + myGroup('none', 'Không có hạn', 'No due date') + '</div>' +
     '<p class="my-footnote">' + icon('info', 13) + '<span ' + A('Task ở cột cuối (Hoàn thành) không hiện ở đây. Xem lại ở board tương ứng.', 'Tasks in the last column (Done) are not listed here. Find them on their board.') + '>Task ở cột cuối (Hoàn thành) không hiện ở đây.</span></p></div>');
 
 const myTasksMobile = () =>
@@ -197,10 +197,10 @@ export const coreScreens = [
     permissions: [
       'Không yêu cầu quyền; chỉ tài khoản đang hoạt động mới tạo được phiên.',
       'Hết phiên: chuyển về S01 kèm banner, không mở hộp nhập lại MSSV giữa trang (S02 đã bỏ).',
-      'Không giữ nội dung đang soạn khi phiên hết hạn — xem WQ-17.'
+      'Không giữ nội dung đang soạn khi phiên hết hạn — xem WQ-16.'
     ],
     related: [['S03 · Danh sách board', 's03-boards.html'], ['S08 · Hồ sơ', 's08-profile.html']],
-    questions: [['WQ-15', 'thời gian chặn tạm'], ['WQ-16', 'quay lại trang sau đăng nhập'], ['WQ-17', 'mất bản nháp']],
+    questions: [['WQ-14', 'giới hạn thử theo IP'], ['WQ-09', 'quay lại deep link'], ['WQ-15', 'chỉ cho path nội bộ'], ['WQ-16', 'mất bản nháp']],
     strings: [
       ['Đăng nhập', 'Sign in'],
       ['MSSV', 'Student ID'],
@@ -282,7 +282,7 @@ export const coreScreens = [
       'Task ở cột cuối (Hoàn thành) không mang cảnh báo hạn.'
     ],
     related: [['S05 · Chi tiết task', 's05-task.html'], ['S15 · Thùng rác', 's15-trash.html'], ['S06 · Task của tôi', 's06-my-tasks.html']],
-    questions: [['WQ-03', 'menu chuyển cột trên mobile'], ['WQ-04', 'xóa cột còn task'], ['WQ-06', 'thứ tự trong cột']],
+    questions: [['WQ-05', 'xóa cột còn task'], ['WQ-03', 'task đã xong'], ['WQ-17', 'task ẩn trong thùng rác']],
     strings: [
       ['Thêm task', 'Add task'],
       ['Thêm cột', 'Add column'],
@@ -321,7 +321,7 @@ export const coreScreens = [
       'Hoàn tác: quyền của thao tác gốc; xung đột trả 409 và cần xác nhận có chủ ý.'
     ],
     related: [['S04 · Bảng Kanban', 's04-board.html'], ['S07 · Thành viên', 's07-members.html'], ['S14 · Lỗi & 404', 's14-errors.html']],
-    questions: [['WQ-05', 'định dạng hạn chót'], ['WQ-07', 'xung đột hoàn tác'], ['WQ-08', 'lịch sử của task ẩn']],
+    questions: [['WQ-12', 'định dạng hạn chót'], ['WQ-33', 'khôi phục khi cột cũ đã xóa']],
     strings: [
       ['Chi tiết', 'Details'],
       ['Lịch sử', 'History'],
@@ -341,16 +341,16 @@ export const coreScreens = [
     purpose: 'Danh sách việc của riêng tôi, nhóm theo hạn để trả lời “hôm nay phải làm gì”. Không phải một bảng thống kê: chỉ task đang mở, theo thứ tự thời gian.',
     who: 'Mọi tài khoản', persona: 'Nguyễn Văn A · Thành viên',
     permLine: 'Không cần quyền riêng · chỉ thấy task được giao cho mình',
-    frs: ['FR-23', 'FR-26', 'FR-27'], acs: ['AC-11', 'AC-15'],
+    frs: ['FR-07', 'FR-23', 'FR-25', 'FR-26', 'FR-27'], acs: ['AC-11', 'AC-15'],
     frames: [
       { kind: 'desktop', context: '7 task đang mở · nhóm theo hạn', html: myTasksDesktop() },
       { kind: 'mobile', context: 'Cùng dữ liệu · nhóm gọn, cuộn dọc', html: myTasksMobile() }
     ],
     pins: [
       '<strong>Năm nhóm cố định</strong> theo thứ tự: Quá hạn, Hôm nay, Tuần này, Sau đó, Không có hạn. Nhóm rỗng vẫn hiện để người dùng biết là không có việc, trừ khi cả danh sách trống.',
-      '<strong>“Tuần này” = 7 ngày tới</strong> (không gồm hôm nay) — giả định WQ-09. Nếu chủ dự án muốn “tuần dương lịch”, chỉ đổi cách tính nhóm, không đổi bố cục.',
+      '<strong>“Tuần này” = Thứ Hai đến Chủ nhật</strong> theo Asia/Ho_Chi_Minh (đã chốt WQ-04).',
       '<strong>Task ẩn được giao cho tôi vẫn hiện</strong> ở đây, có biểu tượng mắt gạch. Người khác không thấy task đó ở bất kỳ đâu, kể cả số đếm.',
-      '<strong>Task ở cột cuối không hiện</strong> (giả định WQ-10). Nếu muốn thấy việc đã xong, cần thêm bộ lọc “Bao gồm đã xong” — hiện chưa có để giữ MVP.'
+      '<strong>Task ở cột cuối ẩn mặc định</strong>, kèm bộ lọc “Hiện cả việc đã xong” (đã chốt WQ-03).'
     ],
     permissions: [
       'Chỉ task được giao cho chính mình, gồm task ẩn.',
@@ -358,7 +358,7 @@ export const coreScreens = [
       'Bấm một dòng mở S05; nếu task ẩn và quyền xem đã mất, S05 trả 404.'
     ],
     related: [['S04 · Bảng Kanban', 's04-board.html'], ['S05 · Chi tiết task', 's05-task.html']],
-    questions: [['WQ-09', 'định nghĩa tuần này'], ['WQ-10', 'task đã xong']],
+    questions: [['WQ-04', 'định nghĩa tuần này'], ['WQ-03', 'hiện việc đã xong']],
     strings: [
       ['Task của tôi', 'My tasks'],
       ['Quá hạn', 'Overdue'],

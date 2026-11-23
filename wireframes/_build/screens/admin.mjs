@@ -51,7 +51,7 @@ const membersMobile = () =>
 const profileDesktop = () =>
   appDesktop('A', 'profile',
     '<div class="ui-top"><div class="ui-top-bread"><b ' + A('Hồ sơ', 'Profile') + '>Hồ sơ</b></div><div class="ui-top-right">' + uiIconBtn('settings', 'Cài đặt', 'Settings') + '</div></div>' +
-    '<div class="ui-scroll"><div class="ui-pagehead"><div class="ui-pagehead-text"><h1 class="ui-h1" ' + A('Hồ sơ của tôi', 'My profile') + '>Hồ sơ của tôi</h1><span class="ui-sub" ' + A('Bạn chỉ thấy MSSV và email của chính mình ở đây.', 'You only see your own student ID and email here.') + '>Bạn chỉ thấy MSSV và email của chính mình ở đây.</span></div><div class="ui-pagehead-actions">' + uiBtn('Đổi mật khẩu', 'Change password', { iconName: 'lock' }) + '</div></div>' +
+    '<div class="ui-scroll"><div class="ui-pagehead"><div class="ui-pagehead-text"><h1 class="ui-h1" ' + A('Hồ sơ của tôi', 'My profile') + '>Hồ sơ của tôi</h1><span class="ui-sub" ' + A('Bạn chỉ thấy MSSV và email của chính mình ở đây.', 'You only see your own student ID and email here.') + '>Bạn chỉ thấy MSSV và email của chính mình ở đây.</span></div></div>' +
     '<div class="profile-grid"><section class="profile-main"><div class="profile-hero">' + avatar('A', 64) + '<div><h2>Nguyễn Văn A</h2><div class="profile-hero-meta"><span class="role-badge" ' + A('Thành viên', 'Member') + '>Thành viên</span><span ' + A('Tham gia 09/2025', 'Joined 09/2025') + '>Tham gia 09/2025</span></div><div class="profile-depts">' + members.A.depts.map((d) => '<span class="ui-chip">' + d + '</span>').join('') + '</div></div></div>' +
     '<div class="profile-section"><h3 ' + A('Thông tin liên hệ', 'Contact details') + '>Thông tin liên hệ</h3><div class="profile-fields"><div class="profile-field"><span>MSSV</span><b class="mono">' + members.A.mssv + '</b><span class="profile-lock">' + icon('lock', 12) + T('Chỉ bạn và admin thấy', 'Only you and admins') + '</span></div><div class="profile-field"><span>Email</span><b>' + members.A.email + '</b><span class="profile-lock">' + icon('lock', 12) + T('Chỉ bạn và admin thấy', 'Only you and admins') + '</span></div></div></div>' +
     '<div class="profile-section"><h3>' + T('Ban tham gia', 'Departments') + '</h3><div class="profile-depts big">' + members.A.depts.map((d) => '<span class="ui-chip">' + icon('building', 12) + d + '</span>').join('') + '</div><p class="ui-small ui-muted" ' + A('Việc gán ban do admin thực hiện. Bạn không tự đổi được.', 'Admins assign departments. You cannot change them yourself.') + '>Việc gán ban do admin thực hiện.</p></div></section>' +
@@ -146,7 +146,7 @@ export const adminScreens = [
     purpose: 'Tìm một người và biết họ thuộc ban nào. MSSV và email chỉ xuất hiện khi người xem có quyền xem chi tiết — cùng một bảng, hai mức thông tin khác nhau.',
     who: 'Mọi tài khoản đang hoạt động', persona: 'Desktop: Lê Văn C (có member.view_detail) · Mobile: Nguyễn Văn A (không có)',
     permLine: 'member.view · member.view_detail quyết định cột MSSV/email',
-    frs: ['FR-30', 'FR-31', 'FR-32', 'FR-33'], acs: ['AC-07', 'AC-08'],
+    frs: ['FR-42', 'FR-43'], acs: ['AC-11'],
     frames: [
       { kind: 'desktop', context: 'Có quyền xem chi tiết · thấy MSSV và email', html: membersDesktop() },
       { kind: 'mobile', context: 'Không có quyền xem chi tiết · chỉ họ tên và ban', html: membersMobile() }
@@ -185,7 +185,7 @@ export const adminScreens = [
     purpose: 'Chỗ duy nhất một người thấy MSSV và email của chính mình, cùng danh sách quyền đang có. Không phải trang chỉnh sửa: hồ sơ do admin quản lý.',
     who: 'Mọi tài khoản', persona: 'Nguyễn Văn A · Thành viên',
     permLine: 'Chính chủ · không cần quyền đặc biệt',
-    frs: ['FR-34', 'FR-35', 'FR-36'], acs: ['AC-09'],
+    frs: ['FR-42', 'FR-50'], acs: [],
     frames: [
       { kind: 'desktop', context: 'Hồ sơ của chính mình · thấy MSSV/email', html: profileDesktop() },
       { kind: 'mobile', context: 'Cùng nội dung · xếp dọc', html: profileMobile() }
@@ -199,7 +199,7 @@ export const adminScreens = [
     permissions: [
       'Chỉ chủ tài khoản xem được trang này; admin xem hồ sơ người khác qua S09.',
       'Không cần mã quyền; tài khoản phải đang hoạt động.',
-      'Đổi ngôn ngữ lưu cục bộ; không ảnh hưởng người khác.'
+      'Đổi ngôn ngữ lưu vào hồ sơ cá nhân (profiles.locale), áp dụng cho cả email nhắc (WQ-19).'
     ],
     related: [['S07 · Thành viên', 's07-members.html'], ['S12 · Nhắc deadline', 's12-reminders.html']],
     questions: [['WQ-19', 'tự đổi ngôn ngữ?'], ['WQ-20', 'đổi mật khẩu (không có mật khẩu)']],
@@ -223,7 +223,7 @@ export const adminScreens = [
     purpose: 'Sửa hồ sơ, gán ban, khóa tài khoản trong một khung bên — danh sách phía sau vẫn giữ ngữ cảnh. Không có trang “tạo thành viên” riêng để tránh hai nguồn dữ liệu.',
     who: 'Admin và người có quyền quản lý thành viên', persona: 'Trần Thị B · Admin',
     permLine: 'member.create · member.update · member.deactivate',
-    frs: ['FR-32', 'FR-33', 'FR-36', 'FR-37'], acs: ['AC-08', 'AC-09'],
+    frs: ['FR-04', 'FR-10', 'FR-19', 'FR-42', 'FR-43'], acs: ['AC-09', 'AC-14'],
     frames: [
       { kind: 'desktop', context: 'Khung sửa 480 px · danh sách phía sau', html: memberAdminDesktop() }
     ],
@@ -262,7 +262,7 @@ export const adminScreens = [
     purpose: 'Một ma trận đọc được, không phải 18 công tắc rời rạc. Chọn người bên trái, thấy quyền hiện tại và mẫu gợi ý bên phải; mọi thay đổi đều ghi nhật ký.',
     who: 'Chỉ admin', persona: 'Trần Thị B · Admin',
     permLine: 'Cờ admin · không có mã quyền riêng cho trang này',
-    frs: ['FR-37', 'FR-38', 'FR-39'], acs: ['AC-10', 'AC-21'],
+    frs: ['FR-05', 'FR-14', 'FR-15', 'FR-17', 'FR-18', 'FR-19'], acs: ['AC-07', 'AC-08', 'AC-09', 'AC-10'],
     frames: [
       { kind: 'desktop', context: 'Đang sửa Nguyễn Văn A · 3 quyền mặc định', html: permissionsDesktop() }
     ],
@@ -297,7 +297,7 @@ export const adminScreens = [
     purpose: '20 ban, nhưng chỉ vài ban đang có người. Tách “đang dùng” và “chưa có thành viên” để admin không phải quét một danh sách dài.',
     who: 'Admin hoặc người có department.manage', persona: 'Trần Thị B · Admin',
     permLine: 'department.manage',
-    frs: ['FR-31', 'FR-39'], acs: ['AC-08'],
+    frs: ['FR-13'], acs: [],
     frames: [
       { kind: 'desktop', context: '20 ban · 8 ban đang có người', html: departmentsDesktop() }
     ],
