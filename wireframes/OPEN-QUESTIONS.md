@@ -37,7 +37,7 @@ Mức ảnh hưởng: **Cao** = sai sẽ phải vẽ lại luồng hoặc schema
 | WQ-29 | Có ghi audit cho đăng nhập? | Không; chỉ thay đổi quyền/thành viên. | Thấp |
 | WQ-30 | Trang bảo trì có tự bật? | Không; chỉ khi deploy cần. | Thấp |
 | WQ-31 | Có hiện mã lỗi kỹ thuật cho người dùng? | Chỉ mã yêu cầu, không stack trace. | Thấp |
-| WQ-32 | Thùng rác tự dọn sau bao lâu? | Giả định 30 ngày; **chưa có trong HANDOFF**. | Vừa |
+| WQ-32 | Thùng rác tự dọn sau bao lâu? | Giả định cũ 30 ngày; **đã chốt theo Q39: giữ mãi trong MVP, không tự dọn sau 30 ngày** (`docs/DECISIONS.md`). | Vừa |
 | WQ-33 | Khôi phục task khi cột cũ đã bị xóa? | Về cột đầu tiên; ghi lịch sử. | Vừa |
 | WQ-34 | Nhiều task cùng hạn trong email xếp thế nào? | Priority cao trước, rồi tên. | Thấp |
 | WQ-35 | Liên kết trong email có cần đăng nhập lại? | Có; về S01 rồi quay lại S06 nếu còn phiên hợp lệ. | Vừa |

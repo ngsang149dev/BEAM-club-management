@@ -81,10 +81,10 @@ const trashDesktop = () =>
   appDesktop('B', 'boards',
     '<div class="ui-top"><div class="ui-top-bread"><span ' + A('Board', 'Boards') + '>Board</span><span>/</span><b>Sự kiện Open Day 2026</b><span>/</span><b ' + A('Thùng rác', 'Trash') + '>Thùng rác</b></div></div>' +
     '<div class="ui-scroll"><div class="ui-pagehead"><div class="ui-pagehead-text"><h1 class="ui-h1" ' + A('Thùng rác', 'Trash') + '>Thùng rác</h1><span class="ui-sub" ' + A('Task đã xóa mềm · khôi phục được · không xóa vĩnh viễn trong MVP', 'Soft-deleted tasks · restorable · no permanent delete in the MVP') + '>Task đã xóa mềm · khôi phục được · không xóa vĩnh viễn trong MVP</span></div></div>' +
-    '<div class="trash-toolbar"><div class="ui-input" style="width:240px">' + icon('search', 14) + '<span class="ui-input-fake is-placeholder" ' + A('Tìm task đã xóa', 'Search deleted tasks') + '>Tìm task đã xóa</span></div><span class="ui-toolbar-spacer"></span><span class="ui-small ui-muted" ' + A('Tự động dọn sau 30 ngày (giả định)', 'Auto-cleaned after 30 days (assumption)') + '>Tự động dọn sau 30 ngày (giả định)</span></div>' +
+    '<div class="trash-toolbar"><div class="ui-input" style="width:240px">' + icon('search', 14) + '<span class="ui-input-fake is-placeholder" ' + A('Tìm task đã xóa', 'Search deleted tasks') + '>Tìm task đã xóa</span></div><span class="ui-toolbar-spacer"></span><span class="ui-small ui-muted" ' + A('Giữ mãi trong MVP · chưa xóa vĩnh viễn', 'Kept indefinitely in MVP · no permanent delete') + '>Giữ mãi trong MVP · chưa xóa vĩnh viễn</span></div>' +
     '<div class="trash-table"><div class="trash-tr trash-th"><span>Task</span><span>' + T('Cột cũ', 'Old column') + '</span><span>' + T('Người xóa', 'Deleted by') + '</span><span>' + T('Thời gian', 'When') + '</span><span></span></div>' +
-    [['Viết kịch bản MC', 'Đang làm', 'B', '23/11 · 15:12'], ['Mượn thiết bị âm thanh', 'Cần làm', 'C', '22/11 · 09:40'], ['Check-in khách mời', 'Chờ duyệt', 'B', '20/11 · 16:05'], ['Trang trí sân khấu', 'Hoàn thành', 'C', '18/11 · 11:22']].map((r) =>
-      '<div class="trash-tr"><span class="trash-task">' + icon('trash', 14) + '<b>' + r[0] + '</b></span><span>' + T(r[1], r[1]) + '</span><span>' + personName(r[2]) + '</span><span class="mono">' + r[3] + '</span><span class="trash-restore">' + uiBtn('Khôi phục', 'Restore', { sm: true, iconName: 'refresh' }) + '</span></div>'
+    [['Viết kịch bản MC', 'Đang làm', 'In progress', 'B', '23/11 · 15:12'], ['Mượn thiết bị âm thanh', 'Cần làm', 'To do', 'C', '22/11 · 09:40'], ['Check-in khách mời', 'Chờ duyệt', 'In review', 'B', '20/11 · 16:05'], ['Trang trí sân khấu', 'Hoàn thành', 'Done', 'C', '18/11 · 11:22']].map((r) =>
+      '<div class="trash-tr"><span class="trash-task">' + icon('trash', 14) + '<b>' + r[0] + '</b></span><span>' + T(r[1], r[2]) + '</span><span>' + personName(r[3]) + '</span><span class="mono">' + r[4] + '</span><span class="trash-restore">' + uiBtn('Khôi phục', 'Restore', { sm: true, iconName: 'refresh' }) + '</span></div>'
     ).join('') + '</div><p class="trash-note">' + icon('info', 13) + '<span ' + A('Khôi phục đưa task về cột cũ nếu cột còn; nếu cột đã bị xóa, task về cột đầu tiên. Không có nút xóa vĩnh viễn.', 'Restore returns the task to its old column if it still exists, otherwise the first column. There is no permanent delete.') + '>Khôi phục đưa task về cột cũ nếu cột còn.</span></p></div>');
 
 const trashStates = [
@@ -100,7 +100,7 @@ export const systemScreens = [
     purpose: 'Ba mốc, một giờ gửi, một email gộp cho mỗi người. Cấu hình phải nói rõ ai không nhận và task nào không nhắc, để admin không tin nhầm là “đã bật là gửi hết”.',
     who: 'Admin hoặc người có reminder.configure', persona: 'Trần Thị B · Admin',
     permLine: 'reminder.configure',
-    frs: ['FR-50', 'FR-51', 'FR-52', 'FR-53'], acs: ['AC-12', 'AC-13'],
+    frs: ['FR-02', 'FR-30'], acs: ['AC-03'],
     frames: [
       { kind: 'desktop', context: 'Cấu hình + xem trước email VI', html: remindersDesktop() },
       { kind: 'mobile', context: 'Cùng cấu hình · một cột', html: remindersMobile() }
@@ -137,7 +137,7 @@ export const systemScreens = [
     purpose: 'Ai đổi quyền cho ai, khi nào. Chỉ đọc, chỉ ghi thêm, không có cột sửa hay nút xóa — kể cả với admin. Bản ghi không chứa MSSV hay email.',
     who: 'Admin hoặc người có audit.view', persona: 'Trần Thị B · Admin',
     permLine: 'audit.view',
-    frs: ['FR-39', 'FR-54', 'FR-55'], acs: ['AC-10', 'AC-21'],
+    frs: ['FR-16'], acs: ['AC-10'],
     frames: [
       { kind: 'desktop', context: 'Bảng + chi tiết bản ghi đang chọn', html: auditDesktop() }
     ],
@@ -171,7 +171,7 @@ export const systemScreens = [
     purpose: '403, 404, hết phiên, lỗi máy chủ, mất mạng, bảo trì. Cùng một ngôn ngữ hình ảnh, khác nhau ở việc người dùng làm được gì tiếp theo. 404 dùng chung cho “không tồn tại” và “không được xem”.',
     who: 'Mọi người dùng', persona: 'Không có · trạng thái hệ thống',
     permLine: 'Không áp dụng',
-    frs: ['FR-60', 'FR-61', 'FR-62'], acs: ['AC-18', 'AC-19'],
+    frs: ['FR-11', 'FR-15', 'FR-26', 'FR-40'], acs: ['AC-04', 'AC-05', 'AC-15', 'AC-20'],
     frames: [
       { kind: 'desktop', context: '403 · thiếu quyền, không phải ẩn trang', html: errorsDesktop() },
       { kind: 'mobile', context: '404 · không tồn tại hoặc không được xem', html: errorsMobile() }
@@ -204,9 +204,9 @@ export const systemScreens = [
     code: 'S15', slug: 's15-trash', group: 'Hệ thống',
     titleVi: 'Thùng rác của board', titleEn: 'Board trash',
     purpose: 'Task xóa mềm nằm đây, khôi phục được về cột cũ. Không có xóa vĩnh viễn trong MVP — nên không vẽ nút “xóa” thứ hai để tránh hiểu nhầm.',
-    who: 'Người có task.delete', persona: 'Trần Thị B · Admin',
-    permLine: 'task.delete · chỉ trong board tương ứng',
-    frs: ['FR-24', 'FR-25', 'FR-61'], acs: ['AC-16', 'AC-17'],
+    who: 'Người có task.delete và admin', persona: 'Trần Thị B · Admin',
+    permLine: 'task.delete (toàn CLB) · hoặc admin',
+    frs: ['FR-26', 'FR-62'], acs: ['AC-15', 'AC-21'],
     frames: [
       { kind: 'desktop', context: '4 task đã xóa · còn khôi phục được', html: trashDesktop() }
     ],
@@ -214,15 +214,15 @@ export const systemScreens = [
       '<strong>Chỉ task đã xóa mềm</strong> của board này; task ẩn vẫn tuân theo policy xem, người không được xem không thấy trong thùng rác.',
       '<strong>Không có xóa vĩnh viễn</strong> trong MVP. Nếu thêm sau, phải là hành động riêng có xác nhận mạnh.',
       '<strong>Khôi phục về cột cũ</strong> nếu cột còn; nếu không, về cột đầu tiên. Task ẩn giữ nguyên cờ ẩn.',
-      '<strong>Thời hạn dọn 30 ngày là giả định</strong> (WQ-32), chưa có trong HANDOFF; cần chủ dự án chốt.'
+      '<strong>Giữ mãi trong MVP (đã chốt Q39/WQ-32):</strong> không tự dọn sau 30 ngày; xóa vĩnh viễn dời sang giai đoạn 2.'
     ],
     permissions: [
-      'Mở thùng rác: <code>task.delete</code> trong board đó.',
+      'Mở thùng rác: <code>task.delete</code> hoặc admin (quyền toàn CLB).',
       'Khôi phục: quyền của thao tác xóa gốc; ghi task_event mới, không xóa lịch sử.',
       'Không có quyền: 403; task ẩn không được xem: 404.'
     ],
     related: [['S04 · Bảng Kanban', 's04-board.html'], ['S05 · Chi tiết task', 's05-task.html']],
-    questions: [['WQ-32', 'thời hạn dọn thùng rác'], ['WQ-33', 'khôi phục khi cột đã xóa']],
+    questions: [['WQ-32', 'giữ mãi ở MVP (đã chốt Q39)'], ['WQ-33', 'khôi phục khi cột đã xóa']],
     strings: [
       ['Thùng rác', 'Trash'],
       ['Task đã xóa mềm · khôi phục được · không xóa vĩnh viễn trong MVP', 'Soft-deleted tasks · restorable · no permanent delete in the MVP'],
@@ -239,7 +239,7 @@ export const systemScreens = [
     purpose: 'Một email, một người, gộp mọi task theo hạn. Không MSSV, không email, không tên người khác. Cùng nội dung ở VI và EN, cùng bố cục trên desktop và mobile.',
     who: 'Người được giao task, còn hoạt động', persona: 'Nguyễn Văn A · người nhận',
     permLine: 'Không áp dụng · dữ liệu lọc theo người nhận',
-    frs: ['FR-50', 'FR-51', 'FR-52', 'FR-53'], acs: ['AC-12', 'AC-13'],
+    frs: ['FR-02', 'FR-30', 'FR-31', 'FR-42', 'FR-50'], acs: ['AC-03'],
     frames: [
       { kind: 'desktop', context: 'Bản VI · 640 px', html: '<div class="email-frame">' + emailPreview('vi', false) + '</div>' },
       { kind: 'desktop', context: 'Bản EN · cùng bố cục, nội dung theo locale', html: '<div class="email-frame">' + emailPreview('en', false) + '</div>' },
@@ -250,7 +250,7 @@ export const systemScreens = [
       '<strong>Nhóm theo hạn</strong>: Quá hạn, Đến hạn hôm nay, Sắp tới. Trong nhóm, task gấp hơn lên trước.',
       '<strong>Một email mỗi người mỗi ngày</strong>; không gửi trùng nhờ unique (task, user, kind). Task Done và người đã rời bị loại.',
       '<strong>Ngôn ngữ theo hồ sơ người nhận</strong>, không theo ngôn ngữ người gửi hay trình duyệt.',
-      '<strong>Liên kết mở ứng dụng</strong> đưa về S06; nếu chưa đăng nhập, về S01 rồi quay lại (WQ-16).'
+      '<strong>Liên kết mở ứng dụng</strong> đưa về S06; nếu chưa đăng nhập, về S01 rồi quay lại (WQ-35).'
     ],
     permissions: [
       'Không phải giao diện đăng nhập; email chỉ gửi cho người được giao task còn hoạt động.',

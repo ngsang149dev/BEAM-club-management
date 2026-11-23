@@ -1,0 +1,2607 @@
+openapi: 3.1.0
+info:
+  title: BEAM Club Management API
+  version: 1.0.0
+  description: |
+    Internal REST/JSON API contract for BEAM Club Management (~50 members, 20 departments).
+    - Additive-only contract under `/api/v1`.
+    - All timestamps are ISO 8601 UTC (`timestamptz`) and formatted in `Asia/Ho_Chi_Minh` on the client/email layer.
+    - Every mutating endpoint calls server-side `authorize(user, permission, resource?)` reading active status and permissions fresh from PostgreSQL on every request.
+    - PII Rule (FR-42): `studentId` and `email` are NEVER exposed in `MemberPublicSummary`, task lists/details, comments, `task_events`, `audit_logs`, or `ErrorResponse`. They appear ONLY in `GET /me` and in member read/mutation responses (`GET /members`, `GET /members/{id}`, `POST /members`, `PATCH /members/{id}`, `POST /members/{id}/deactivate`, `POST /members/{id}/activate`) when the caller holds `member.view_detail` or is an admin.
+    - Hidden Tasks Rule (FR-07, FR-26): Tasks with `isHidden=true` are visible only to assignees, the task creator, and admins. Unauthorized callers receive `404 Not Found` (never `403`) across reads, mutations, comments, history, revert, and trash.
+
+servers:
+  - url: /api/v1
+    description: Next.js Route Handlers API v1 base path
+
+tags:
+  - name: Auth
+    description: Student-ID login, logout, and active session inspection
+  - name: Me
+    description: Current user profile, locale preference, and assigned tasks
+  - name: Members
+    description: Member directory, profile administration, and account activation
+  - name: Departments
+    description: Club department CRUD
+  - name: Permissions
+    description: Admin-only RBAC permission management, presets, and admin flag
+  - name: Boards & Columns
+    description: Kanban boards and column ordering/management
+  - name: Tasks
+    description: Task CRUD, drag-and-drop move, assignees, hidden flag, and soft delete
+  - name: History & Trash
+    description: Append-only task event history, command-based revert, and board trash recovery
+  - name: Comments
+    description: Task comments
+  - name: Settings & Audit
+    description: Deadline reminder configuration and append-only administrative audit logs
+  - name: Internal Cron
+    description: Scheduled deadline reminder trigger protected by CRON_SECRET
+
+security:
+  - sessionCookie: []
+
+paths:
+  # ---------------------------------------------------------------------------
+  # Auth
+  # ---------------------------------------------------------------------------
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in with student ID (MSSV)
+      description: |
+        Public endpoint protected by IP rate limiting (`login_attempts`).
+        Returns a generic `401` error whether the `studentId` does not exist or the account is inactive (`is_active=false`).
+        Sets the `beam_session` `HttpOnly`/`Secure`/`SameSite` cookie:
+        - `remember=false` (default): browser session cookie with server max TTL `SESSION_TTL_DEFAULT` (24h).
+        - `remember=true`: persistent cookie with sliding server TTL `SESSION_TTL_REMEMBER` (30d).
+        Validates `returnTo` as a safe internal path (`WQ-09`, `WQ-15`); external URLs are rejected or sanitized to `/boards`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated session established
+          headers:
+            Set-Cookie:
+              description: Sets `beam_session` opaque token cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Generic authentication failure (unknown student ID or inactive account)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Sign out and revoke current session
+      description: Requires an active authenticated session (or clears cookie). Revokes current session in `sessions` and clears `beam_session`.
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/session:
+    get:
+      tags: [Auth]
+      summary: Inspect current session and live effective permissions
+      description: Reads `profiles.is_active`, `profiles.is_admin`, and `user_permissions` fresh from PostgreSQL on every call (FR-15).
+      responses:
+        "200":
+          description: Active session state and live permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfoResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Me
+  # ---------------------------------------------------------------------------
+  /me:
+    get:
+      tags: [Me]
+      summary: Get current authenticated member's own profile
+      description: Any active authenticated user can view their own `studentId`, `email`, `locale`, `isAdmin`, departments, and effective permissions (S08).
+      responses:
+        "200":
+          description: Current member profile and permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    patch:
+      tags: [Me]
+      summary: Update current member's preferred locale
+      description: Persists `profiles.locale` (`'vi'` | `'en'`) so UI and reminder emails stay synchronized (`WQ-19`, FR-50).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "200":
+          description: Updated member profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me/tasks:
+    get:
+      tags: [Me]
+      summary: List active tasks assigned to the current member
+      description: |
+        Returns active (`deleted_at IS NULL`) tasks assigned to the current user (including hidden tasks assigned to them).
+        By default (`includeDone=false`), excludes tasks sitting in the Done (final) column of their board (`WQ-03`).
+      parameters:
+        - name: boardId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: q
+          in: query
+          description: Search query on task title and description
+          schema:
+            type: string
+            maxLength: 200
+        - name: includeDone
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: priority
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of tasks assigned to caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
+  # Members
+  # ---------------------------------------------------------------------------
+  /members:
+    get:
+      tags: [Members]
+      summary: List club members
+      description: |
+        Requires `member.view` (or admin).
+        Returns `MemberDetail` (including `studentId` and `email`) ONLY when caller has `member.view_detail` or is admin; otherwise returns `MemberPublicSummary` without `studentId` or `email` (FR-42).
+        Search `q` matches `fullName` for all viewers and matches `studentId` ONLY if caller has `member.view_detail` or is admin (`WQ-11`).
+      parameters:
+        - name: q
+          in: query
+          description: Search query on fullName (and studentId only if caller has `member.view_detail` or is admin)
+          schema:
+            type: string
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated member directory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [Members]
+      summary: Create a new member account
+      description: |
+        Requires `member.create` (or admin).
+        Validates email domain against server config `ALLOWED_EMAIL_DOMAIN` (default `eiu.edu.vn`), grants default `basic_member` permissions (`member.view`, `task.update_assigned`, `comment.create`), assigns optional departments, and logs to `audit_logs`.
+        Projection rule (FR-42): `member` is serialized as `MemberDetail` (`studentId`, `email`, `locale`, `isAdmin`) ONLY when the caller holds `member.view_detail` or `is_admin`, and strictly as `MemberPublicSummary` (no `studentId` or `email`) otherwise (e.g., caller holds `member.create` without `member.view_detail`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemberRequest"
+      responses:
+        "201":
+          description: Member created (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /members/{id}:
+    get:
+      tags: [Members]
+      summary: Get member details
+      description: |
+        Requires `member.view` (or admin).
+        Returns `MemberDetail` only if caller holds `member.view_detail` or is admin; otherwise `MemberPublicSummary`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Member record (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [Members]
+      summary: Update member profile and department assignments
+      description: |
+        Requires `member.update` (or admin).
+        `studentId` is immutable after creation (`WQ-21`) and cannot be updated via this endpoint.
+        Does NOT allow modifying `isAdmin` or `user_permissions` (admin-only endpoints).
+        Validates email against `ALLOWED_EMAIL_DOMAIN` and records `audit_logs`.
+        Projection rule (FR-42): `member` is serialized as `MemberDetail` (`studentId`, `email`, `locale`, `isAdmin`) ONLY when the caller holds `member.view_detail` or `is_admin`, and strictly as `MemberPublicSummary` (no `studentId` or `email`) otherwise (e.g., caller holds `member.update` without `member.view_detail`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberRequest"
+      responses:
+        "200":
+          description: Member updated (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /members/{id}/deactivate:
+    post:
+      tags: [Members]
+      summary: Deactivate a member account (member left club)
+      description: |
+        Requires `member.deactivate` (or admin).
+        Sets `is_active=false`, records `left_at`, revokes active sessions, retains all historical tasks/events, and writes `audit_logs`.
+        Returns `409` if target is the last active admin (`LAST_ACTIVE_ADMIN`, AC-09).
+        Projection rule (FR-42): `member` is serialized as `MemberDetail` (`studentId`, `email`, `locale`, `isAdmin`) ONLY when the caller holds `member.view_detail` or `is_admin`, and strictly as `MemberPublicSummary` (no `studentId` or `email`) otherwise (e.g., caller holds `member.deactivate` without `member.view_detail`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Member deactivated (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /members/{id}/activate:
+    post:
+      tags: [Members]
+      summary: Re-activate a previously deactivated member account
+      description: |
+        Requires `member.deactivate` (or admin).
+        Sets `is_active=true`, clears `left_at`, and records `audit_logs`.
+        Projection rule (FR-42): `member` is serialized as `MemberDetail` (`studentId`, `email`, `locale`, `isAdmin`) ONLY when the caller holds `member.view_detail` or `is_admin`, and strictly as `MemberPublicSummary` (no `studentId` or `email`) otherwise (e.g., caller holds `member.deactivate` without `member.view_detail`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Member re-activated (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Departments
+  # ---------------------------------------------------------------------------
+  /departments:
+    get:
+      tags: [Departments]
+      summary: List all departments
+      description: Accessible to any active authenticated user (used for member filtering and board grouping).
+      responses:
+        "200":
+          description: List of departments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      tags: [Departments]
+      summary: Create a department
+      description: Requires `department.manage` (or admin). Writes `audit_logs`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepartmentUpsertRequest"
+      responses:
+        "201":
+          description: Department created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /departments/{id}:
+    patch:
+      tags: [Departments]
+      summary: Rename a department
+      description: Requires `department.manage` (or admin). Writes `audit_logs`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepartmentUpsertRequest"
+      responses:
+        "200":
+          description: Department updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+    delete:
+      tags: [Departments]
+      summary: Delete an empty department
+      description: |
+        Requires `department.manage` (or admin).
+        Returns `409` if the department still has linked members or boards (`WQ-10`). Writes `audit_logs`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Department deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteSuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ---------------------------------------------------------------------------
+  # Permissions & Presets (Admin only)
+  # ---------------------------------------------------------------------------
+  /permissions:
+    get:
+      tags: [Permissions]
+      summary: List the canonical permission catalog
+      description: Admin only (`is_admin=true`). Returns the 18 permissions defined in `PERMISSIONS`.
+      responses:
+        "200":
+          description: Permission catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionCatalogResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /members/{id}/permissions:
+    get:
+      tags: [Permissions]
+      summary: Get a member's granted permissions
+      description: Admin only (`is_admin=true`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Member permission grants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPermissionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [Permissions]
+      summary: Replace a member's granted permissions
+      description: |
+        Admin only (`is_admin=true`). `member.update` holders receive `403` (AC-08).
+        Atomically replaces `user_permissions` and writes `audit_logs` within one transaction (AC-10).
+        Changes take effect immediately on the user's subsequent requests (FR-15, AC-07).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceMemberPermissionsRequest"
+      responses:
+        "200":
+          description: Updated member permission grants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPermissionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /permission-presets:
+    get:
+      tags: [Permissions]
+      summary: List permission presets
+      description: Admin only (`is_admin=true`). Returns presets (`basic_member`, `department_lead`, `hr_manager`).
+      responses:
+        "200":
+          description: List of permission presets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPresetListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /members/{id}/permissions/apply-preset:
+    post:
+      tags: [Permissions]
+      summary: Apply a permission preset to a member
+      description: |
+        Admin only (`is_admin=true`).
+        Replaces ALL existing `user_permissions` of the member with the selected preset's permissions (`WQ-06`) inside a transaction and writes `audit_logs`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyPresetRequest"
+      responses:
+        "200":
+          description: Preset applied to member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPermissionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /members/{id}/admin:
+    put:
+      tags: [Permissions]
+      summary: Grant or revoke admin flag for a member
+      description: |
+        Admin only (`is_admin=true`).
+        Protected by transaction + DB triggers `prevent_last_active_admin_update` and `prevent_last_active_admin_delete`.
+        Returns `409` (`LAST_ACTIVE_ADMIN`) when attempting to demote the last active admin (AC-09). Writes `audit_logs`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdminFlagRequest"
+      responses:
+        "200":
+          description: Updated admin flag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateAdminFlagResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ---------------------------------------------------------------------------
+  # Boards & Columns
+  # ---------------------------------------------------------------------------
+  /boards:
+    get:
+      tags: [Boards & Columns]
+      summary: List boards
+      description: |
+        Accessible to any active authenticated user (FR-06).
+        `includeArchived=true` is restricted to admins (`WQ-01`; non-admins receive `403` when requesting `includeArchived=true`).
+      parameters:
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: includeArchived
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of boards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [Boards & Columns]
+      summary: Create a board with default columns (Todo, Doing, Review, Done)
+      description: |
+        Requires `board.create` (or admin).
+        Optional `departmentId` assigns the board to at most one department (`WQ-02`); `null` creates a club-wide board.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBoardRequest"
+      responses:
+        "201":
+          description: Board created with default columns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /boards/{id}:
+    get:
+      tags: [Boards & Columns]
+      summary: Get board detail with ordered columns and visible active tasks
+      description: |
+        Accessible to any active authenticated user (FR-06).
+        Excludes soft-deleted tasks (`deleted_at IS NOT NULL`) and filters hidden tasks (`is_hidden=true`) using `taskVisibilityPolicy` (FR-26).
+        Column `taskCount` reflects only visible active tasks.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Board detail with columns and visible tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [Boards & Columns]
+      summary: Update board metadata or unarchive board
+      description: Requires `board.update` (or admin).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBoardRequest"
+      responses:
+        "200":
+          description: Updated board summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardSummaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Boards & Columns]
+      summary: Archive a board
+      description: Requires `board.delete` (or admin). Soft-archives the board (`archived_at = now()`) rather than hard-deleting (`WQ-01`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Board archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardSummaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /boards/{id}/columns:
+    post:
+      tags: [Boards & Columns]
+      summary: Add a column to a board
+      description: Requires `board.update` (or admin).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateColumnRequest"
+      responses:
+        "201":
+          description: Column created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ColumnResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /columns/{id}:
+    patch:
+      tags: [Boards & Columns]
+      summary: Rename a column
+      description: Requires `board.update` (or admin).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateColumnRequest"
+      responses:
+        "200":
+          description: Column updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ColumnResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Boards & Columns]
+      summary: Delete an empty column
+      description: |
+        Requires `board.update` (or admin).
+        Returns `409` if the column still contains any active (`deleted_at IS NULL`) tasks (`WQ-05`).
+        If only soft-deleted tasks reference the column, detaches `column_id = NULL` on those trashed tasks inside the transaction so restore uses the board's first column (`WQ-33`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Column deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteSuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /boards/{id}/columns/order:
+    put:
+      tags: [Boards & Columns]
+      summary: Reorder all columns of a board
+      description: Requires `board.update` (or admin). Accepts the complete ordered list of column IDs for the board.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderColumnsRequest"
+      responses:
+        "200":
+          description: Reordered columns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ColumnListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Tasks
+  # ---------------------------------------------------------------------------
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: Filter and search active visible tasks
+      description: |
+        Accessible to any active authenticated user.
+        Server-side filters `deleted_at IS NULL` and enforces `taskVisibilityPolicy` so hidden tasks are never returned or counted for unauthorized users (FR-26, AC-15).
+      parameters:
+        - name: boardId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: columnId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: assigneeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: priority
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4
+        - name: dueStatus
+          in: query
+          schema:
+            type: string
+            enum: [overdue, upcoming, no_due]
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [position, priority, dueAt, createdAt]
+            default: position
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of matching visible tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      tags: [Tasks]
+      summary: Create a new task
+      description: |
+        Requires `task.create` (or admin). Supplying non-empty `assigneeIds` also requires `task.assign` (or admin).
+        Creates the task and records a `task.created` event in `task_events` inside the same transaction, returning `eventId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get task details
+      description: |
+        Accessible to any active authenticated user who passes `taskVisibilityPolicy`.
+        Returns `404` if the task does not exist, is soft-deleted, or is hidden (`is_hidden=true`) and caller is neither assignee, creator, nor admin (AC-15).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [Tasks]
+      summary: Update task fields (title, description, dueAt, priority)
+      description: |
+        Requires `task.update_any`, OR `task.update_assigned` when caller is assigned to the task, OR admin.
+        Enforces `taskVisibilityPolicy` first: hidden tasks return `404` to non-viewers even if caller holds `task.update_any`.
+        Uses optimistic locking via `version` (`409` if stale). Writes `task.updated` to `task_events` when actual field changes occur and returns `eventId`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+    delete:
+      tags: [Tasks]
+      summary: Soft-delete a task (move to Trash)
+      description: |
+        Requires `task.delete` (or admin) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
+        Sets `deleted_at = now()`, records `task.deleted` in `task_events`, and returns `eventId` for 10s quick undo.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Task soft-deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tasks/{id}/move:
+    post:
+      tags: [Tasks]
+      summary: Move task across columns or reorder within a column
+      description: |
+        Requires `task.update_any`, OR `task.update_assigned` if assigned, OR admin.
+        Enforces `taskVisibilityPolicy` (`404` if hidden & non-viewer).
+        Server computes `position` from `beforeId`/`afterId` (rebalancing column positions if gap becomes too small), checks `version` (`409`), records `task.moved` in `task_events`, and returns `eventId`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveTaskRequest"
+      responses:
+        "200":
+          description: Task moved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /tasks/{id}/assignees:
+    put:
+      tags: [Tasks]
+      summary: Replace task assignees
+      description: |
+        Requires `task.assign` (or admin) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
+        Records `task.assignees_changed` with user IDs only (no names/MSSV/email) in `task_events` and returns `eventId`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceTaskAssigneesRequest"
+      responses:
+        "200":
+          description: Task assignees updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /tasks/{id}/hidden:
+    put:
+      tags: [Tasks]
+      summary: Toggle task hidden flag
+      description: |
+        Allowed ONLY for the task creator (`tasks.created_by`) or admin (`is_admin=true`).
+        Returns `404` if the task is already hidden and caller cannot view it; `403` if caller can view it (e.g., assignee) but is neither creator nor admin.
+        Records `task.hidden_changed` in `task_events` and returns `eventId`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskHiddenRequest"
+      responses:
+        "200":
+          description: Task visibility flag updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ---------------------------------------------------------------------------
+  # History, Undo & Trash
+  # ---------------------------------------------------------------------------
+  /tasks/{id}/events:
+    get:
+      tags: [History & Trash]
+      summary: List append-only activity history of a task
+      description: |
+        Accessible to anyone permitted to view the task (`Q38`), ordered newest-first with cursor pagination.
+        Returns `404` if the task is hidden and caller cannot view it (AC-20).
+        `changes` stores IDs and domain field values only (no MSSV/email, FR-60).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated task history events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskEventPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tasks/{id}/events/{eventId}/revert:
+    post:
+      tags: [History & Trash]
+      summary: Revert a task event (undo)
+      description: |
+        Requires permission matching the original operation (`403` otherwise, AC-19) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
+        Non-revertable events (`task.created`, `comment.added`, `comment.deleted`) return `400`.
+        Checks whether current task values still match the event's `to` values; if modified since, returns `409` with `details.conflictingFields` unless `force=true` (AC-18).
+        Appends a new `task_events` row with `reverts_event_id` and `forced` (AC-17, AC-22).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevertTaskEventRequest"
+      responses:
+        "200":
+          description: Event reverted via new compensating event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevertTaskEventResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Conflict — task was modified after the target event (`details.conflictingFields` lists conflicted fields)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /boards/{id}/trash:
+    get:
+      tags: [History & Trash]
+      summary: List soft-deleted tasks in a board's Trash
+      description: |
+        Requires `task.delete` or admin (`403` otherwise).
+        Excludes hidden tasks (`is_hidden=true`) that the caller is not allowed to see (`WQ-17`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated soft-deleted tasks in board Trash
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tasks/{id}/restore:
+    post:
+      tags: [History & Trash]
+      summary: Restore a soft-deleted task from Trash
+      description: |
+        Requires `task.delete` or admin (`403` otherwise) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
+        Clears `deleted_at`, restores to original `column_id` and `position` or falls back to the board's first column (`order_index ASC`) if the original column was deleted (`WQ-33`), and records `task.restored` in `task_events` (AC-21).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Task restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  # ---------------------------------------------------------------------------
+  # Comments
+  # ---------------------------------------------------------------------------
+  /tasks/{id}/comments:
+    get:
+      tags: [Comments]
+      summary: List comments on a task
+      description: Accessible to task viewers; enforces `taskVisibilityPolicy` (`404` if hidden & non-viewer or soft-deleted).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of comments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      tags: [Comments]
+      summary: Add a comment to a task
+      description: |
+        Requires `comment.create` (or admin) and `taskVisibilityPolicy` (`404` if hidden & non-viewer or soft-deleted).
+        Records `comment.added` in `task_events` and returns `eventId`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentRequest"
+      responses:
+        "201":
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateCommentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /comments/{id}:
+    delete:
+      tags: [Comments]
+      summary: Delete a comment
+      description: |
+        Enforces parent task's `taskVisibilityPolicy` (`404` if parent task is hidden & non-viewer or soft-deleted).
+        Allowed only for the comment author, a user with `comment.delete_any`, or admin (`403` otherwise).
+        Records `comment.deleted` in `task_events` and returns `eventId`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Comment deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteCommentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Settings, Audit Logs & Internal Cron
+  # ---------------------------------------------------------------------------
+  /settings/reminders:
+    get:
+      tags: [Settings & Audit]
+      summary: Get deadline reminder schedule settings
+      description: Requires `reminder.configure` (or admin).
+      responses:
+        "200":
+          description: Current reminder configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    put:
+      tags: [Settings & Audit]
+      summary: Update deadline reminder milestones
+      description: Requires `reminder.configure` (or admin). Updates `app_settings` key `'reminders'` and logs to `audit_logs`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReminderSettingsRequest"
+      responses:
+        "200":
+          description: Updated reminder configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderSettingsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /audit-logs:
+    get:
+      tags: [Settings & Audit]
+      summary: List administrative audit logs
+      description: Requires `audit.view` (or admin). Read-only append-only ledger; `detail` excludes raw `studentId` and `email`.
+      parameters:
+        - name: actorId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: targetUserId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated audit log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /internal/cron/reminders:
+    post:
+      tags: [Internal Cron]
+      summary: Run daily deadline reminder dispatch job
+      description: |
+        Protected by `cronSecret` (`Authorization: Bearer <CRON_SECRET>`).
+        Aggregates upcoming/overdue active tasks (excluding Done columns, soft-deleted tasks, and inactive members) into at most 1 email per active assignee per day in their `profiles.locale`.
+        Idempotent via unique `(task_id, user_id, kind)` in `reminders`.
+        Hidden tasks (`is_hidden=true`) only notify authorized viewers and **omit the task title** in the email body (`WQ-27`) and never include `studentId`.
+      security:
+        - cronSecret: []
+      responses:
+        "200":
+          description: Reminder dispatch summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronRemindersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+# =============================================================================
+# Components
+# =============================================================================
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: beam_session
+      description: HttpOnly, Secure, SameSite session cookie bound to `sessions.token_hash`.
+    cronSecret:
+      type: http
+      scheme: bearer
+      description: Secret bearer token matching `CRON_SECRET` used by Vercel Cron.
+
+  parameters:
+    ResourceIdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CursorParam:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  responses:
+    BadRequest:
+      description: Invalid request input (`400`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Unauthenticated or expired/revoked session (`401`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Authenticated but lacks required permission (`403`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource does not exist or is a hidden task the caller cannot view (`404`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: State or business rule conflict (`409` — e.g. duplicate key, stale version, non-empty column/department, last active admin, revert conflict)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: Rate limit exceeded (`429`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    # -------------------------------------------------------------------------
+    # Shared primitives & envelopes
+    # -------------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, messageKey, details]
+          properties:
+            code:
+              type: string
+              example: FORBIDDEN
+            messageKey:
+              type: string
+              example: errors.forbidden
+            details:
+              type: object
+              description: Structured error metadata (e.g., `conflictingFields`, `retryAfterSeconds`). MUST NEVER include raw `studentId` or `email` PII (AGENTS.md Section 7).
+              additionalProperties: true
+
+    CursorPageMeta:
+      type: object
+      required: [nextCursor, limit]
+      properties:
+        nextCursor:
+          type: ["string", "null"]
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+
+    DeleteSuccessResponse:
+      type: object
+      required: [deleted, id]
+      properties:
+        deleted:
+          type: boolean
+        id:
+          type: string
+          format: uuid
+
+    PermissionCode:
+      type: string
+      enum:
+        - member.view
+        - member.view_detail
+        - member.create
+        - member.update
+        - member.deactivate
+        - department.manage
+        - board.create
+        - board.update
+        - board.delete
+        - task.create
+        - task.assign
+        - task.update_any
+        - task.update_assigned
+        - task.delete
+        - comment.create
+        - comment.delete_any
+        - reminder.configure
+        - audit.view
+
+    # -------------------------------------------------------------------------
+    # Departments & Members
+    # -------------------------------------------------------------------------
+    DepartmentSummary:
+      type: object
+      required: [id, name]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    DepartmentDto:
+      type: object
+      required: [id, name, memberCount, boardCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        memberCount:
+          type: integer
+          minimum: 0
+        boardCount:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DepartmentListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DepartmentDto"
+
+    DepartmentResponse:
+      type: object
+      required: [department]
+      properties:
+        department:
+          $ref: "#/components/schemas/DepartmentDto"
+
+    DepartmentUpsertRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+
+    MemberPublicSummary:
+      type: object
+      description: Public member projection — NEVER includes `studentId` or `email`.
+      required: [id, fullName, isActive, leftAt, departments]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        isActive:
+          type: boolean
+        leftAt:
+          type: ["string", "null"]
+          format: date-time
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/DepartmentSummary"
+
+    MemberDetail:
+      type: object
+      description: Extended member projection — returned ONLY on `/me` or to callers with `member.view_detail` / admin.
+      required:
+        - id
+        - fullName
+        - isActive
+        - leftAt
+        - departments
+        - studentId
+        - email
+        - locale
+        - isAdmin
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        isActive:
+          type: boolean
+        leftAt:
+          type: ["string", "null"]
+          format: date-time
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/DepartmentSummary"
+        studentId:
+          type: string
+        email:
+          type: string
+          format: email
+        locale:
+          type: string
+          enum: [vi, en]
+        isAdmin:
+          type: boolean
+
+    MemberListItem:
+      oneOf:
+        - $ref: "#/components/schemas/MemberDetail"
+        - $ref: "#/components/schemas/MemberPublicSummary"
+
+    MemberPageResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberListItem"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    MemberItemResponse:
+      type: object
+      required: [member]
+      properties:
+        member:
+          $ref: "#/components/schemas/MemberListItem"
+
+    CreateMemberRequest:
+      type: object
+      required: [studentId, email, fullName]
+      properties:
+        studentId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        locale:
+          type: string
+          enum: [vi, en]
+          default: vi
+
+    UpdateMemberRequest:
+      type: object
+      description: "`studentId` is immutable (`WQ-21`) and intentionally omitted."
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        departmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        locale:
+          type: string
+          enum: [vi, en]
+
+    # -------------------------------------------------------------------------
+    # Auth & Me
+    # -------------------------------------------------------------------------
+    LoginRequest:
+      type: object
+      required: [studentId]
+      properties:
+        studentId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        remember:
+          type: boolean
+          default: false
+        returnTo:
+          type: ["string", "null"]
+
+    LoginResponse:
+      type: object
+      required: [user, redirectTo, expiresAt]
+      properties:
+        user:
+          $ref: "#/components/schemas/MemberDetail"
+        redirectTo:
+          type: string
+          example: /boards
+        expiresAt:
+          type: string
+          format: date-time
+
+    SessionInfoResponse:
+      type: object
+      required: [authenticated, userId, isAdmin, permissions, rememberMe, expiresAt]
+      properties:
+        authenticated:
+          type: boolean
+        userId:
+          type: string
+          format: uuid
+        isAdmin:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionCode"
+        rememberMe:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+
+    MeResponse:
+      type: object
+      required: [profile, permissions]
+      properties:
+        profile:
+          $ref: "#/components/schemas/MemberDetail"
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionCode"
+
+    UpdateMeRequest:
+      type: object
+      required: [locale]
+      properties:
+        locale:
+          type: string
+          enum: [vi, en]
+
+    # -------------------------------------------------------------------------
+    # Permissions & Presets
+    # -------------------------------------------------------------------------
+    PermissionDto:
+      type: object
+      required: [code, groupName, description, scopable]
+      properties:
+        code:
+          $ref: "#/components/schemas/PermissionCode"
+        groupName:
+          type: string
+        description:
+          type: string
+        scopable:
+          type: boolean
+
+    PermissionCatalogResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionDto"
+
+    MemberPermissionsResponse:
+      type: object
+      required: [userId, isAdmin, permissionCodes]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        isAdmin:
+          type: boolean
+        permissionCodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionCode"
+
+    ReplaceMemberPermissionsRequest:
+      type: object
+      required: [permissionCodes]
+      properties:
+        permissionCodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionCode"
+
+    PermissionPresetDto:
+      type: object
+      required: [id, code, name, description, permissionCodes]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          enum: [basic_member, department_lead, hr_manager]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        permissionCodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionCode"
+
+    PermissionPresetListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionPresetDto"
+
+    ApplyPresetRequest:
+      type: object
+      required: [presetCode]
+      properties:
+        presetCode:
+          type: string
+          enum: [basic_member, department_lead, hr_manager]
+
+    UpdateAdminFlagRequest:
+      type: object
+      required: [isAdmin]
+      properties:
+        isAdmin:
+          type: boolean
+
+    UpdateAdminFlagResponse:
+      type: object
+      required: [userId, isAdmin]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        isAdmin:
+          type: boolean
+
+    # -------------------------------------------------------------------------
+    # Boards & Columns
+    # -------------------------------------------------------------------------
+    ColumnDto:
+      type: object
+      required: [id, boardId, name, orderIndex, taskCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        orderIndex:
+          type: integer
+        taskCount:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BoardSummaryDto:
+      type: object
+      required: [id, name, department, archivedAt, createdBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        department:
+          oneOf:
+            - $ref: "#/components/schemas/DepartmentSummary"
+            - type: "null"
+        archivedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdBy:
+          $ref: "#/components/schemas/MemberPublicSummary"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BoardDetailDto:
+      type: object
+      required: [id, name, department, archivedAt, createdBy, columns, tasks, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        department:
+          oneOf:
+            - $ref: "#/components/schemas/DepartmentSummary"
+            - type: "null"
+        archivedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdBy:
+          $ref: "#/components/schemas/MemberPublicSummary"
+        columns:
+          type: array
+          items:
+            $ref: "#/components/schemas/ColumnDto"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDto"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BoardPageResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardSummaryDto"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    BoardSummaryResponse:
+      type: object
+      required: [board]
+      properties:
+        board:
+          $ref: "#/components/schemas/BoardSummaryDto"
+
+    BoardDetailResponse:
+      type: object
+      required: [board]
+      properties:
+        board:
+          $ref: "#/components/schemas/BoardDetailDto"
+
+    CreateBoardRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        departmentId:
+          type: ["string", "null"]
+          format: uuid
+
+    UpdateBoardRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        departmentId:
+          type: ["string", "null"]
+          format: uuid
+        unarchive:
+          type: boolean
+
+    ColumnResponse:
+      type: object
+      required: [column]
+      properties:
+        column:
+          $ref: "#/components/schemas/ColumnDto"
+
+    ColumnListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ColumnDto"
+
+    CreateColumnRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        orderIndex:
+          type: integer
+          minimum: 0
+
+    UpdateColumnRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    ReorderColumnsRequest:
+      type: object
+      required: [columnIds]
+      properties:
+        columnIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+
+    # -------------------------------------------------------------------------
+    # Tasks, Events, Comments
+    # -------------------------------------------------------------------------
+    TaskDto:
+      type: object
+      required:
+        - id
+        - boardId
+        - columnId
+        - title
+        - description
+        - dueAt
+        - priority
+        - position
+        - isHidden
+        - version
+        - deletedAt
+        - assignees
+        - creator
+        - commentCount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+        columnId:
+          type: ["string", "null"]
+          format: uuid
+          description: Null only for soft-deleted tasks whose original column was subsequently deleted (`WQ-33`).
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        dueAt:
+          type: ["string", "null"]
+          format: date-time
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: "1 = Low, 2 = Medium, 3 = High, 4 = Urgent"
+        position:
+          type: ["number", "string"]
+          description: Continuous ordering position within column (`numeric`)
+        isHidden:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        deletedAt:
+          type: ["string", "null"]
+          format: date-time
+        assignees:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberPublicSummary"
+        creator:
+          $ref: "#/components/schemas/MemberPublicSummary"
+        commentCount:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskResponse:
+      type: object
+      required: [task]
+      properties:
+        task:
+          $ref: "#/components/schemas/TaskDto"
+
+    TaskPageResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDto"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    TaskMutationResponse:
+      type: object
+      required: [task, eventId]
+      properties:
+        task:
+          $ref: "#/components/schemas/TaskDto"
+        eventId:
+          type: ["string", "null"]
+          format: uuid
+          description: Event recorded in `task_events` (`null` only if request was an exact no-op)
+
+    CreateTaskRequest:
+      type: object
+      required: [boardId, columnId, title]
+      properties:
+        boardId:
+          type: string
+          format: uuid
+        columnId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: ["string", "null"]
+        dueAt:
+          type: ["string", "null"]
+          format: date-time
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 4
+          default: 2
+        assigneeIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        isHidden:
+          type: boolean
+          default: false
+
+    UpdateTaskRequest:
+      type: object
+      required: [version]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: ["string", "null"]
+        dueAt:
+          type: ["string", "null"]
+          format: date-time
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 4
+        version:
+          type: integer
+          minimum: 1
+
+    MoveTaskRequest:
+      type: object
+      required: [columnId, version]
+      properties:
+        columnId:
+          type: string
+          format: uuid
+        beforeId:
+          type: ["string", "null"]
+          format: uuid
+        afterId:
+          type: ["string", "null"]
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+
+    ReplaceTaskAssigneesRequest:
+      type: object
+      required: [assigneeIds]
+      properties:
+        assigneeIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        version:
+          type: integer
+          minimum: 1
+
+    UpdateTaskHiddenRequest:
+      type: object
+      required: [isHidden]
+      properties:
+        isHidden:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+
+    TaskEventDto:
+      type: object
+      required: [id, taskId, boardId, actor, type, changes, revertsEventId, forced, revertable, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+        actor:
+          $ref: "#/components/schemas/MemberPublicSummary"
+        type:
+          type: string
+          example: task.updated
+        changes:
+          type: object
+          description: Stores IDs and before/after domain field values ONLY — never names, `studentId`, or `email`.
+          additionalProperties: true
+        revertsEventId:
+          type: ["string", "null"]
+          format: uuid
+        forced:
+          type: boolean
+        revertable:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    TaskEventPageResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskEventDto"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    RevertTaskEventRequest:
+      type: object
+      properties:
+        force:
+          type: boolean
+          default: false
+
+    RevertTaskEventResponse:
+      type: object
+      required: [task, eventId, revertedEventId]
+      properties:
+        task:
+          $ref: "#/components/schemas/TaskDto"
+        eventId:
+          type: string
+          format: uuid
+        revertedEventId:
+          type: string
+          format: uuid
+
+    CommentDto:
+      type: object
+      required: [id, taskId, author, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        author:
+          $ref: "#/components/schemas/MemberPublicSummary"
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CommentPageResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommentDto"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    CreateCommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    CreateCommentResponse:
+      type: object
+      required: [comment, eventId]
+      properties:
+        comment:
+          $ref: "#/components/schemas/CommentDto"
+        eventId:
+          type: string
+          format: uuid
+
+    DeleteCommentResponse:
+      type: object
+      required: [deleted, id, eventId]
+      properties:
+        deleted:
+          type: boolean
+        id:
+          type: string
+          format: uuid
+        eventId:
+          type: string
+          format: uuid
+
+    # -------------------------------------------------------------------------
+    # Settings, Audit Logs & Cron
+    # -------------------------------------------------------------------------
+    ReminderSettingsDto:
+      type: object
+      required: [daysBefore, remindOverdue, sendHourVn, updatedAt, updatedBy]
+      properties:
+        daysBefore:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 365
+        remindOverdue:
+          type: boolean
+        sendHourVn:
+          type: integer
+          minimum: 0
+          maximum: 23
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+        updatedBy:
+          oneOf:
+            - $ref: "#/components/schemas/MemberPublicSummary"
+            - type: "null"
+
+    ReminderSettingsResponse:
+      type: object
+      required: [settings]
+      properties:
+        settings:
+          $ref: "#/components/schemas/ReminderSettingsDto"
+
+    UpdateReminderSettingsRequest:
+      type: object
+      required: [daysBefore, remindOverdue]
+      properties:
+        daysBefore:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 365
+        remindOverdue:
+          type: boolean
+
+    AuditLogDto:
+      type: object
+      required: [id, actor, targetUser, action, detail, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor:
+          $ref: "#/components/schemas/MemberPublicSummary"
+        targetUser:
+          oneOf:
+            - $ref: "#/components/schemas/MemberPublicSummary"
+            - type: "null"
+        action:
+          type: string
+        detail:
+          type: object
+          description: Administrative action metadata without raw `studentId` or `email`.
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditLogPageResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogDto"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    CronRemindersResponse:
+      type: object
+      required: [processedTasks, emailsSent, remindersRecorded, skippedAlreadySent]
+      properties:
+        processedTasks:
+          type: integer
+          minimum: 0
+        emailsSent:
+          type: integer
+          minimum: 0
+        remindersRecorded:
+          type: integer
+          minimum: 0
+        skippedAlreadySent:
+          type: integer
+          minimum: 0

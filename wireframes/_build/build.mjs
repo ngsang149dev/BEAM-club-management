@@ -1,11 +1,12 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { esc } from './lib.mjs';
 import { screens } from './screens/index.mjs';
 import { renderIndex } from './index-page.mjs';
 import { renderComponents } from './components.mjs';
 
-const OUT = new URL('../', import.meta.url).pathname;
+const OUT = fileURLToPath(new URL('../', import.meta.url));
 const TODAY = '23.11.2026';
 
 const rail = [
@@ -62,7 +63,7 @@ const shell = (opts) => '<!doctype html>\n<html lang="vi">\n<head>\n' +
   '<div class="doc">\n' +
   '<aside class="rail" aria-label="Danh sách màn hình">\n' +
   '<div class="rail-head"><div class="rail-brand"><span class="rail-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><div><b>Bộ wireframe</b><span>CLB BEAM · quản lý &amp; giao task</span></div></div>' +
-  '<div class="rail-version">v1.0 · ' + TODAY + '<br>Nguồn: WIREFRAME-BRIEF v1.2<br>Handoff v1.3 · AGENTS v1.3</div></div>\n' +
+  '<div class="rail-version">v1.0 · ' + TODAY + '<br>Nguồn: WIREFRAME-BRIEF v1.2<br>Handoff v1.4 · AGENTS v1.4</div></div>\n' +
   '<nav class="rail-nav">' + railHtml(opts.current) + '</nav>\n' +
   '<div class="rail-foot"><a href="README.md">Cách đọc bộ wireframe</a><a href="OPEN-QUESTIONS.md">Câu hỏi mở &amp; giả định</a><span class="rail-note">S02 đã bỏ: hết phiên quay về S01, không nhập lại MSSV giữa trang.</span></div>\n' +
   '</aside>\n' +

@@ -2,11 +2,11 @@
 
 | Mục | Nội dung |
 |---|---|
-| Phiên bản tài liệu | 1.3 (bản chốt yêu cầu, có đề xuất chờ xác nhận) |
-| Ngày lập | 2026-11-20 |
-| Trạng thái dự án | **Lập kế hoạch**: yêu cầu đã chốt, sẵn sàng bắt đầu giai đoạn 0 (chưa có mã nguồn) |
+| Phiên bản tài liệu | 1.4 (bản chốt yêu cầu, cập nhật mô hình multi sub-agents & trạng thái wireframe 0A) |
+| Ngày lập | 2026-11-20 (cập nhật lần cuối 2026-11-23) |
+| Trạng thái dự án | **Đang ở giai đoạn 0A (Wireframe)**: đã dựng xong bộ wireframe tại `wireframes/` (15 màn hình + mẫu email E01 + thư viện thành phần); đang chờ chốt các câu hỏi mở trong `wireframes/OPEN-QUESTIONS.md` và Q36–Q41 để đóng 0A và chuyển sang 0B (CSDL), 0C (API) (chưa có mã nguồn ứng dụng) |
 | Chủ sở hữu yêu cầu | Sang (người đề xuất dự án) |
-| Ngôn ngữ giao diện | Tiếng Việt (cần xác nhận, xem mục 14) |
+| Ngôn ngữ giao diện | Song ngữ Việt/Anh (đã chốt v0.6, FR-50, D17) |
 
 > **Quy ước:** mục nào ghi **[Đề xuất]** là khuyến nghị kỹ thuật, **chưa được chủ dự án xác nhận**. Mục ghi **[Yêu cầu]** là yêu cầu do chủ dự án nêu trực tiếp.
 
@@ -27,6 +27,7 @@
 | 1.1 | 2026-11-22 | Bỏ hết hạn session 15 phút và hộp nhập lại MSSV (S02); thay bằng ô "Ghi nhớ đăng nhập" ở màn hình đăng nhập kèm hạn tối đa phía server (mục 4, 8.2, 9, 11, 12, 13, 14) |
 | 1.2 | 2026-11-22 | Thêm mục 8.7 (kiến trúc phần mềm và mẫu thiết kế bắt buộc, chống over-engineering) và mục 6A trong `AGENTS.md`; thêm design note và checklist thiết kế vào quy trình; cập nhật cấu trúc repo, E1, CI, rủi ro R17, quyết định D34 (mục 8.7, 11, 12, 13) |
 | 1.3 | 2026-11-22 | Thêm **lịch sử hoạt động (history tracking)** và **hoàn tác (undo) task** kèm Thùng rác: FR-60 đến FR-62, bảng `task_events`, mục 8.8 (gồm so sánh phương án công nghệ), endpoint, màn hình S15, AC-16 đến AC-22, epic E7A, rủi ro R18 đến R20, quyết định D35 đến D37, câu hỏi Q36 đến Q39 (mục 4, 8, 11, 12, 13, 14) |
+| 1.4 | 2026-11-23 | Chuyển sang **mô hình multi sub-agents** (agent điều phối + các sub-agent chuyên trách); cập nhật trạng thái **đã hoàn thành bản vẽ wireframe (0A)** tại `wireframes/` và đưa các câu hỏi mở từ `wireframes/OPEN-QUESTIONS.md` vào mục 14 để chốt trước khi đóng 0A (mục 6, 11.1, 11.2, 11.3, 11.5, 11.6, 11.7, 11.8, 12, 13, 14, 16) |
 
 ---
 
@@ -186,7 +187,7 @@ Mọi quyền **áp dụng toàn CLB** và được cấp **vĩnh viễn** cho �
 
 **Ràng buộc**
 - Ngân sách gần như bằng 0; phải dùng dịch vụ có gói miễn phí.
-- Chỉ một người chủ trì (chủ dự án, sinh viên, làm bán thời gian); công việc phát triển do một agent AI (harness DeepSeek) thực hiện tuần tự theo backlog, chủ dự án duyệt trước khi merge (mục 11.1).
+- Chỉ một người chủ trì (chủ dự án, sinh viên, làm bán thời gian); công việc phát triển chạy theo **mô hình multi sub-agents** (agent điều phối cùng các sub-agent chuyên trách theo backlog), chủ dự án quyết định nghiệp vụ và duyệt trước khi merge (mục 11.1).
 
 **Giả định (cần kiểm chứng)**
 - Giới hạn free tier của Vercel, nhà cung cấp PostgreSQL, dịch vụ email có thể thay đổi; **phải kiểm tra lại trang giá chính thức trước khi chốt**. Số liệu ở mục 7.3 lấy từ các trang tổng hợp/tài liệu công bố tháng 10–11/2026 và có chỗ lệch nhau giữa các nguồn.
@@ -526,34 +527,36 @@ Ghi chú: phân quyền theo từng tài khoản làm tuần 2 nặng hơn so v�
 
 Không có hạn chót ra mắt cố định (Q12), nên lộ trình mang tính định hướng.
 
-### 11.1 Mô hình làm việc: một người chủ trì + một agent AI làm tuần tự theo backlog (v0.9) **[Yêu cầu chủ dự án]**
+### 11.1 Mô hình làm việc: một người chủ trì + multi sub-agents (v1.4) **[Yêu cầu chủ dự án; cơ cấu chi tiết là Đề xuất chờ xác nhận Q40]**
 
-Công việc phát triển do **một agent AI** (chạy trên harness DeepSeek của chủ dự án) thực hiện, **lần lượt từng backlog item, mỗi lúc một item**. Chủ dự án quyết định nghiệp vụ, **duyệt trước khi merge** (Q31) và là người duy nhất thao tác trên production. Mô hình này thay mô hình 4 agent của v0.8.
+Công việc phát triển chạy theo **mô hình multi sub-agents** (một agent điều phối chính kết hợp các sub-agent chuyên trách), thay cho mô hình một agent đơn lẻ ở v0.9. Chủ dự án quyết định nghiệp vụ, **duyệt trước khi merge** (Q31) và là người duy nhất thao tác trên production.
 
 | Bên | Việc | Không được làm |
 |---|---|---|
-| **Chủ dự án** (người) | Đặt yêu cầu, trả lời câu hỏi mở, duyệt danh sách item của mỗi epic, đọc diff và test rồi duyệt PR, thực hiện hoặc duyệt mọi thao tác trên production | |
-| **Agent AI** | Soạn backlog item từ epic; viết test từ AC; viết mã (giao diện, API, CSDL, cron); tự kiểm tra; ghi chú bàn giao; cập nhật `docs/STATUS.md`; hỏi khi chỗ nào mơ hồ | Tự đổi nghiệp vụ hoặc tự sửa tài liệu nghiệp vụ; đổi hợp đồng API khi chưa ghi quyết định và chưa được duyệt; chạm production; merge khi chưa được duyệt |
+| **Chủ dự án** (người) | Đặt yêu cầu, trả lời câu hỏi mở, duyệt danh sách item mỗi epic, duyệt thay đổi `openapi.yaml`/`DECISIONS.md`, đọc diff và test rồi duyệt PR, thực hiện hoặc duyệt mọi thao tác trên production | |
+| **Agent điều phối chính (Coordinator)** *[Đề xuất]* | Đọc `AGENTS.md`/`docs/STATUS.md`/`docs/BACKLOG.md`, tách epic thành backlog item rõ phạm vi file, giao brief cho sub-agent, điều phối chạy song song khi không chồng lấn file, tích hợp kết quả, mở PR kèm ghi chú bàn giao, cập nhật `docs/STATUS.md`/`docs/BACKLOG.md` | Tự đổi nghiệp vụ hoặc tự sửa tài liệu nghiệp vụ; chạm production; merge khi chưa được duyệt |
+| **Các Sub-agent chuyên trách** *[Đề xuất, chờ xác nhận Q40 — ví dụ: Backend/DB, Frontend, QA/Reviewer độc lập]* | Thực thi đúng phạm vi item/vùng file được giao (viết mã, viết test từ AC, hoặc review diff/kiến trúc trên ngữ cảnh sạch) | Sửa file ngoài vùng sở hữu; tự ý chốt nghiệp vụ khi mơ hồ (phải báo lại Agent điều phối để hỏi chủ dự án); tự cập nhật `docs/STATUS.md`/`docs/BACKLOG.md`; chạm production |
 
 **Vòng đời một backlog item**
-1. **Backlog → Ready:** agent soạn các item của epic theo mẫu (mục 11.7); chủ dự án duyệt danh sách item trước khi bắt đầu epic.
-2. Agent chọn **đúng một item** theo thứ tự backlog (các phụ thuộc đã xong). Đầu phiên đọc `AGENTS.md`, `docs/STATUS.md` và các mục tài liệu ghi trong item.
-3. **Viết test trước (hoặc cùng lúc)** từ AC và `openapi.yaml`, không suy kỳ vọng từ mã.
-4. Ghi design note ngắn (mục 8.7, `AGENTS.md` mục 6A.7), rồi viết mã trong phạm vi item.
-5. **Tự kiểm tra:** chạy test, kiểm tra kiểu, lint, kiểm tra kiến trúc, đối chiếu từng AC, ghi AC nào đạt và đối chiếu checklist thiết kế (`AGENTS.md` mục 6A.8).
-6. Mở PR kèm ghi chú bàn giao (mẫu bên dưới).
-7. **Chờ duyệt:** chủ dự án đọc diff và test, thử trên bản preview, phản hồi; agent sửa theo phản hồi. **Chỉ merge sau khi chủ dự án duyệt.**
-8. Agent cập nhật `docs/STATUS.md` (và `docs/DECISIONS.md` nếu có quyết định), rồi mới sang item kế tiếp.
-
-Với item rủi ro cao, ngoài bước 7, nên cho **một phiên mới (ngữ cảnh sạch)** review diff để bắt lỗi mà phiên đã viết mã khó thấy (R15).
+1. **Backlog → Ready:** Agent điều phối soạn các item của epic theo mẫu (mục 11.7, kèm sub-agent phụ trách và phạm vi file không chồng lấn); chủ dự án duyệt danh sách item trước khi bắt đầu epic.
+2. **Giao việc:** Agent điều phối chọn item đủ phụ thuộc; đầu phiên đọc `AGENTS.md`, `docs/STATUS.md` và các mục tài liệu ghi trong item. Các item không chồng lấn file (và đã khóa `openapi.yaml`) có thể giao song song cho các sub-agent trên workspace/nhánh tách biệt; ngược lại chạy tuần tự.
+3. **Viết test trước (hoặc cùng lúc)** từ AC và `openapi.yaml` (ưu tiên tách sub-agent QA hoặc đối chiếu chéo), không suy kỳ vọng từ mã.
+4. Sub-agent thực thi ghi design note ngắn (mục 8.7, `AGENTS.md` mục 6A.7), rồi viết mã trong đúng vùng file được giao.
+5. **Kiểm tra độc lập:** chạy test, kiểm tra kiểu, lint, kiểm tra kiến trúc, đối chiếu từng AC, ghi AC nào đạt và đối chiếu checklist thiết kế (`AGENTS.md` mục 6A.8). Với item rủi ro cao, bắt buộc một sub-agent QA/Reviewer (ngữ cảnh sạch, khác sub-agent viết mã) review diff (giải quyết R15).
+6. Agent điều phối tích hợp và mở PR kèm ghi chú bàn giao (mẫu bên dưới).
+7. **Chờ duyệt:** chủ dự án đọc diff và test, thử trên bản preview, phản hồi; Agent điều phối giao sub-agent sửa theo phản hồi. **Chỉ merge sau khi chủ dự án duyệt.**
+8. Agent điều phối cập nhật `docs/BACKLOG.md`, `docs/STATUS.md` (và `docs/DECISIONS.md` nếu có quyết định), rồi mới sang item kế tiếp.
 
 **Mẫu ghi chú bàn giao (trong PR)**
 ```
-Item: E5-03
+Item: E5-03   [RỦI RO CAO nếu có]
+Sub-agent tham gia: ...
 Đã làm: ...
 File thay đổi: ...
 Cách chạy và kiểm tra: ...
 AC đã đạt / chưa đạt: ...
+Design note: ... (hoặc "item rất nhỏ")
+Checklist thiết kế (6A.8): đạt / mục không đạt và lý do: ...
 Giả định đã dùng: ...
 Câu hỏi cần bạn trả lời: ...
 ```
@@ -563,9 +566,10 @@ Câu hỏi cần bạn trả lời: ...
 2. **Hợp đồng API:** đổi `openapi.yaml` thì ghi vào `docs/DECISIONS.md` và chờ chủ dự án duyệt; không đổi âm thầm.
 3. **Một item, một PR, phạm vi nhỏ;** không làm lan sang việc ngoài phạm vi item.
 4. **Test từ AC:** test bắt nguồn từ AC và OpenAPI; chủ dự án review test như review mã.
-5. **Item rủi ro cao** gồm xác thực/session, `authorize`, lọc task ẩn, ẩn MSSV, lịch sử và hoàn tác, cron gửi mail, migration và cấu hình production: bắt buộc có test tự động và review kỹ.
-6. **Không chạm production:** agent không có thông tin truy cập production, không chạy migration lên production, không đổi biến môi trường production, không đọc dữ liệu thật. Chủ dự án thực hiện hoặc duyệt (D25).
-7. **Giữ ngữ cảnh bằng file:** đầu phiên đọc `AGENTS.md`, `docs/STATUS.md` và mục tài liệu liên quan; cuối phiên cập nhật `docs/STATUS.md`. Nếu harness giới hạn ngữ cảnh hoặc công cụ thì chia item nhỏ hơn (chủ dự án tự căn chỉnh harness).
+5. **Item rủi ro cao** gồm xác thực/session, `authorize`, lọc task ẩn, ẩn MSSV, lịch sử và hoàn tác, cron gửi mail, migration và cấu hình production: bắt buộc có test tự động và review kỹ bởi sub-agent QA/Reviewer độc lập.
+6. **Không chạm production:** không agent hay sub-agent nào có thông tin truy cập production, không chạy migration lên production, không đổi biến môi trường production, không đọc dữ liệu thật. Chủ dự án thực hiện hoặc duyệt (D25).
+7. **Giữ ngữ cảnh bằng file:** đầu phiên đọc `AGENTS.md`, `docs/STATUS.md` và mục tài liệu liên quan; chỉ Agent điều phối giữ và cập nhật `docs/STATUS.md`, `docs/BACKLOG.md` sau mỗi item.
+8. **Phối hợp multi sub-agents:** phân vùng sở hữu file rõ ràng tránh sửa đè; tách nhánh/workspace riêng khi chạy song song; khóa `openapi.yaml` trước khi Backend và Frontend làm song song; sub-agent QA/Reviewer tách ngữ cảnh khỏi sub-agent viết mã.
 
 ### 11.2 Hướng phát triển: thiết kế trước, viết mã sau **[Yêu cầu chủ dự án: thứ tự wireframe → CSDL → API]**
 
@@ -573,17 +577,21 @@ Giai đoạn 0 (tuần 0) chưa viết mã nghiệp vụ. Ba đầu ra phải **
 
 | Bước | Đầu ra | Công cụ gợi ý | Điều kiện hoàn thành | Câu hỏi phải chốt trước |
 |---|---|---|---|---|
-| 0A. Wireframe | Bộ wireframe các màn hình (mục 11.3), luồng điều hướng | AI làm riêng theo `WIREFRAME-BRIEF.md` (Q33); hoặc Figma/Excalidraw | Chủ CLB duyệt; mọi FR mức Must có màn hình tương ứng | Không |
-| 0B. CSDL | ERD cuối, DDL PostgreSQL, migration đầu tiên, dữ liệu seed (mục 11.4) | Mermaid hoặc dbdiagram.io, schema Prisma/Drizzle | Migration chạy sạch trên Neon, seed tạo được admin và dữ liệu mẫu | Không |
-| 0C. API | Tệp `openapi.yaml` mô tả endpoint, schema, lỗi, quyền (mục 11.5) | OpenAPI 3, Swagger UI hoặc Redoc | Mọi hành động trên wireframe có endpoint; mọi endpoint ghi có quyền yêu cầu | Không có |
+| 0A. Wireframe | Bộ wireframe các màn hình (mục 11.3), luồng điều hướng — **đã dựng xong bản vẽ tại `wireframes/`** (15 màn hình, mẫu email E01, thư viện thành phần) | AI làm riêng theo `WIREFRAME-BRIEF.md` (Q33); HTML/CSS/JS tĩnh | Chốt hết câu hỏi mở trong `wireframes/OPEN-QUESTIONS.md`, cập nhật bản vẽ nếu thay đổi giả định, chủ CLB duyệt; mọi FR mức Must có màn hình tương ứng | Các câu mức Cao trong `wireframes/OPEN-QUESTIONS.md` (`WQ-02`, `WQ-05`, `WQ-06`, `WQ-10`, `WQ-15`, `WQ-21`, `WQ-27`) và `WQ-32`/`Q39` |
+| 0B. CSDL | ERD cuối, DDL PostgreSQL, migration đầu tiên, dữ liệu seed (mục 11.4) | Mermaid hoặc dbdiagram.io, schema Prisma/Drizzle | Migration chạy sạch trên Neon, seed tạo được admin và dữ liệu mẫu | Các câu mức Cao của 0A ảnh hưởng schema (`WQ-02`, `WQ-10`, `WQ-12`, `WQ-21`, `WQ-23`, `WQ-32`) và `Q36–Q39` |
+| 0C. API | Tệp `openapi.yaml` mô tả endpoint, schema, lỗi, quyền (mục 11.5) | OpenAPI 3, Swagger UI hoặc Redoc | Mọi hành động trên wireframe có endpoint; mọi endpoint ghi có quyền yêu cầu | Điểm nghiệp vụ mục 11.5 và `WQ-01`, `WQ-05`, `WQ-06`, `WQ-09`/`WQ-15`, `WQ-27` |
 
 **Cổng duyệt trước khi viết mã:** lập bảng truy vết `FR → màn hình → bảng → endpoint` và kiểm tra không có FR Must nào thiếu một trong ba. Nếu wireframe cần dữ liệu mà bảng chưa có (hoặc ngược lại), sửa thiết kế trước, không vá bằng mã.
 
-**Thực hiện giai đoạn 0 tuần tự:** 0A (wireframe) do một AI khác làm riêng theo `WIREFRAME-BRIEF.md`; 0B (CSDL) và 0C (API) do agent phát triển làm. Chủ dự án (kèm chủ CLB với wireframe) duyệt xong bước trước mới sang bước sau. Cuối giai đoạn agent lập bảng truy vết và chủ dự án duyệt cổng.
+**Thực hiện giai đoạn 0 tuần tự:** 0A (wireframe) đã dựng xong bản vẽ tại `wireframes/`, còn bước chốt các câu hỏi mở trong `wireframes/OPEN-QUESTIONS.md` và duyệt cùng chủ CLB để đóng cổng 0A. Sau khi đóng 0A, Agent điều phối giao sub-agent thực hiện 0B (CSDL) và 0C (API), kèm sub-agent QA đối chiếu bảng truy vết trước khi chủ dự án duyệt cổng.
 
 ### 11.3 Giai đoạn 0A: Wireframe
 
 **Tài liệu giao việc riêng:** `WIREFRAME-BRIEF.md` (đã tóm tắt đủ ngữ cảnh để một AI khác làm độc lập, kèm tiêu chí chấp nhận và cấu trúc nộp bài).
+
+**Trạng thái hiện tại (2026-11-23):**
+- Đã hoàn thành bộ wireframe low-fidelity tại thư mục `wireframes/` gồm `index.html`, `components.html`, 15 màn hình (`s01-login.html`, `s03-boards.html` → `s15-trash.html`), mẫu email (`e01-reminder-email.html`), `wireframes/README.md` và `wireframes/OPEN-QUESTIONS.md`.
+- **Còn tồn đọng để hoàn tất 0A:** còn các câu hỏi mở và giả định cần chủ dự án xác nhận trong `wireframes/OPEN-QUESTIONS.md` (`WQ-01` → `WQ-35`, đã phân loại ở mục 14). Sau khi chốt, sửa lại các màn hình wireframe bị ảnh hưởng (nếu đổi giả định) và duyệt cùng chủ CLB để đóng cổng 0A.
 
 **Nguyên tắc:** ưu tiên điện thoại (mobile-first); vẽ cả bản tiếng Việt và tiếng Anh vì độ dài chuỗi khác nhau (FR-50); mỗi màn hình có trạng thái trống, đang tải, lỗi, hết session; nút và mục hiển thị theo quyền của người dùng. Trên điện thoại, bảng Kanban hiện một cột mỗi lần và cuộn ngang giữa các cột.
 
@@ -679,17 +687,18 @@ Tạo/sửa/lưu trữ board và cột làm bằng hộp thoại trên S03 và S
 
 Nhãn, checklist, file đính kèm không thuộc MVP; endpoint sẽ bổ sung sau theo nguyên tắc mở rộng ở mục 11.9.
 
-**Điểm nghiệp vụ cần chốt khi viết OpenAPI (đề xuất, chờ bạn xác nhận)**
-- Xóa cột còn task: trả 409 và yêu cầu chuyển task sang cột khác trước.
-- Xóa board: chỉ lưu trữ (archive), không xóa cứng.
-- Người tạo task rời CLB (bị khóa): task giữ nguyên, hiển thị "(đã rời)" (đã chốt Q11).
-- Task ẩn mà bỏ hết người được giao: chỉ admin và người tạo còn xem được.
-- Task đã ở cột cuối (Done) thì ngừng nhắc deadline.
+**Điểm nghiệp vụ cần chốt khi viết OpenAPI (đề xuất, chờ bạn xác nhận; tham chiếu chéo `wireframes/OPEN-QUESTIONS.md`)**
+- Xóa cột còn task: trả 409 và yêu cầu chuyển task sang cột khác trước (`WQ-05`).
+- Xóa board: chỉ lưu trữ (archive), không xóa cứng (`WQ-01`).
+- Người tạo task rời CLB (bị khóa): task giữ nguyên, hiển thị "(đã rời)" (đã chốt Q11; liên quan `WQ-22`).
+- Task ẩn mà bỏ hết người được giao: chỉ admin và người tạo còn xem được (`WQ-27`).
+- Task đã ở cột cuối (Done) thì ngừng nhắc deadline (liên quan `WQ-03`).
 
 ### 11.6 Cấu trúc repo, ranh giới của agent và quy ước
 
 ```
-/docs        HANDOFF, openapi.yaml, ERD, wireframe, BACKLOG.md, STATUS.md, DECISIONS.md
+/docs        HANDOFF, openapi.yaml, ERD, BACKLOG.md, STATUS.md, DECISIONS.md
+/wireframes  bộ wireframe đã dựng (chỉ sửa theo quyết định chốt OPEN-QUESTIONS.md ở 0A; chỉ đọc sau khi đóng 0A)
 /db          schema, migrations, seed
 /messages    vi.json, en.json (chuỗi giao diện và email)
 /src/app          trang giao diện và Route Handlers MỎNG (api/v1)
@@ -699,30 +708,35 @@ Nhãn, checklist, file đính kèm không thuộc MVP; endpoint sẽ bổ sung s
 /src/server/shared   hạ tầng dùng chung: db, errors, authorize, config, logger, clock, mailer (port + adapter), composition
 /src/lib          tiện ích thuần, schema dùng chung
 /tests       unit, integration, e2e
-AGENTS.md    quy tắc làm việc cho agent (tên tệp theo harness của bạn)
+AGENTS.md    quy tắc làm việc cho agent và các sub-agent
 ```
 
-**Ranh giới của agent**
+*(Ghi chú trạng thái repo 2026-11-23: hiện `HANDOFF-club-management-website.md`, `WIREFRAME-BRIEF.md` và `AGENTS.md` đang nằm ở gốc repo; sẽ sắp xếp thư mục `/docs` khi bắt đầu nền tảng E1.)*
+
+**Ranh giới của agent và sub-agent**
 
 | Vùng | Quy tắc |
 |---|---|
-| Tài liệu nghiệp vụ (HANDOFF) | Chỉ chủ dự án sửa; agent đề xuất thay đổi |
-| `docs/openapi.yaml` | Agent soạn và cập nhật; mỗi thay đổi ghi `DECISIONS.md` và chờ chủ dự án duyệt |
-| `docs/BACKLOG.md`, `docs/STATUS.md`, `docs/DECISIONS.md` | Agent cập nhật sau mỗi item |
-| `db/`, `src/`, `messages/`, `tests/` | Agent sửa trong phạm vi item |
-| Production (CSDL, biến môi trường, deploy) | Chỉ chủ dự án |
+| Tài liệu nghiệp vụ (`HANDOFF`) | Chỉ chủ dự án sửa (hoặc yêu cầu cập nhật); agent đề xuất thay đổi |
+| `wireframes/` | Chỉ đọc sau khi đóng 0A; hiện chỉ cập nhật theo quyết định chốt `wireframes/OPEN-QUESTIONS.md` |
+| `docs/openapi.yaml` | Agent điều phối / Sub-agent Backend soạn và cập nhật; mỗi thay đổi ghi `DECISIONS.md` và chờ chủ dự án duyệt |
+| `docs/BACKLOG.md`, `docs/STATUS.md`, `docs/DECISIONS.md` | Chỉ Agent điều phối cập nhật sau mỗi item |
+| `db/`, `src/server/`, `src/app/api/`, `src/lib/` | Sub-agent Backend/DB trong phạm vi item |
+| `src/features/`, `src/components/`, `src/app/` (trang UI), `messages/` | Sub-agent Frontend trong phạm vi item |
+| `tests/` | Sub-agent QA/Reviewer và sub-agent thực thi trong phạm vi item |
+| Production (CSDL, biến môi trường, deploy) | Chỉ chủ dự án; cấm mọi agent/sub-agent |
 
 **Quy ước:** TypeScript chế độ strict; mọi route đi qua lớp service, không truy vấn CSDL trực tiếp trong route; tách service theo module (boards, tasks, comments,...) để dễ mở rộng (mục 11.9). Nhánh theo backlog item, ví dụ `feat/E5-03-create-task-api`; mỗi PR có ghi chú bàn giao và danh sách kiểm tra: tiêu chí chấp nhận, test, chuỗi i18n, không lộ MSSV/email.
 
-**Nội dung tối thiểu của `AGENTS.md`:** quy tắc làm việc (mục 11.1), cấu trúc repo, lệnh chạy test, những điều cấm (hiển thị MSSV trái quy tắc, chạm production, merge khi chưa được duyệt) và danh sách tài liệu cần đọc đầu phiên.
+**Nội dung tối thiểu của `AGENTS.md`:** quy tắc làm việc (mục 11.1), cấu trúc repo, ranh giới sở hữu file giữa các sub-agent, lệnh chạy test, những điều cấm (hiển thị MSSV trái quy tắc, chạm production, merge khi chưa được duyệt) và danh sách tài liệu cần đọc đầu phiên. *(Lưu ý: `AGENTS.md` hiện là bản v1.3 viết cho 1 agent đơn lẻ, cần cập nhật lên v1.4 cho đồng bộ mô hình multi sub-agents ngay sau khi chốt Q40.)*
 
 ### 11.7 Backlog theo epic (khung)
 
-Agent làm lần lượt theo thứ tự epic và, trong mỗi epic, theo thứ tự item.
+Các epic thực hiện lần lượt theo thứ tự phụ thuộc; trong cùng một epic, Agent điều phối có thể chạy song song các item độc lập (không chồng lấn phạm vi file) qua các sub-agent chuyên trách.
 
 | Epic | Nội dung | FR / NFR chính | Tuần |
 |---|---|---|---|
-| E0 | Thiết kế: wireframe (0A), CSDL (0B), API contract (0C), bảng truy vết | Mục 11.2–11.5 | 0 |
+| E0 | Thiết kế: wireframe (0A — đã dựng xong bản vẽ, đang chốt câu hỏi mở), CSDL (0B), API contract (0C), bảng truy vết | Mục 11.2–11.5 | 0 |
 | E1 | Nền tảng: repo, khung kiến trúc phân lớp và composition root, CI (gồm kiểm tra kiến trúc), i18n, migration, deploy Vercel + Neon | NFR-02, NFR-10, mục 8.7 | 1 |
 | E2 | Xác thực và session | FR-04, FR-11, FR-40, FR-41 | 1 |
 | E3 | Thành viên và ban (nhập tay, nhiều ban, khóa khi rời CLB) | FR-10, FR-13, FR-42, FR-43 | 2 |
@@ -735,20 +749,21 @@ Agent làm lần lượt theo thứ tự epic và, trong mỗi epic, theo thứ 
 | E9 | Hoàn thiện: song ngữ đầy đủ, sao lưu, kiểm thử hồi quy, UAT, tài liệu | FR-50, NFR-06 | 6 |
 | E10 | Giai đoạn 2 (chưa cam kết): nhãn, checklist, file đính kèm, báo cáo/xuất dữ liệu (nếu cần sau này), RLS dự phòng | Mục 11.9 | Sau v1.0 |
 
-Mẫu một backlog item (do agent soạn, chủ dự án duyệt):
+Mẫu một backlog item (do Agent điều phối soạn, chủ dự án duyệt):
 
 ```
 ID: E5-03
 Tiêu đề: API tạo task
+Sub-agent phụ trách: Backend / Frontend / QA (Agent điều phối gán)
 Liên quan: FR-21, AC-06, mục 11.5 (POST /tasks)
 Phụ thuộc: E4-02 (authorize)
 Mục tài liệu cần đọc: 3.3, 8.6, 11.5
-Phạm vi file được sửa: src/app/api/v1/tasks/route.ts, src/server/tasks.ts
+Phạm vi file được sửa: src/app/api/v1/tasks/route.ts, src/server/modules/tasks/*
 Tiêu chí chấp nhận: Cho/Khi/Thì (lấy từ AC liên quan)
 Kiểm thử bắt buộc (viết trước): được/không được theo quyền `task.create`; lỗi dữ liệu
 Ngoài phạm vi: giao diện, nhãn, checklist
-Design note (agent điền trước khi code): ...
-Mức rủi ro: thường / cao (cần review kỹ)
+Design note (sub-agent điền trước khi code): ...
+Mức rủi ro: thường / cao (cần review kỹ bởi sub-agent QA/Reviewer ngữ cảnh sạch)
 Trạng thái: Backlog / Ready / In progress / Chờ duyệt / Done
 ```
 
@@ -757,7 +772,7 @@ Trạng thái: Backlog / Ready / In progress / Chờ duyệt / Done
 - Môi trường: local (CSDL dev riêng), preview (Vercel tạo bản xem thử cho mỗi PR), production.
 - CI (GitHub Actions): kiểm tra kiểu, lint, kiểm tra kiến trúc (hướng phụ thuộc, vòng phụ thuộc), test, kiểm tra mã khớp `openapi.yaml`; chặn merge khi một bước lỗi.
 - Chủ dự án kiểm tra trên bản preview của PR khi duyệt.
-- Quyền hạn: agent không có thông tin truy cập production; migration và deploy lên production do chủ dự án thực hiện hoặc duyệt. **Không merge vào nhánh chính khi chưa được chủ dự án duyệt** (Q31).
+- Quyền hạn: không agent hay sub-agent nào có thông tin truy cập production; migration và deploy lên production do chủ dự án thực hiện hoặc duyệt. **Không merge vào nhánh chính khi chưa được chủ dự án duyệt** (Q31).
 - Định nghĩa "xong": test qua, kiểm tra kiểu/lint/kiến trúc, các AC của item đạt, checklist thiết kế đạt, chủ dự án duyệt, cập nhật tài liệu và `docs/STATUS.md`.
 
 ### 11.9 Thiết kế mở để thêm tính năng sau **[Yêu cầu chủ dự án: Q28]**
@@ -787,10 +802,10 @@ MVP chỉ gồm phần thiết yếu của Trello: tạo list (cột), task (th�
 | R10 | Đăng nhập chỉ bằng MSSV: ai biết MSSV của người khác đều mạo danh được (kể cả admin) và xem được task ẩn của họ | Cao | Cao | **Đã chấp nhận (v0.5).** Giữ các biện pháp rẻ ở mục 8.2; nâng cấp bằng mật khẩu/PIN ở giai đoạn 2 nếu cần |
 | R11 | Dữ liệu bị lộ qua API dữ liệu tự động của nhà cung cấp (nếu dùng Supabase và để mặc định) | Trung bình | Cao | Tắt/khóa API dữ liệu hoặc bật RLS không có chính sách cho vai trò công khai; chỉ kết nối từ server; không đưa khóa công khai vào trình duyệt |
 | R12 | Người tích "Ghi nhớ đăng nhập" trên máy dùng chung rồi quên đăng xuất; session sống đến 30 ngày | Trung bình | Trung bình | Ô mặc định không tích kèm dòng nhắc "Chỉ tích trên thiết bị của bạn"; nút Đăng xuất ở hồ sơ; hạn tối đa phía server; khóa tài khoản có hiệu lực ngay (mục 8.2); về sau có thể thêm "đăng xuất mọi thiết bị" (mục 11.9) |
-| R13 | AI viết mã theo backlog có thể sai hoặc sót lỗ hổng, nhất là phần xác thực/phân quyền/task ẩn | Trung bình | Cao | Backlog item nhỏ có tiêu chí chấp nhận; test tự động bắt buộc cho phần rủi ro cao; chủ dự án review diff trước khi merge; test viết trước từ AC; item rủi ro cao review thêm bằng một phiên mới (mục 11.1) |
-| R14 | Agent mất ngữ cảnh giữa các phiên hoặc làm theo giả định thay vì theo tài liệu; mã lệch so với hợp đồng `openapi.yaml` | Cao | Trung bình | Item nhỏ có phạm vi, AC và mục tài liệu cần đọc; file trạng thái (`STATUS.md`, `DECISIONS.md`); đầu phiên đọc lại tài liệu; test hợp đồng kiểm tra mã khớp OpenAPI |
-| R15 | Cùng một agent viết cả mã và test nên test có thể sai cùng chỗ với mã, làm lọt lỗi | Trung bình | Cao | Viết test từ AC và OpenAPI trước hoặc cùng với mã, không suy kỳ vọng từ mã; chủ dự án review test như review mã; item rủi ro cao review thêm bằng một phiên mới (ngữ cảnh sạch) |
-| R16 | Agent thực hiện hành động nguy hiểm (migration lên production, đổi biến môi trường, đụng dữ liệu thật) | Thấp | Cao | Không cấp thông tin truy cập production cho agent; chủ dự án thực hiện hoặc duyệt (D25); dev/preview chỉ dùng dữ liệu seed |
+| R13 | AI viết mã theo backlog có thể sai hoặc sót lỗ hổng, nhất là phần xác thực/phân quyền/task ẩn | Trung bình | Cao | Backlog item nhỏ có tiêu chí chấp nhận; test tự động bắt buộc cho phần rủi ro cao; chủ dự án review diff trước khi merge; test viết trước từ AC; item rủi ro cao bắt buộc sub-agent QA/Reviewer (ngữ cảnh sạch) review diff (mục 11.1) |
+| R14 | Agent hoặc các sub-agent mất ngữ cảnh, xung đột vùng sửa hoặc lệch hợp đồng giữa Backend/Frontend và `openapi.yaml` | Cao | Trung bình | Phân vùng sở hữu file rõ ràng, tách nhánh/workspace khi chạy song song; khóa `openapi.yaml` trước; chỉ Agent điều phối giữ và cập nhật `STATUS.md`/`DECISIONS.md` và tích hợp; test hợp đồng kiểm tra mã khớp OpenAPI |
+| R15 | Cùng một agent viết cả mã và test nên test có thể sai cùng chỗ với mã, làm lọt lỗi | Trung bình | Cao | Mô hình multi sub-agents tách sub-agent QA/Reviewer (ngữ cảnh sạch) độc lập với sub-agent viết mã (nhất là item rủi ro cao); viết test từ AC và OpenAPI trước hoặc cùng với mã, không suy kỳ vọng từ mã; chủ dự án review test như review mã |
+| R16 | Agent hoặc sub-agent thực hiện hành động nguy hiểm (migration lên production, đổi biến môi trường, đụng dữ liệu thật) | Thấp | Cao | Không cấp thông tin truy cập production cho agent hay bất kỳ sub-agent nào; chủ dự án thực hiện hoặc duyệt (D25); dev/preview chỉ dùng dữ liệu seed |
 | R17 | Mã sai kiến trúc (nghiệp vụ lẫn vào route/component, import chéo, truy cập DB trực tiếp) làm khó bảo trì và mở rộng | Trung bình | Cao | Mục 8.7 và `AGENTS.md` mục 6A; design note trước khi code; checklist thiết kế; kiểm tra kiến trúc trong CI; chủ dự án từ chối PR vi phạm |
 | R18 | Lịch sử làm phình dữ liệu hoặc chậm truy vấn | Thấp | Thấp | Chỉ ghi khi có thay đổi thật; chỉ mục `(task_id, created_at)`; phân trang; quy mô 50 người nên khối lượng nhỏ |
 | R19 | Hoàn tác ghi đè thay đổi của người khác | Trung bình | Trung bình | Kiểm tra `version` và giá trị `to`; trả 409; chỉ `force` khi người dùng xác nhận; mọi lần hoàn tác đều có sự kiện |
@@ -821,7 +836,7 @@ MVP chỉ gồm phần thiết yếu của Trello: tạo list (cột), task (th�
 | D19 | Chức năng giống Trello, thêm priority của task | **Đã chốt** (yêu cầu của chủ CLB, v0.6) | Phạm vi: phần thiết yếu (list, task, giao việc, bình luận) + priority; thiết kế mở để thêm sau (Q28; mục 11.9) |
 | D20 | Admin có quyền cao nhất, vượt mọi kiểm tra quyền | **Đã chốt** (v0.6) | Mục 3.2 nguyên tắc 8; Q29 đã trả lời: admin sửa được hết |
 | D21 | Mốc nhắc deadline do admin cấu hình | **Đã chốt** (v0.6) | Giờ gửi: mục 8.4 |
-| D22 | Một người chủ trì + **một agent AI** (harness DeepSeek) làm tuần tự theo backlog; chủ dự án duyệt trước khi merge | **Đã chốt** (v0.9, thay mô hình 4 agent của v0.8) | Mục 11.1, R13–R15 |
+| D22 | Một người chủ trì + **mô hình multi sub-agents** (agent điều phối + các sub-agent chuyên trách); chủ dự án duyệt trước khi merge | **Đã chốt đổi hướng** (v1.4, thay mô hình một agent ở v0.9); cơ cấu sub-agent chi tiết là đề xuất chờ xác nhận (Q40) | Mục 11.1, R13–R15 |
 | D23 | `openapi.yaml` là hợp đồng API; đổi phải ghi `DECISIONS.md` và được chủ dự án duyệt | Đề xuất, chờ xác nhận | Mục 11.1 quy tắc 2 |
 | D24 | Viết test từ AC và OpenAPI trước hoặc cùng với mã; chủ dự án review test như review mã | Đề xuất, chờ xác nhận | Mục 11.1, R15 |
 | D25 | Agent không có thông tin truy cập production; chủ dự án thực hiện hoặc duyệt migration và deploy production | Đề xuất, chờ xác nhận | Mục 11.8, R16 |
@@ -832,7 +847,7 @@ MVP chỉ gồm phần thiết yếu của Trello: tạo list (cột), task (th�
 | D30 | Thiết kế mở để thêm tính năng sau (nhãn, checklist, đính kèm, báo cáo,...) | **Đã chốt** (v0.9) | Mục 11.9, Q28 |
 | D31 | Cờ ẩn do người tạo task và admin bật/tắt; bỏ quyền `task.hide` | **Đã chốt** (v1.0) | Q25b |
 | D32 | Chưa làm báo cáo cuối năm trong MVP; để mở thêm sau | **Đã chốt** (v1.0) | Q32, mục 11.9 |
-| D33 | Wireframe giao một AI khác làm riêng theo `WIREFRAME-BRIEF.md` | **Đã chốt** (v1.0) | Q33, mục 11.3 |
+| D33 | Wireframe giao một AI khác làm riêng theo `WIREFRAME-BRIEF.md` | **Đã hoàn thành bản vẽ (v1.4)** tại `wireframes/`; đang chốt câu hỏi mở trong `wireframes/OPEN-QUESTIONS.md` | Q33, mục 11.3, 14 |
 | D34 | Áp dụng nghiêm ngặt kiến trúc phân lớp và mẫu thiết kế ở mục 8.7 để bảo trì và mở rộng được, kèm quy tắc chống over-engineering | **Đã chốt** (v1.2, yêu cầu chủ dự án) | Mục 8.7, `AGENTS.md` mục 6A, R17 |
 | D35 | Có lịch sử hoạt động và hoàn tác task; lịch sử ghi ở tầng ứng dụng bằng bảng `task_events` (chỉ ghi thêm, cùng transaction) thay vì trigger CSDL hay event sourcing | **Đã chốt** nhu cầu (v1.3); phương án công nghệ đề xuất, chờ xác nhận (Q36) | Mục 8.8, R18–R20 |
 | D36 | Hoàn tác = sự kiện mới, cần đúng quyền của thao tác gốc, chặn khi xung đột (409) trừ khi xác nhận | Đề xuất, chờ xác nhận | Mục 8.8, Q37 |
@@ -840,20 +855,60 @@ MVP chỉ gồm phần thiết yếu của Trello: tạo list (cột), task (th�
 
 ## 14. Câu hỏi mở
 
-Câu hỏi phát sinh khi làm wireframe được ghi trong `OPEN-QUESTIONS.md` của bộ wireframe, rồi chuyển vào đây.
+Các câu hỏi dưới đây đang chờ chủ dự án chốt (gồm câu hỏi kiến trúc/nghiệp vụ Q36–Q41 và các câu hỏi phát sinh từ bộ wireframe trong `wireframes/OPEN-QUESTIONS.md` để hoàn tất hẳn giai đoạn 0A).
 
 | # | Câu hỏi | Ảnh hưởng tới | Gợi ý của mình |
 |---|---|---|---|
 | Q36 | Phương án công nghệ cho lịch sử và hoàn tác: chọn A (event log ở tầng ứng dụng) hay phương án khác trong mục 8.8? | Mục 8.8, E7A | A |
 | Q37 | Phạm vi hoàn tác đã đủ chưa: đổi cột/vị trí, sửa trường, đổi người được giao, bật/tắt ẩn, xóa/khôi phục (không gồm bình luận và thao tác quản trị)? Cửa sổ hoàn tác nhanh 10 giây có ổn không? | FR-61 | Giữ như đề xuất |
 | Q38 | Ai xem được lịch sử của một task: mọi người xem được task đó, hay chỉ người tạo, người được giao và admin? | FR-60, AC-20 | Mọi người xem được task đó |
-| Q39 | Task đã xóa: chỉ xóa mềm và có Thùng rác, hay cần thêm xóa vĩnh viễn (chỉ admin)? Thùng rác giữ bao lâu? | FR-62, NFR-05 | Xóa mềm, giữ mãi; xóa vĩnh viễn để giai đoạn 2 |
+| Q39 | Task đã xóa: chỉ xóa mềm và có Thùng rác, hay cần thêm xóa vĩnh viễn (chỉ admin)? Thùng rác giữ bao lâu? *(Lưu ý đang lệch `WQ-32`: wireframe đang giả định tự dọn sau 30 ngày)* | FR-62, NFR-05, `WQ-32` | Xóa mềm, giữ mãi; xóa vĩnh viễn để giai đoạn 2 |
+| Q40 | Cơ cấu multi sub-agents cụ thể: chọn các vai trò chuyên trách nào (Điều phối + Backend/DB + Frontend + QA/Reviewer?), khi nào chạy song song vs tuần tự, và dùng công cụ/harness nào? | Mục 11.1, 11.6, `AGENTS.md` | 1 Điều phối + 3 chuyên trách (Backend/DB, Frontend, QA/Reviewer độc lập); song song khi không trùng vùng file |
+| Q41 | Có cập nhật đồng bộ `AGENTS.md` từ v1.3 lên v1.4 theo mô hình multi sub-agents ngay sau khi chốt Q40 không? | `AGENTS.md`, E0/E1 | Có, cập nhật trước khi sang 0B |
+
+### Câu hỏi mở từ bộ wireframe (`wireframes/OPEN-QUESTIONS.md`) cần chốt để đóng giai đoạn 0A
+
+Bộ wireframe đã dựng xong với các giả định tạm thời cho `WQ-01` → `WQ-35` (xem chi tiết tại `wireframes/OPEN-QUESTIONS.md`). Cần chốt các mục sau để hoàn tất hẳn phần wireframe:
+
+**Nhóm ưu tiên Cao (chốt trước khi đóng 0A và sang 0B/0C)**
+
+| ID | Câu hỏi | Giả định hiện dùng trong wireframe | Điểm cần chú ý |
+|---|---|---|---|
+| WQ-02 | Một board thuộc một ban hay nhiều ban? | Một ban, hiển thị như nhãn | Ảnh hưởng schema `boards` (`department_id` vs bảng nối) |
+| WQ-05 | Xóa cột còn task thì xử lý sao? | Chặn; bắt chuyển task sang cột khác trước | Cần chốt khớp điểm nghiệp vụ mục 11.5 (trả 409) |
+| WQ-06 | Mẫu quyền cộng dồn hay thay thế? | Thay thế toàn bộ, có xác nhận và đếm thêm/bỏ | Ảnh hưởng logic áp mẫu quyền (S10, API) |
+| WQ-10 | Xóa ban còn thành viên/board: chặn hay chuyển? | Chặn, cho chuyển dữ liệu trong hộp thoại | Ảnh hưởng luồng S11 và API xóa ban |
+| WQ-09, WQ-15 | Sau đăng nhập có quay lại deep link không; `returnTo` có cho URL ngoài? | Có quay lại deep link nếu hợp lệ (không thì về S03); chỉ cho path nội bộ | Chốt rule bảo mật chống open-redirect (S01, auth) |
+| WQ-21 | Có cho đổi MSSV sau khi tạo? | Không; MSSV là định danh đăng nhập | Chốt khóa trường MSSV ở S09 và `PATCH /members/{id}` |
+| WQ-27 | Email nhắc có nhắc task ẩn không? | Chỉ với người được xem; không lộ tiêu đề | Khớp FR-26; cần chốt có giữ tiêu đề trong email cho người được xem |
+
+**Nhóm ưu tiên Vừa (nên chốt để hoàn thiện 0A)**
+
+| ID | Câu hỏi | Giả định hiện dùng trong wireframe | Ghi chú |
+|---|---|---|---|
+| WQ-32 | Thùng rác tự dọn sau bao lâu? | Giả định 30 ngày | **Đang lệch Q39** (Q39 đề xuất giữ mãi, chưa xóa vĩnh viễn ở MVP) |
+| WQ-01 | Board đã lưu trữ có hiện trong danh sách không? | Ẩn mặc định; chỉ admin thấy mục "Đã lưu trữ" | Liên quan quyền xem và bộ lọc S03 |
+| WQ-03 | Task ở cột Done có bị loại khỏi "Task của tôi" không? | Có, mặc định ẩn; có bộ lọc "Hiện cả việc đã xong" | Ảnh hưởng màn S06 và `GET /me/tasks` |
+| WQ-11 | Tìm thành viên theo MSSV khi người xem thiếu `member.view_detail`? | Không trả kết quả; tìm theo tên/ban | Chốt để tránh lộ gián tiếp MSSV qua ô tìm kiếm (FR-42) |
+| WQ-12 | Hạn task lưu ngày hay giờ? | Ngày (`00:00 UTC+7`), không có giờ | Cần chốt rõ chỉ nhập ngày hay nhập cả ngày + giờ |
+| WQ-13 | Mobile có màn quản trị không? | Có bản đọc; sửa phức tạp khuyến khích desktop, nhưng không chặn | Chốt trải nghiệm responsive cho S09–S13 |
+| WQ-16 | Mất mạng khi đang nhập task: giữ nháp? | Không tự lưu; cảnh báo rõ | Hành vi form ở S04/S05 |
+| WQ-19 | Người dùng tự đổi ngôn ngữ hay theo hồ sơ? | Tự đổi trên giao diện; email theo `profiles.locale` | Cần chốt: đổi công tắc giao diện có tự lưu về `profiles.locale` không |
+| WQ-23 | Admin có tạo mẫu quyền riêng? | Không trong MVP; chỉ 3 mẫu cố định | Khớp bảng `permission_presets` hoặc bỏ CRUD mẫu quyền ở MVP |
+| WQ-33 | Khôi phục task khi cột cũ đã bị xóa? | Về cột đầu tiên; ghi lịch sử | Khớp mục 8.8 và AC-21 |
+| WQ-35 | Liên kết trong email có cần đăng nhập lại? | Có; về S01 rồi quay lại S06 nếu còn phiên hợp lệ | Khớp luồng deep link ở `WQ-09`/`WQ-15` |
+
+**Nhóm ưu tiên Thấp (có thể chốt gộp theo giả định trong `wireframes/OPEN-QUESTIONS.md`):**
+- `WQ-04` ("Tuần này": thứ Hai đến Chủ nhật theo `Asia/Ho_Chi_Minh`); `WQ-18` (nhiều ban hiển thị nhiều chip, không có ban "chính"); `WQ-25` (ban không thành viên được xóa nếu không còn board); `WQ-28` (audit lưu không giới hạn trong MVP, lọc 30 ngày mặc định); `WQ-30` (trang bảo trì chỉ bật thủ công khi deploy cần); `WQ-31` (lỗi chỉ hiện mã yêu cầu, không stack trace); `WQ-34` (task cùng hạn trong email xếp priority cao trước, rồi tên).
+
+**Nhóm đã khớp HANDOFF v1.3 (xác nhận đóng ngay):**
+- `WQ-07` (gỡ admin cuối cùng: chặn — khớp FR-18, AC-09); `WQ-08` & `WQ-26` (một email gộp mỗi người mỗi ngày, không gửi trùng — khớp FR-31, AC-03); `WQ-14` (giới hạn nhẹ theo IP, thông báo chung — khớp FR-41, AC-12); `WQ-17` (task ẩn trả 404 trong thùng rác với người không được xem — khớp FR-26, AC-15); `WQ-20` (không có đổi mật khẩu — khớp D1); `WQ-22` (không xóa cứng thành viên, chỉ khóa `is_active=false` — khớp D28, FR-43); `WQ-24` (quyền toàn CLB trong MVP — khớp D26); `WQ-29` (đăng nhập ghi `login_attempts` tách `audit_logs` — khớp mục 8.1, FR-41).
 
 **Đã trả lời**
 
 | # | Câu hỏi | Trả lời |
 |---|---|---|
-| Q1 | Làm một mình hay theo nhóm? | Một người chủ trì; một agent AI (harness DeepSeek) làm tuần tự theo backlog (v0.9); người duy trì sau nhiệm kỳ: xem R5 |
+| Q1 | Làm một mình hay theo nhóm? | Một người chủ trì; một agent AI (harness DeepSeek) làm tuần tự theo backlog (v0.9); **đổi ở v1.4:** chuyển sang mô hình multi sub-agents (xem D22, Q40); người duy trì sau nhiệm kỳ: xem R5 |
 | Q2 | Công nghệ web | React/Next.js |
 | Q3 | Gmail và/hoặc tên miền | Email thành viên dùng tên miền trường `@eiu.edu.vn` |
 | Q4 | Thời hạn session | 15 phút, hết hạn trượt (v0.9); **đổi ở v1.1:** bỏ hết hạn 15 phút, dùng ô "Ghi nhớ đăng nhập" |
@@ -883,11 +938,11 @@ Câu hỏi phát sinh khi làm wireframe được ghi trong `OPEN-QUESTIONS.md` 
 | Q27 | Kiểu hết hạn session | Hết hạn trượt (v0.9); thay bằng ô "Ghi nhớ đăng nhập" ở v1.1 |
 | Q28 | "Giống Trello" gồm gì, priority 4 mức | Phần thiết yếu (tạo list, task, giao việc, bình luận,...); thiết kế mở để thêm sau; priority 4 mức ổn |
 | Q29 | "Admin có quyền cao hơn tất cả. Sửa icon,..." | Admin sửa được hết |
-| Q30 | Công cụ chạy agent | Harness DeepSeek; **một agent làm hết, tuần tự theo backlog** |
+| Q30 | Công cụ chạy agent | Harness DeepSeek; **một agent làm hết, tuần tự theo backlog** (v0.9); **đổi ở v1.4:** chuyển sang mô hình multi sub-agents (xem Q40) |
 | Q25b | Ai được bật/tắt cờ ẩn của task | Người tạo task và admin (không cần quyền riêng) |
 | Q31 | Mức tự chủ khi merge | Chủ dự án duyệt trước rồi mới merge |
 | Q32 | Báo cáo cuối năm | Không cần làm bây giờ; để mở thêm sau |
-| Q33 | Cách làm wireframe | Giao một AI khác làm riêng theo `WIREFRAME-BRIEF.md` |
+| Q33 | Cách làm wireframe | Giao một AI khác làm riêng theo `WIREFRAME-BRIEF.md` (đã dựng xong tại `wireframes/`, đang chốt `OPEN-QUESTIONS.md` ở v1.4) |
 | Q34 | Khả năng và giới hạn của harness DeepSeek | Chủ dự án tự căn chỉnh |
 | Q35 | Có nên bỏ hẳn hết hạn session | Không bỏ hẳn; dùng ô "Ghi nhớ đăng nhập" (hạn mặc định 24 giờ / 30 ngày là đề xuất, chỉnh được) |
 
@@ -905,9 +960,9 @@ Câu hỏi phát sinh khi làm wireframe được ghi trong `OPEN-QUESTIONS.md` 
 
 ## 16. Bước tiếp theo
 
-1. Giao `WIREFRAME-BRIEF.md` cho một AI làm giai đoạn 0A (wireframe).
-2. Duyệt wireframe cùng chủ CLB; nếu có thay đổi nghiệp vụ thì cập nhật tài liệu này trước.
-3. Viết `AGENTS.md` cho agent phát triển (mục 11.6).
-4. Giai đoạn 0B: agent chốt ERD, viết schema, migration và seed (mục 11.4); chủ dự án duyệt.
-5. Giai đoạn 0C: agent viết `openapi.yaml` (mục 11.5) và lập bảng truy vết FR → màn hình → bảng → endpoint; chủ dự án duyệt cổng.
-6. Agent soạn backlog item theo mẫu ở mục 11.7; chủ dự án duyệt danh sách item của epic rồi agent làm lần lượt từng item.
+1. ~~Giao `WIREFRAME-BRIEF.md` cho một AI làm giai đoạn 0A (wireframe).~~ → **Đã xong** (bản vẽ tại `wireframes/`).
+2. **Hiện tại (hoàn tất giai đoạn 0A):** Chủ dự án chốt các câu hỏi mở của wireframe (`wireframes/OPEN-QUESTIONS.md`, ưu tiên nhóm Cao và `WQ-32`) cùng `Q36–Q41`; cập nhật lại wireframe ở các điểm thay đổi giả định và duyệt cùng chủ CLB.
+3. Cập nhật `AGENTS.md` từ v1.3 lên v1.4 cho khớp mô hình multi sub-agents (sau khi chốt `Q40`), và tạo các tệp theo dõi trạng thái (`docs/STATUS.md`, `docs/BACKLOG.md`, `docs/DECISIONS.md`).
+4. Giai đoạn 0B: Agent điều phối giao sub-agent chốt ERD, viết schema, migration và seed (mục 11.4); chủ dự án duyệt.
+5. Giai đoạn 0C: viết `openapi.yaml` (mục 11.5) và lập bảng truy vết `FR → màn hình → bảng → endpoint` (có sub-agent QA đối chiếu); chủ dự án duyệt cổng.
+6. Agent điều phối soạn backlog item theo mẫu ở mục 11.7 (kèm phân công sub-agent và phạm vi file); chủ dự án duyệt danh sách item của epic rồi triển khai theo mô hình multi sub-agents.
