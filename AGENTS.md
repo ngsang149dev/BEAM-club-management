@@ -201,14 +201,17 @@ Giả định / Câu hỏi: ...
 ### 9.2 `docs/STATUS.md` | 9.3 Backlog item | 9.4 `docs/DECISIONS.md`
 Giữ đúng mẫu trong `docs/HANDOFF-club-management-website.md` mục 11.7 và `docs/STATUS.md` / `docs/DECISIONS.md` hiện có.
 
-## 10. Lệnh chuẩn *(điền hoàn chỉnh khi xong E1)*
+## 10. Lệnh chuẩn
 
 | Việc | Lệnh |
 |---|---|
-| Cài phụ thuộc | `npm install` *(E1)* |
-| Chạy dev / Typecheck / Lint | `<điền ở E1>` |
-| Test / Kiến trúc / OpenAPI | `<điền ở E1>` |
-| Áp migration & seed (dev) | `psql` (`db/migrations/`, `db/seed.sql`) → Drizzle ở E1 |
+| Cài phụ thuộc | `npm install` |
+| Chạy dev / Build | `npm run dev` / `npm run build` |
+| Typecheck / Lint | `npm run typecheck` / `npm run lint` |
+| Kiểm tra kiến trúc / OpenAPI | `npm run arch:check` / `npm run openapi:check` |
+| Sinh type từ OpenAPI | `npm run openapi:generate` |
+| Test (toàn bộ / unit / integration) | `npm test` / `npm run test:unit` / `npm run test:integration` |
+| Áp migration & seed (dev / test) | `npm run db:migrate` (`-- --test`) / `npm run db:seed` |
 
 ## 11. Điều cấm tóm tắt
 Chạm production; commit bí mật; merge chưa duyệt; đoán nghiệp vụ; sửa HANDOFF; sửa test/hạ AC; lộ MSSV/email hoặc task ẩn; bỏ qua `authorize`; đặt nghiệp vụ trong route/UI hoặc SQL ngoài repository; import chéo nội bộ module; trả entity ORM ra API; tự chế crypto; thêm tính năng ngoài MVP.

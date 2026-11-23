@@ -1,0 +1,132 @@
+{
+  "app": {
+    "name": "BEAM",
+    "title": "BEAM Club · Member & Task Management",
+    "subtitle": "Club workspace",
+    "footerNote": "BEAM Club · Internal system",
+    "skipToContent": "Skip to content"
+  },
+  "nav": {
+    "groups": {
+      "workspace": "Workspace",
+      "admin": "Admin"
+    },
+    "boards": "Boards",
+    "myTasks": "My tasks",
+    "members": "Members",
+    "profile": "Profile",
+    "memberAdmin": "Member admin",
+    "permissions": "Permissions",
+    "departments": "Departments",
+    "reminders": "Reminders",
+    "auditLog": "Audit log",
+    "signOut": "Sign out",
+    "openMenu": "Open navigation menu",
+    "closeMenu": "Close navigation menu",
+    "drawerAriaLabel": "Navigation menu",
+    "sidebarAriaLabel": "Primary navigation",
+    "mobileTabsAriaLabel": "Quick navigation"
+  },
+  "common": {
+    "loading": "Loading...",
+    "retry": "Try again",
+    "cancel": "Cancel",
+    "save": "Save",
+    "close": "Close",
+    "backToBoards": "Back to boards",
+    "backToMyTasks": "My tasks",
+    "goHome": "Home",
+    "signInAgain": "Sign in again",
+    "undo": "Undo",
+    "search": "Search"
+  },
+  "priority": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "urgent": "Urgent"
+  },
+  "member": {
+    "leftBadge": "(left)",
+    "activeStatus": "Active",
+    "leftStatus": "Left"
+  },
+  "language": {
+    "label": "Language",
+    "ariaLabel": "Interface language",
+    "vi": "VI",
+    "en": "EN",
+    "viName": "Vietnamese",
+    "enName": "English"
+  },
+  "home": {
+    "kicker": "Club workspace",
+    "title": "BEAM Club Workspace",
+    "subtitle": "Internal member directory, department permissions, and Kanban task boards.",
+    "statusTitle": "Foundation ready",
+    "statusDescription": "Bilingual Vietnamese/English navigation shell, UX permission helpers, and typed OpenAPI client are ready.",
+    "quickLinksTitle": "Core areas",
+    "priorityLegendTitle": "Task priorities",
+    "openSection": "Open",
+    "cards": {
+      "boards": "Kanban boards, columns, task cards, and Trash per club workstream.",
+      "myTasks": "Tasks assigned to you sorted by upcoming deadlines and priority.",
+      "members": "Club member directory by department with gated student ID and email visibility.",
+      "profile": "Inspect your own profile, effective permissions, and preferred language."
+    }
+  },
+  "errors": {
+    "requestIdLabel": "Request ID",
+    "validation": "The submitted input is invalid.",
+    "badRequest": "Invalid request.",
+    "unauthorized": "Please sign in to continue.",
+    "forbidden": "You do not have permission to perform this action.",
+    "notFound": "Requested resource was not found.",
+    "conflict": "This action conflicts with the current state.",
+    "tooManyRequests": "Too many requests. Please try again later.",
+    "internal": "Server error occurred. Please try again later.",
+    "network": "Could not reach the server.",
+    "invalidResponse": "Invalid response from server.",
+    "unknown": "An unknown error occurred.",
+    "401": {
+      "code": "401",
+      "title": "Sign in required",
+      "description": "Sign in with your student ID to access this workspace."
+    },
+    "403": {
+      "code": "403",
+      "title": "You cannot view this page",
+      "description": "This page needs a permission your account does not have. If you think this is a mistake, contact a club admin."
+    },
+    "404": {
+      "code": "404",
+      "title": "Page not found",
+      "description": "The path does not exist, or you cannot view it. The system does not say which — including for hidden tasks."
+    },
+    "409": {
+      "code": "409",
+      "title": "Action conflict",
+      "description": "This record changed or is still referenced elsewhere. Refresh to view the latest state."
+    },
+    "429": {
+      "code": "429",
+      "title": "Too many requests",
+      "description": "You sent too many requests in a short time. Please wait a few minutes and try again."
+    },
+    "500": {
+      "code": "500",
+      "title": "Something went wrong",
+      "description": "We logged it. Try again shortly; your last input may not be saved."
+    },
+    "offline": {
+      "code": "OFFLINE",
+      "title": "You are offline",
+      "description": "Check your connection and try again. Unsent changes are not saved automatically."
+    },
+    "sessionExpired": {
+      "code": "401",
+      "title": "Your session has expired",
+      "description": "Sign in again to continue. Unsaved content is not kept."
+    }
+  }
+}

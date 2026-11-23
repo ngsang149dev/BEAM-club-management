@@ -1,0 +1,132 @@
+{
+  "app": {
+    "name": "BEAM",
+    "title": "CLB BEAM · Quản lý thành viên & task",
+    "subtitle": "CLB nội bộ",
+    "footerNote": "CLB BEAM · Hệ thống nội bộ",
+    "skipToContent": "Bỏ qua điều hướng"
+  },
+  "nav": {
+    "groups": {
+      "workspace": "Không gian làm việc",
+      "admin": "Quản trị"
+    },
+    "boards": "Board",
+    "myTasks": "Task của tôi",
+    "members": "Thành viên",
+    "profile": "Hồ sơ",
+    "memberAdmin": "Quản trị thành viên",
+    "permissions": "Phân quyền",
+    "departments": "Ban",
+    "reminders": "Nhắc deadline",
+    "auditLog": "Nhật ký",
+    "signOut": "Đăng xuất",
+    "openMenu": "Mở menu điều hướng",
+    "closeMenu": "Đóng menu điều hướng",
+    "drawerAriaLabel": "Menu điều hướng",
+    "sidebarAriaLabel": "Điều hướng chính",
+    "mobileTabsAriaLabel": "Điều hướng nhanh"
+  },
+  "common": {
+    "loading": "Đang tải...",
+    "retry": "Thử lại",
+    "cancel": "Hủy",
+    "save": "Lưu",
+    "close": "Đóng",
+    "backToBoards": "Về board",
+    "backToMyTasks": "Về Task của tôi",
+    "goHome": "Về trang chủ",
+    "signInAgain": "Đăng nhập lại",
+    "undo": "Hoàn tác",
+    "search": "Tìm kiếm"
+  },
+  "priority": {
+    "low": "Thấp",
+    "medium": "Trung bình",
+    "high": "Cao",
+    "urgent": "Khẩn"
+  },
+  "member": {
+    "leftBadge": "(đã rời)",
+    "activeStatus": "Đang hoạt động",
+    "leftStatus": "Đã rời"
+  },
+  "language": {
+    "label": "Ngôn ngữ",
+    "ariaLabel": "Ngôn ngữ giao diện",
+    "vi": "VI",
+    "en": "EN",
+    "viName": "Tiếng Việt",
+    "enName": "English"
+  },
+  "home": {
+    "kicker": "Không gian CLB",
+    "title": "Không gian làm việc CLB BEAM",
+    "subtitle": "Quản lý thành viên, phân quyền theo ban và bảng task nội bộ.",
+    "statusTitle": "Nền tảng đã sẵn sàng",
+    "statusDescription": "Khung điều hướng song ngữ Việt/Anh, phân quyền tiện ích và kết nối API chuẩn OpenAPI đã được thiết lập.",
+    "quickLinksTitle": "Khu vực làm việc",
+    "priorityLegendTitle": "Mức độ ưu tiên",
+    "openSection": "Mở mục",
+    "cards": {
+      "boards": "Bảng Kanban, cột, thẻ công việc và Thùng rác theo từng mảng hoạt động.",
+      "myTasks": "Danh sách việc được giao sắp đến hạn và mức độ ưu tiên hiện tại.",
+      "members": "Danh bạ thành viên theo ban, bảo vệ MSSV và email theo quyền xem chi tiết.",
+      "profile": "Xem thông tin cá nhân, quyền hiệu lực và tùy chọn ngôn ngữ mặc định."
+    }
+  },
+  "errors": {
+    "requestIdLabel": "Mã yêu cầu",
+    "validation": "Dữ liệu nhập chưa hợp lệ.",
+    "badRequest": "Yêu cầu không hợp lệ.",
+    "unauthorized": "Vui lòng đăng nhập để tiếp tục.",
+    "forbidden": "Bạn không có quyền thực hiện thao tác này.",
+    "notFound": "Không tìm thấy nội dung yêu cầu.",
+    "conflict": "Dữ liệu bị xung đột với trạng thái hiện tại.",
+    "tooManyRequests": "Bạn thao tác quá nhanh. Vui lòng thử lại sau.",
+    "internal": "Máy chủ đang gặp sự cố. Vui lòng thử lại sau.",
+    "network": "Không thể kết nối đến máy chủ.",
+    "invalidResponse": "Phản hồi từ máy chủ không hợp lệ.",
+    "unknown": "Đã có lỗi không xác định xảy ra.",
+    "401": {
+      "code": "401",
+      "title": "Chưa đăng nhập",
+      "description": "Bạn cần đăng nhập bằng MSSV để tiếp tục sử dụng hệ thống."
+    },
+    "403": {
+      "code": "403",
+      "title": "Bạn không có quyền xem trang này",
+      "description": "Trang này cần quyền mà tài khoản của bạn chưa có. Nếu bạn nghĩ đây là nhầm, liên hệ admin của CLB."
+    },
+    "404": {
+      "code": "404",
+      "title": "Không tìm thấy trang",
+      "description": "Đường dẫn không tồn tại, hoặc bạn không có quyền xem. Hệ thống không cho biết trường hợp nào — kể cả với task ẩn."
+    },
+    "409": {
+      "code": "409",
+      "title": "Thao tác bị xung đột",
+      "description": "Dữ liệu vừa được cập nhật hoặc đang có ràng buộc ở nơi khác. Hãy tải lại để xem trạng thái mới nhất."
+    },
+    "429": {
+      "code": "429",
+      "title": "Thao tác quá nhanh",
+      "description": "Bạn đã gửi quá nhiều yêu cầu trong thời gian ngắn. Vui lòng đợi ít phút rồi thử lại."
+    },
+    "500": {
+      "code": "500",
+      "title": "Đã có lỗi xảy ra",
+      "description": "Chúng tôi đã ghi nhận. Thử lại sau ít phút; dữ liệu bạn vừa nhập có thể chưa được lưu."
+    },
+    "offline": {
+      "code": "OFFLINE",
+      "title": "Không có kết nối",
+      "description": "Kiểm tra mạng rồi thử lại. Thay đổi chưa gửi sẽ không tự động lưu."
+    },
+    "sessionExpired": {
+      "code": "401",
+      "title": "Phiên đã hết hạn",
+      "description": "Đăng nhập lại để tiếp tục. Nội dung chưa lưu không được giữ."
+    }
+  }
+}
