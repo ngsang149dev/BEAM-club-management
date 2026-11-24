@@ -153,4 +153,70 @@ describe('i18n message dictionaries (vi/en)', () => {
       expect(enEntries.has(perm.descriptionKey), `Missing en key: ${perm.descriptionKey}`).toBe(true);
     }
   });
+
+  it('includes members, memberAdmin, departmentsAdmin, and E3 error keys in both locales', () => {
+    const viEntries = collectLeafEntries(loadMessages('vi'));
+    const enEntries = collectLeafEntries(loadMessages('en'));
+
+    const e3Keys = [
+      'errors.invalidEmailDomain',
+      'errors.studentIdExists',
+      'errors.emailExists',
+      'errors.lastActiveAdmin',
+      'errors.invalidDepartmentIds',
+      'errors.studentIdImmutable',
+      'errors.invalidCursor',
+      'errors.departmentNameExists',
+      'errors.departmentInUse',
+      'members.title',
+      'members.searchPlaceholder',
+      'members.departmentFilterLabel',
+      'members.statusActive',
+      'members.statusInactive',
+      'members.statusAll',
+      'members.colStudentId',
+      'members.colEmail',
+      'members.loadMore',
+      'members.emptyTitle',
+      'memberAdmin.title',
+      'memberAdmin.addMember',
+      'memberAdmin.studentIdHint',
+      'memberAdmin.emailHint',
+      'memberAdmin.deactivateModalTitle',
+      'memberAdmin.deactivateModalBody',
+      'memberAdmin.cannotListWithoutViewTitle',
+      'departmentsAdmin.title',
+      'departmentsAdmin.addDepartment',
+      'departmentsAdmin.inUseSectionTitle',
+      'departmentsAdmin.unusedSectionTitle',
+      'departmentsAdmin.deleteModalTitle',
+      'departmentsAdmin.deleteBlockedHint',
+    ];
+
+    for (const key of e3Keys) {
+      expect(viEntries.has(key), `Missing vi key: ${key}`).toBe(true);
+      expect(enEntries.has(key), `Missing en key: ${key}`).toBe(true);
+    }
+  });
+
+  it('maintains identical ICU placeholder variables between vi.json and en.json', () => {
+    const extractIcuVariables = (message: string): string[] => {
+      const names = new Set<string>();
+      for (const match of message.matchAll(/\{([a-zA-Z0-9_]+)\}/g)) {
+        const varName = match[1];
+        if (varName) names.add(varName);
+      }
+      return [...names].sort();
+    };
+
+    const viEntries = collectLeafEntries(loadMessages('vi'));
+    const enEntries = collectLeafEntries(loadMessages('en'));
+
+    for (const [key, viValue] of viEntries) {
+      const enValue = enEntries.get(key) ?? '';
+      expect(extractIcuVariables(enValue), `ICU placeholder mismatch at key "${key}"`).toEqual(
+        extractIcuVariables(viValue)
+      );
+    }
+  });
 });
