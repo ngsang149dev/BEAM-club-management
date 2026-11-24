@@ -9,8 +9,8 @@
 | **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Done |
 | **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Done |
 | **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Done |
-| **E5** | Board, cột, task, kéo thả `@dnd-kit`, UI Hồng–Trắng–Đen, "Task của tôi" | FR-06, FR-20–23 | Done (chờ duyệt merge PR) |
-| **CR-01** | Mật khẩu đăng nhập cho toàn bộ tài khoản (`A4`, `[RỦI RO CAO]`) | Nâng cấp `FR-04` | Draft (chờ duyệt sau merge E5) |
+| **E5** | Board, cột, task, kéo thả `@dnd-kit`, UI Hồng–Trắng–Đen, "Task của tôi" | FR-06, FR-20–23 | Done |
+| **CR-01** | Mật khẩu đăng nhập cho toàn bộ tài khoản (`A4`, `[RỦI RO CAO]`) | Nâng cấp `FR-04` | In progress (đã duyệt) |
 | **CR-02** | Logo CLB & Ảnh đại diện thành viên (lưu PostgreSQL <= 256 KB, chữ cái đầu đa sắc, `A1`) | Nâng cấp `S02`/`S08`/`S09` | Draft (sau CR-01) |
 | **CR-03** | Giao task cho Ban (`task_departments`) + Email & Thông báo chuông (`A2`, `A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-20`–`23` | Draft (sau CR-02) |
 | **E6** | Lọc & tìm kiếm board/task nâng cao (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Backlog |
@@ -248,7 +248,7 @@
 
 ---
 
-## Epic E5 — Board, Cột, Task, Kéo thả `@dnd-kit`, UI Polish & "Task của tôi" *(Done — chờ duyệt merge vào main)*
+## Epic E5 — Board, Cột, Task, Kéo thả `@dnd-kit`, UI Polish & "Task của tôi" *(Done — đã duyệt & merge vào main)*
 
 ### E5-01
 - **ID:** `E5-01`
@@ -289,12 +289,12 @@
 
 ---
 
-## Đợt yêu cầu thay đổi sau E5 *(Draft — thực hiện theo thứ tự sau khi merge E5 theo quyết định `A1`–`A5`)*
+## Đợt yêu cầu thay đổi sau E5 *(Thực hiện theo thứ tự trên `main` theo quyết định `A1`–`A5`)*
 
-### CR-01 (`[RỦI RO CAO]`): Đăng nhập bằng mật khẩu cho toàn bộ tài khoản (`A4`, `A5`)
-- **`CR-01-01` (`backend-db`, `[RỦI RO CAO]`):** Cập nhật `docs/DECISIONS.md`, `docs/openapi.yaml`, `docs/ERD.md`, migration `0002_passwords.sql` (cột `password_hash`, `must_change_password` trên `profiles`), hash an toàn (`crypto.scrypt`), cập nhật `POST /auth/login` kiểm tra mật khẩu + giữ rate limit, `POST /members` cấp mật khẩu mặc định ban đầu, thêm `POST /me/password` để thành viên tự đổi mật khẩu, cập nhật `db/seed.sql` cho tài khoản dev/test.
-- **`CR-01-02` (`frontend`):** Thêm bước/cửa sổ nhập mật khẩu tại `S01` (`LoginForm`), hiển thị hoặc nhập mật khẩu mặc định khi admin tạo tài khoản tại `S09`, và khung Đổi mật khẩu cho thành viên tại `S08` (`/profile`), đủ chuỗi `vi`/`en`.
-- **`CR-01-03` (`qa-engineer`, `[RỦI RO CAO]`):** Test unit/integration/E2E Chrome luồng đăng nhập mật khẩu sai/đúng, tài khoản mới dùng mật khẩu mặc định -> tự đổi mật khẩu, không lộ `password_hash` ở mọi response/log, và audit `6A.8` `PASS`.
+### CR-01 (`[RỦI RO CAO]`): Đăng nhập bằng mật khẩu cho toàn bộ tài khoản (`A4`, `A5`) *(Đã duyệt — `In progress`)*
+- **`CR-01-01` (`backend-db`, `[RỦI RO CAO]`):** Cập nhật `docs/DECISIONS.md`, `docs/openapi.yaml`, `docs/ERD.md`, migration `0002_passwords.sql` (cột `password_hash`, `must_change_password` trên `profiles`), hash an toàn (`crypto.scrypt`), cập nhật `POST /auth/login` kiểm tra mật khẩu + giữ rate limit, `POST /members` cấp mật khẩu mặc định ban đầu (`initialPassword` hoặc `Config.defaultInitialPassword`), thêm `POST /me/password` để thành viên tự đổi mật khẩu, thêm `POST /members/{id}/reset-password` (Admin hoặc `member.update` trên tài khoản thường; chặn `403` nếu không phải admin đặt lại cho admin, thu hồi session & ghi `audit_logs`), cập nhật `db/seed.sql` cho tài khoản dev/test (`BeamDev@2026`).
+- **`CR-01-02` (`frontend`):** Thêm ô nhập mật khẩu tại `S01` (`LoginForm` kèm ẩn/hiện & redirect `/profile?changePassword=1` khi cần đổi mật khẩu lần đầu), nhập/gợi ý mật khẩu mặc định khi tạo thành viên tại `S09`, modal Đặt lại mật khẩu ở `S09`, và khung Đổi mật khẩu + banner nhắc đổi mật khẩu cho thành viên tại `S08` (`/profile`), đủ chuỗi `vi`/`en`.
+- **`CR-01-03` (`qa-engineer`, `[RỦI RO CAO]`):** Test unit/integration/E2E Chrome luồng đăng nhập mật khẩu sai/đúng, tài khoản mới dùng mật khẩu mặc định -> tự đổi mật khẩu (`400` sai mật khẩu cũ / `200` thành công), đặt lại mật khẩu (gồm `403` không phải admin đặt lại admin, `200` admin thu hồi session), không lộ `password_hash` ở mọi response/log, và audit `6A.8` `PASS`.
 
 ### CR-02: Logo CLB & Ảnh đại diện thành viên (`A1`, `A5`)
 - Nén & lưu ảnh nhị phân/data URL trong PostgreSQL (tối đa `256 KB`); admin sửa logo CLB (`app_settings` + header/login); admin hoặc quyền `member.update` sửa ảnh thành viên (`S09`) và thành viên tự đổi ảnh ở `S08`; chưa có ảnh hiển thị chữ cái đầu tên với bảng màu đa dạng đồng bộ.
