@@ -53,6 +53,13 @@ export interface ReplaceUserPermissionsParams {
   readonly now: Date;
 }
 
+export interface LockAndUpdateAdminFlagParams {
+  readonly actorId: string;
+  readonly userId: string;
+  readonly isAdmin: boolean;
+  readonly now: Date;
+}
+
 export interface PermissionsRepository {
   listCatalog(): Promise<PermissionCatalogRecord[]>;
   listPresets(): Promise<PermissionPresetRecord[]>;
@@ -69,7 +76,7 @@ export interface PermissionsRepository {
     tx: TransactionContext,
   ): Promise<void>;
   lockAndUpdateAdminFlag(
-    input: { readonly userId: string; readonly isAdmin: boolean; readonly now: Date },
+    input: LockAndUpdateAdminFlagParams,
     tx: TransactionContext,
   ): Promise<AdminFlagUpdateRecord | null>;
 }
@@ -247,16 +254,12 @@ export class DrizzlePermissionsRepository implements PermissionsRepository {
   }
 
   async lockAndUpdateAdminFlag(
-    input: { readonly userId: string; readonly isAdmin: boolean; readonly now: Date },
+    input: LockAndUpdateAdminFlagParams,
     tx: TransactionContext,
   ): Promise<AdminFlagUpdateRecord | null> {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('beam_last_active_admin'))`);
     const lockedRows = await tx
-      .select({
-        userId: profiles.id,
-        isAdmin: profiles.isAdmin,
-        isActive: profiles.isActive,
-      })
+      .select({ userId: profiles.id, isAdmin: profiles.isAdmin, isActive: profiles.isActive })
       .from(profiles)
       .where(eq(profiles.id, input.userId))
       .for('update')
@@ -271,6 +274,8 @@ export class DrizzlePermissionsRepository implements PermissionsRepository {
     const activeAdminCount = Number(countRows[0]?.value ?? 0);
 
     assertAdminFlagChangeAllowed({
+      actorId: input.actorId,
+      targetUserId: input.userId,
       currentIsAdmin: target.isAdmin,
       nextIsAdmin: input.isAdmin,
       targetIsActive: target.isActive,
@@ -291,7 +296,7 @@ export class DrizzlePermissionsRepository implements PermissionsRepository {
   }
 
   private async persistAdminFlagUpdate(
-    input: { readonly userId: string; readonly isAdmin: boolean; readonly now: Date },
+    input: LockAndUpdateAdminFlagParams,
     tx: TransactionContext,
   ): Promise<void> {
     try {

@@ -1314,7 +1314,7 @@ export interface paths {
          * Grant or revoke admin flag for a member
          * @description Admin only (`is_admin=true`).
          *     Protected by transaction + DB triggers `prevent_last_active_admin_update` and `prevent_last_active_admin_delete`.
-         *     Returns `409` (`LAST_ACTIVE_ADMIN`) when attempting to demote the last active admin (AC-09). Writes `audit_logs`.
+         *     Returns `409` (`CANNOT_REVOKE_OWN_ADMIN`) when an admin tries to revoke their own admin flag, and `409` (`LAST_ACTIVE_ADMIN`) when attempting to demote the last active admin (AC-09). Writes `audit_logs`.
          */
         put: {
             parameters: {

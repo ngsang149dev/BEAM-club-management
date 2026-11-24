@@ -153,6 +153,18 @@ export function useChangeMyPasswordMutation() {
   });
 }
 
+export async function invalidateMyAvatarRelatedQueries(queryClient: QueryClient): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
+    queryClient.invalidateQueries({ queryKey: ['members'] }),
+    queryClient.invalidateQueries({ queryKey: ['auditLogs'] }),
+    queryClient.invalidateQueries({ queryKey: ['boardDetail'] }),
+    queryClient.invalidateQueries({ queryKey: ['taskDetail'] }),
+    queryClient.invalidateQueries({ queryKey: ['myTasks'] }),
+    queryClient.invalidateQueries({ queryKey: ['tasks', 'assigneeMembers'] }),
+  ]);
+}
+
 export function useUpdateMyAvatarMutation() {
   const queryClient = useQueryClient();
 
@@ -161,11 +173,7 @@ export function useUpdateMyAvatarMutation() {
       apiFetch('/me/avatar', { method: 'put', body: payload }),
     onSuccess: async (data) => {
       queryClient.setQueryData(AUTH_QUERY_KEYS.me, data);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
-        queryClient.invalidateQueries({ queryKey: ['members'] }),
-        queryClient.invalidateQueries({ queryKey: ['auditLogs'] }),
-      ]);
+      await invalidateMyAvatarRelatedQueries(queryClient);
     },
   });
 }
@@ -177,11 +185,7 @@ export function useRemoveMyAvatarMutation() {
     mutationFn: () => apiFetch('/me/avatar', { method: 'delete' }),
     onSuccess: async (data) => {
       queryClient.setQueryData(AUTH_QUERY_KEYS.me, data);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
-        queryClient.invalidateQueries({ queryKey: ['members'] }),
-        queryClient.invalidateQueries({ queryKey: ['auditLogs'] }),
-      ]);
+      await invalidateMyAvatarRelatedQueries(queryClient);
     },
   });
 }

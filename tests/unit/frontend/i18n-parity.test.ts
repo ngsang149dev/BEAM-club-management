@@ -226,6 +226,17 @@ describe('i18n message dictionaries (vi/en)', () => {
       'auditLogs.actions.memberAvatarRemoved',
       'auditLogs.actions.brandingLogoUpdated',
       'auditLogs.actions.brandingLogoRemoved',
+      'auditLogs.detailLabels.assetKey',
+      'auditLogs.detailLabels.mimeType',
+      'auditLogs.detailLabels.byteLength',
+      'auditLogs.detailLabels.removed',
+      'auditLogs.detailLabels.forceChangeOnLogin',
+      'auditLogs.detailLabels.sessionsRevoked',
+      'auditLogs.detailValues.yes',
+      'auditLogs.detailValues.no',
+      'errors.cannotRevokeOwnAdmin',
+      'permissionsAdmin.cannotRevokeSelfHint',
+      'memberAdmin.rowActionsMenu',
     ];
 
     for (const key of e3Keys) {

@@ -1,9 +1,12 @@
+import { QueryClient } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import viMessages from '../../../messages/vi.json';
 import { ClubLogo } from '@/components/ClubLogo';
 import { MemberAvatar } from '@/components/MemberAvatar';
+import { invalidateMyAvatarRelatedQueries } from '@/features/auth/hooks/useAuth';
+import { invalidateMemberAvatarRelatedQueries } from '@/features/members/hooks/useMembers';
 import { TaskAssigneeChips } from '@/features/tasks/components/TaskPriorityBadge';
 import { getAvatarTone, getMemberInitials } from '@/lib/media';
 
@@ -170,5 +173,31 @@ describe('MemberAvatar, ClubLogo & TaskAssigneeChips', () => {
     expect(logoRecovered.props.className).toContain('club-logo-box');
     const logoImgV2 = logoRecovered.props.children as { props: { src: string } };
     expect(logoImgV2.props.src).toBe(logoV2);
+  });
+
+  it('invalidates boardDetail, taskDetail, myTasks, assigneeMembers, me, members, and auditLogs on avatar updates', async () => {
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    await invalidateMyAvatarRelatedQueries(queryClient);
+    const myKeys = invalidateSpy.mock.calls.map(([arg]) => arg?.queryKey);
+    expect(myKeys).toContainEqual(['auth', 'me']);
+    expect(myKeys).toContainEqual(['members']);
+    expect(myKeys).toContainEqual(['auditLogs']);
+    expect(myKeys).toContainEqual(['boardDetail']);
+    expect(myKeys).toContainEqual(['taskDetail']);
+    expect(myKeys).toContainEqual(['myTasks']);
+    expect(myKeys).toContainEqual(['tasks', 'assigneeMembers']);
+
+    invalidateSpy.mockClear();
+    await invalidateMemberAvatarRelatedQueries(queryClient);
+    const memberKeys = invalidateSpy.mock.calls.map(([arg]) => arg?.queryKey);
+    expect(memberKeys).toContainEqual(['members']);
+    expect(memberKeys).toContainEqual(['auth', 'me']);
+    expect(memberKeys).toContainEqual(['auditLogs']);
+    expect(memberKeys).toContainEqual(['boardDetail']);
+    expect(memberKeys).toContainEqual(['taskDetail']);
+    expect(memberKeys).toContainEqual(['myTasks']);
+    expect(memberKeys).toContainEqual(['tasks', 'assigneeMembers']);
   });
 });

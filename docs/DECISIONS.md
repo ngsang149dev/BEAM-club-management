@@ -93,3 +93,18 @@ Trạng thái: Đã duyệt bởi chủ dự án
   4. **Phân quyền & dấu vết:** Đọc Logo công khai (để hiện ở `S01` trước đăng nhập), chỉ **Admin** được sửa/xóa Logo (`PUT/DELETE /branding/logo`); mọi tài khoản active tự đổi/xóa ảnh cá nhân (`PUT/DELETE /me/avatar`); `member.update` hoặc Admin đổi/xóa ảnh cho thành viên (`PUT/DELETE /members/{id}/avatar`). Mọi cập nhật/xóa ghi `audit_logs` (`branding.logo_updated`, `branding.logo_removed`, `member.avatar_updated`, `member.avatar_removed`) chỉ kèm `mimeType`/`byteLength`, tuyệt đối không ghi dữ liệu ảnh hoặc PII.
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm `docs/ERD.md` (19 bảng miền), `db/migrations/0003_branding_and_avatars.sql`, `docs/openapi.yaml`.
 - **Trạng thái:** Đã duyệt bởi chủ dự án (`2026-11-24`).
+
+---
+
+## Quyết định `CR-02B` — Điều hướng gốc `/login`, Chặn Admin tự gỡ quyền Admin & Tinh gọn bố cục (`A1`–`A3`) — 2026-11-24
+
+- **Ngữ cảnh:** Khắc phục phản hồi trải nghiệm trực tiếp từ chủ dự án & chủ CLB:
+  1. Truy cập `/` chưa đăng nhập phải đi thẳng tới `/login` thay vì hiển thị trang chào mẫu.
+  2. Admin không được phép tự gỡ cờ `is_admin` của chính mình (ngay cả khi hệ thống đang có từ 2 Admin trở lên).
+  3. Căn chỉnh bố cục toàn hệ thống khoa học, giảm rối mắt tại `S03`–`S10`.
+- **Quyết định kỹ thuật:**
+  1. **Điều hướng gốc `/` (`src/app/page.tsx`):** Server Component đọc cookie `beam_session` và xác thực phiên thực tế qua `authService.authenticateSession(token)`; chưa đăng nhập hoặc phiên hết hạn chuyển hướng ngay sang `/login`, đã đăng nhập chuyển sang `/boards` (hoặc `/profile?changePassword=1` nếu `mustChangePassword = true`).
+  2. **Chặn Admin tự gỡ quyền Admin (`PUT /api/v1/members/{id}/admin`):** Bổ sung quy tắc miền trong `permissions/policy.ts` + `service.ts`: nếu `actor.id === targetUserId && !nextIsAdmin`, từ chối ngay **`409 CANNOT_REVOKE_OWN_ADMIN`** (ưu tiên trước `LAST_ACTIVE_ADMIN`, không ghi `audit_logs`, không sửa DB). Quy tắc `LAST_ACTIVE_ADMIN` (`AC-09`) vẫn giữ nguyên cho trường hợp khóa thành viên, hạ quyền Admin khác và trigger PostgreSQL. Trên `S10` (`AdminFlagPanel`), khóa nút gỡ Admin khi `isSelf && isAdmin` kèm ghi chú rõ ràng.
+  3. **Tinh gọn bố cục toàn hệ thống (`S03`–`S10`):** Chuyển `ActionMenu` (`⋯`) thành component dùng chung cho bảng quản trị thành viên `S09`; bỏ banner thừa và bố trí ma trận quyền `S10` thành lưới 2 cột cân đối kèm thanh lưu cô đọng; cân tỷ lệ cột và khoảng đệm đồng nhất trên `S08`, `S03`–`S06`; bổ sung invalidate query cache (`boardDetail`, `taskDetail`, `myTasks`) khi đổi ảnh đại diện và hiển thị metadata `branding`/`avatar` ở `AuditDetailPane`.
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cập nhật mô tả `PUT /members/{id}/admin` trong `docs/openapi.yaml` (cộng thêm `409 CANNOT_REVOKE_OWN_ADMIN`), không đổi schema CSDL.
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`A1`–`A3`, 2026-11-24).

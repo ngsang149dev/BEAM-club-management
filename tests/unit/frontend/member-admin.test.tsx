@@ -178,13 +178,16 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(html).toContain('Thêm thành viên');
   });
 
-  it('renders per-action buttons strictly by permission, hides Reset Password and Club Logo for non-admins, and masks PII without member.view_detail', () => {
+  it('renders consolidated ActionMenu per row strictly by permission, hides Reset Password and Club Logo for non-admins, and masks PII without member.view_detail', () => {
     const permissions: PermissionCode[] = ['member.view', 'member.update'];
     const html = renderWithIntl(
       <PermissionsProvider permissions={permissions}>
         <MemberAdminView />
       </PermissionsProvider>
     );
+    expect(html).toContain('aria-label="Thao tác thành viên"');
+    expect(html).toContain('role="menu"');
+    expect(html).toContain('role="menuitem"');
     expect(html).toContain('>Sửa<');
     expect(html).not.toContain('>Đặt lại mật khẩu<');
     expect(html).not.toContain('>Logo CLB<');
@@ -193,6 +196,14 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(html).not.toContain('>Mở lại tài khoản<');
     expect(html).not.toContain('21110001');
     expect(html).not.toContain('anh.nguyen@eiu.edu.vn');
+
+    const createOnlyHtml = renderWithIntl(
+      <PermissionsProvider permissions={['member.view', 'member.create']}>
+        <MemberAdminView />
+      </PermissionsProvider>
+    );
+    expect(createOnlyHtml).toContain('>Thêm thành viên<');
+    expect(createOnlyHtml).not.toContain('aria-label="Thao tác thành viên"');
   });
 
   it('enforces strict Admin-only Reset Password and Club Logo visibility rules (CR-01 / CR-02)', () => {
@@ -256,6 +267,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       </PermissionsProvider>
     );
     expect(adminViewerHtml).toContain('Tran Club Admin');
+    expect(adminViewerHtml).toContain('aria-label="Thao tác thành viên"');
     expect(adminViewerHtml).toContain('>Đặt lại mật khẩu<');
     expect(adminViewerHtml).toContain('>Logo CLB<');
 
@@ -276,6 +288,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       </PermissionsProvider>,
       'en'
     );
+    expect(adminEnHtml).toContain('aria-label="Member actions"');
     expect(adminEnHtml).toContain('>Reset password<');
     expect(adminEnHtml).toContain('>Club logo<');
   });

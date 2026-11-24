@@ -98,6 +98,7 @@ class InMemoryPermissionsRepository implements PermissionsRepository {
   }
 
   async lockAndUpdateAdminFlag(input: {
+    readonly actorId: string;
     readonly userId: string;
     readonly isAdmin: boolean;
     readonly now: Date;
@@ -109,6 +110,8 @@ class InMemoryPermissionsRepository implements PermissionsRepository {
       if (profile.isAdmin && profile.isActive) activeAdminCount += 1;
     }
     assertAdminFlagChangeAllowed({
+      actorId: input.actorId,
+      targetUserId: input.userId,
       currentIsAdmin: target.isAdmin,
       nextIsAdmin: input.isAdmin,
       targetIsActive: target.isActive,
@@ -185,9 +188,37 @@ const INACTIVE_ADMIN_ACTOR: AuthActor = {
 };
 
 describe('permissions policy & PermissionsService', () => {
-  it('enforces assertAdminFlagChangeAllowed invariant', () => {
+  it('enforces assertAdminFlagChangeAllowed self-demotion and last-admin invariants', () => {
+    // Self-demotion check runs BEFORE last-admin check (both 1 and >= 2 active admins)
+    for (const activeAdminCount of [1, 2]) {
+      expect(() =>
+        assertAdminFlagChangeAllowed({
+          actorId: ADMIN_ID,
+          targetUserId: ADMIN_ID,
+          currentIsAdmin: true,
+          nextIsAdmin: false,
+          targetIsActive: true,
+          activeAdminCount,
+        }),
+      ).toThrowError(expect.objectContaining({ httpStatus: 409, code: 'CANNOT_REVOKE_OWN_ADMIN' }));
+    }
+
     expect(() =>
       assertAdminFlagChangeAllowed({
+        actorId: ADMIN_ID,
+        targetUserId: ADMIN_ID,
+        currentIsAdmin: true,
+        nextIsAdmin: true,
+        targetIsActive: true,
+        activeAdminCount: 1,
+      }),
+    ).not.toThrow();
+
+    // Different actor demoting the last active admin triggers AC-09 LAST_ACTIVE_ADMIN
+    expect(() =>
+      assertAdminFlagChangeAllowed({
+        actorId: SECOND_ADMIN_ID,
+        targetUserId: ADMIN_ID,
         currentIsAdmin: true,
         nextIsAdmin: false,
         targetIsActive: true,
@@ -197,6 +228,8 @@ describe('permissions policy & PermissionsService', () => {
 
     expect(() =>
       assertAdminFlagChangeAllowed({
+        actorId: ADMIN_ID,
+        targetUserId: SECOND_ADMIN_ID,
         currentIsAdmin: true,
         nextIsAdmin: false,
         targetIsActive: true,
@@ -206,6 +239,8 @@ describe('permissions policy & PermissionsService', () => {
 
     expect(() =>
       assertAdminFlagChangeAllowed({
+        actorId: ADMIN_ID,
+        targetUserId: INACTIVE_ADMIN_ID,
         currentIsAdmin: true,
         nextIsAdmin: false,
         targetIsActive: false,
@@ -312,7 +347,7 @@ describe('permissions policy & PermissionsService', () => {
     expect(rawLogs.join('\n')).not.toContain('studentId');
   });
 
-  it('protects last active admin (AC-09) and audits grant/revoke transitions', async () => {
+  it('blocks admin self-demotion (CANNOT_REVOKE_OWN_ADMIN), protects last active admin (AC-09), and audits grant/revoke transitions', async () => {
     const { repo, service, auditWriter } = createHarness();
     repo.targets.set(SECOND_ADMIN_ID, {
       userId: SECOND_ADMIN_ID,
@@ -321,9 +356,25 @@ describe('permissions policy & PermissionsService', () => {
       permissionCodes: [],
     });
 
+    // Sole active admin self-demotion -> 409 CANNOT_REVOKE_OWN_ADMIN (zero audit logs, flag intact)
     await expect(
       service.updateAdminFlag(ADMIN_ACTOR, ADMIN_ID, { isAdmin: false }),
+    ).rejects.toMatchObject({ httpStatus: 409, code: 'CANNOT_REVOKE_OWN_ADMIN' });
+    expect(repo.targets.get(ADMIN_ID)?.isAdmin).toBe(true);
+    expect(auditWriter.entries).toHaveLength(0);
+
+    // Different actor attempting to demote sole active admin -> 409 LAST_ACTIVE_ADMIN
+    const OTHER_ADMIN_ACTOR: AuthActor = {
+      id: '90000000-0000-4000-8000-000000000099',
+      isActive: true,
+      isAdmin: true,
+      permissions: [],
+    };
+    await expect(
+      service.updateAdminFlag(OTHER_ADMIN_ACTOR, ADMIN_ID, { isAdmin: false }),
     ).rejects.toMatchObject({ httpStatus: 409, code: 'LAST_ACTIVE_ADMIN' });
+    expect(repo.targets.get(ADMIN_ID)?.isAdmin).toBe(true);
+    expect(auditWriter.entries).toHaveLength(0);
 
     const granted = await service.updateAdminFlag(ADMIN_ACTOR, SECOND_ADMIN_ID, { isAdmin: true });
     expect(granted).toEqual({ userId: SECOND_ADMIN_ID, isAdmin: true });
@@ -337,6 +388,20 @@ describe('permissions policy & PermissionsService', () => {
       detail: { previousIsAdmin: false, isAdmin: true },
     });
 
+    // Self-demotion STILL blocked even when >= 2 active admins exist (zero audit logs, flag intact)
+    await expect(
+      service.updateAdminFlag(ADMIN_ACTOR, ADMIN_ID, { isAdmin: false }),
+    ).rejects.toMatchObject({ httpStatus: 409, code: 'CANNOT_REVOKE_OWN_ADMIN' });
+    expect(repo.targets.get(ADMIN_ID)?.isAdmin).toBe(true);
+    expect(auditWriter.entries).toHaveLength(1);
+
+    // No-op self grant succeeds without audit log
+    await expect(
+      service.updateAdminFlag(ADMIN_ACTOR, ADMIN_ID, { isAdmin: true }),
+    ).resolves.toEqual({ userId: ADMIN_ID, isAdmin: true });
+    expect(auditWriter.entries).toHaveLength(1);
+
+    // Admin CAN demote ANOTHER admin when >= 2 active admins exist
     const revoked = await service.updateAdminFlag(ADMIN_ACTOR, SECOND_ADMIN_ID, { isAdmin: false });
     expect(revoked).toEqual({ userId: SECOND_ADMIN_ID, isAdmin: false });
     expect(auditWriter.entries).toHaveLength(2);

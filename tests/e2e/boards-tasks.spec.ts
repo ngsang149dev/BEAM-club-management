@@ -993,7 +993,36 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         viMessages.errors.invalidImageFormat,
       );
 
-      // 3. Upload valid PNG on S08 /profile -> displays in ProfileView, AppShell, /members, & Kanban task card
+      // Prime SPA QueryClient caches (boards, boardDetail, taskDetail, myTasks) before avatar upload
+      await page.locator('.app-side a[href="/my-tasks"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/my-tasks`);
+      await page.locator('.my-task-row', { hasText: avatarTaskTitle }).click();
+      const primedDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+      await expectColorfulInitialsAvatar(
+        primedDrawer.locator('.task-assignees-chips .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+      await primedDrawer.getByRole('button', { name: viMessages.common.close }).click();
+
+      await page.locator('.app-side a.app-nav-item[href="/boards"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/boards`);
+      await page
+        .locator('article.board-tile', { hasText: boardName })
+        .getByRole('link', { name: viMessages.boards.openBoard })
+        .click();
+      await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}`);
+      await expectColorfulInitialsAvatar(
+        page.locator('article.kanban-card', { hasText: avatarTaskTitle }).locator('.task-assignees-chips .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+
+      await page.locator('.app-side a[href="/profile"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/profile`);
+      await expect(page.locator('.profile-hero .ui-avatar')).toBeVisible();
+
+      // 3. Upload valid PNG on S08 /profile -> invalidates SPA caches across ProfileView, AppShell, /members, /my-tasks, boardDetail & taskDetail
       const uploadPromise = page.waitForResponse(
         (res) => res.url().endsWith('/api/v1/me/avatar') && res.request().method() === 'PUT',
       );
@@ -1025,7 +1054,8 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
       expect(binRes.status()).toBe(200);
       expectSafeBinaryHeaders(binRes.headers(), 'image/png');
 
-      await page.goto('/members');
+      await page.locator('.app-side a[href="/members"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/members`);
       await page.getByLabel(viMessages.members.searchLabel).fill(basicFullName);
       const directoryRow = page.locator('.directory-table-wrap table.ui-table tbody tr', {
         hasText: basicFullName,
@@ -1037,7 +1067,24 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
       );
       expect(directorySrc).toBe(uploadJson.profile.avatarUrl);
 
-      await page.goto(`/boards/${boardId}`);
+      await page.locator('.app-side a[href="/my-tasks"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/my-tasks`);
+      await page.locator('.my-task-row', { hasText: avatarTaskTitle }).click();
+      const updatedMyTaskDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+      const drawerSrc = await expectLoadedAvatarImage(
+        updatedMyTaskDrawer.locator('.task-assignees-chips .ui-avatar'),
+        expectedPrefix,
+      );
+      expect(drawerSrc).toBe(uploadJson.profile.avatarUrl);
+      await updatedMyTaskDrawer.getByRole('button', { name: viMessages.common.close }).click();
+
+      await page.locator('.app-side a.app-nav-item[href="/boards"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/boards`);
+      await page
+        .locator('article.board-tile', { hasText: boardName })
+        .getByRole('link', { name: viMessages.boards.openBoard })
+        .click();
+      await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}`);
       const assignedCard = page.locator('article.kanban-card', { hasText: avatarTaskTitle });
       await expect(assignedCard).toBeVisible();
       const cardSrc = await expectLoadedAvatarImage(
@@ -1046,8 +1093,10 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
       );
       expect(cardSrc).toBe(uploadJson.profile.avatarUrl);
 
-      // 4. Remove own avatar on S08 /profile -> restores colorful initials across views
-      await page.goto('/profile');
+      // 4. Remove own avatar on S08 /profile -> restores colorful initials across SPA-cached views
+      await page.locator('.app-side a[href="/profile"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/profile`);
+      await expect(page.locator('.profile-hero .ui-avatar')).toBeVisible();
       const removePromise = page.waitForResponse(
         (res) => res.url().endsWith('/api/v1/me/avatar') && res.request().method() === 'DELETE',
       );
@@ -1068,13 +1117,27 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
       );
       expect((await page.request.get(`/api/v1/members/${basicUserId}/avatar`)).status()).toBe(404);
 
-      await page.goto(`/boards/${boardId}`);
+      await page.locator('.app-side a.app-nav-item[href="/boards"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/boards`);
+      await page
+        .locator('article.board-tile', { hasText: boardName })
+        .getByRole('link', { name: viMessages.boards.openBoard })
+        .click();
+      await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}`);
       const revertedCard = page.locator('article.kanban-card', { hasText: avatarTaskTitle });
       await expectColorfulInitialsAvatar(
         revertedCard.locator('.task-assignees-chips .ui-avatar'),
         basicUserId,
         basicFullName,
       );
+      await revertedCard.locator('button.kanban-card-open').click();
+      const revertedDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+      await expectColorfulInitialsAvatar(
+        revertedDrawer.locator('.task-assignees-chips .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+      await revertedDrawer.getByRole('button', { name: viMessages.common.close }).click();
     } finally {
       await db
         .update(profiles)

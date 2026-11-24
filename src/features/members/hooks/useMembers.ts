@@ -4,6 +4,7 @@ import {
   useInfiniteQuery,
   useMutation,
   useQueryClient,
+  type QueryClient,
 } from '@tanstack/react-query';
 import { apiFetch, type components } from '@/features/shared/api/client';
 import { AUDIT_QUERY_KEYS } from '@/features/audit/hooks/useAuditLogs';
@@ -153,6 +154,18 @@ export function useResetMemberPasswordMutation() {
   });
 }
 
+export async function invalidateMemberAvatarRelatedQueries(queryClient: QueryClient): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
+    queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
+    queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
+    queryClient.invalidateQueries({ queryKey: ['boardDetail'] }),
+    queryClient.invalidateQueries({ queryKey: ['taskDetail'] }),
+    queryClient.invalidateQueries({ queryKey: ['myTasks'] }),
+    queryClient.invalidateQueries({ queryKey: ['tasks', 'assigneeMembers'] }),
+  ]);
+}
+
 export function useUpdateMemberAvatarMutation() {
   const queryClient = useQueryClient();
 
@@ -164,11 +177,7 @@ export function useUpdateMemberAvatarMutation() {
         body: { dataUrl },
       }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
-        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
-        queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
-      ]);
+      await invalidateMemberAvatarRelatedQueries(queryClient);
     },
   });
 }
@@ -180,11 +189,7 @@ export function useRemoveMemberAvatarMutation() {
     mutationFn: (id: string) =>
       apiFetch('/members/{id}/avatar', { method: 'delete', params: { id } }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
-        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
-        queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
-      ]);
+      await invalidateMemberAvatarRelatedQueries(queryClient);
     },
   });
 }

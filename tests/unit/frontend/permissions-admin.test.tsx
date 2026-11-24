@@ -18,7 +18,12 @@ const permHooksMock = vi.hoisted(() => ({
   useUpdateAdminFlagMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
 }));
 
+const authHooksMock = vi.hoisted(() => ({
+  useSessionQuery: vi.fn(),
+}));
+
 vi.mock('@/features/permissions/hooks/usePermissionsAdmin', () => permHooksMock);
+vi.mock('@/features/auth/hooks/useAuth', () => authHooksMock);
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: ReactNode; [key: string]: unknown }) => (
@@ -69,6 +74,9 @@ function renderWithIntl(node: ReactNode, locale: 'vi' | 'en' = 'vi') {
 
 describe('PermissionsAdminView & S10 components', () => {
   beforeEach(() => {
+    authHooksMock.useSessionQuery.mockReturnValue({
+      data: { userId: '00000000-0000-4000-8000-000000000099' },
+    });
     permHooksMock.usePermissionCatalogQuery.mockReturnValue({
       isPending: false,
       isError: false,
@@ -125,6 +133,7 @@ describe('PermissionsAdminView & S10 components', () => {
     );
     expect(html).toContain('403');
     expect(html).toContain('Chỉ admin xem được phân quyền');
+    expect(authHooksMock.useSessionQuery).toHaveBeenCalledWith(false);
     expect(permHooksMock.usePermissionCatalogQuery).toHaveBeenCalledWith(false);
     expect(permHooksMock.usePermissionPresetsQuery).toHaveBeenCalledWith(false);
     expect(permHooksMock.usePermissionMembersQuery).toHaveBeenCalledWith('', false);
@@ -132,7 +141,7 @@ describe('PermissionsAdminView & S10 components', () => {
     expect(html).not.toContain('member.view_detail');
   });
 
-  it('renders all 6 permission groups, 18 codes, effective summary bar, presets, and no MSSV/email', () => {
+  it('renders balanced 6 permission groups, 18 codes, crisp save bar without redundant editingBanner, and no MSSV/email', () => {
     const html = renderWithIntl(
       <PermissionsProvider isAdmin permissions={[]}>
         <PermissionsAdminView />
@@ -144,11 +153,94 @@ describe('PermissionsAdminView & S10 components', () => {
     expect(html).toContain('Thành viên');
     expect(html).toContain('Hệ thống');
     expect(html).toContain('3 quyền đang bật');
-    expect(html).toContain('member.view · task.update_assigned · comment.create');
+    expect(html).not.toContain('member.view · task.update_assigned · comment.create');
+    expect(html).not.toContain('Đang sửa quyền của');
     expect(html).toContain('Lưu thay đổi');
     expect(html).toContain('(đã rời)');
     expect(html).not.toContain('21110001');
     expect(html).not.toContain('nva@eiu.edu.vn');
+  });
+
+  it('disables self-demote button with hint when editing own admin record and enables when editing another admin', () => {
+    authHooksMock.useSessionQuery.mockReturnValueOnce({
+      data: { userId: INACTIVE_ADMIN.id },
+    });
+    permHooksMock.usePermissionMembersQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [INACTIVE_ADMIN, ACTIVE_MEMBER], meta: { nextCursor: null, limit: 50 } }] },
+    });
+    permHooksMock.useMemberPermissionsQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      data: {
+        userId: INACTIVE_ADMIN.id,
+        isAdmin: true,
+        permissionCodes: [],
+      },
+    });
+
+    const selfHtml = renderWithIntl(
+      <PermissionsProvider isAdmin permissions={[]}>
+        <PermissionsAdminView />
+      </PermissionsProvider>
+    );
+    expect(selfHtml).toContain('Không thể tự gỡ quyền admin của chính bạn.');
+    expect(selfHtml).toMatch(/disabled=""[^>]*>Gỡ admin<\/button>/);
+
+    const otherAdminHtml = renderWithIntl(
+      <AdminFlagPanel
+        memberName="Tran Thi B"
+        isAdmin
+        isSelf={false}
+        isUpdating={false}
+        error={null}
+        onToggleAdmin={vi.fn()}
+      />,
+      'en'
+    );
+    expect(otherAdminHtml).not.toContain('You cannot remove your own admin access.');
+    expect(otherAdminHtml).toContain('>Remove admin</button>');
+    expect(otherAdminHtml).not.toMatch(/disabled=""[^>]*>Remove admin<\/button>/);
+
+    const selfEnHtml = renderWithIntl(
+      <AdminFlagPanel
+        memberName="Tran Thi B"
+        isAdmin
+        isSelf
+        isUpdating={false}
+        error={new ApiClientError({
+          status: 409,
+          code: 'CANNOT_REVOKE_OWN_ADMIN',
+          messageKey: 'errors.cannotRevokeOwnAdmin',
+          details: {},
+          requestId: 'req-self-409',
+        })}
+        onToggleAdmin={vi.fn()}
+      />,
+      'en'
+    );
+    expect(selfEnHtml).toContain('You cannot remove your own admin access.');
+    expect(selfEnHtml).toContain('You cannot revoke your own admin access.');
+    expect(selfEnHtml).toContain('req-self-409');
+    expect(
+      describePermissionsError(
+        new ApiClientError({
+          status: 409,
+          code: 'CANNOT_REVOKE_OWN_ADMIN',
+          messageKey: 'errors.cannotRevokeOwnAdmin',
+          details: {},
+          requestId: 'req-self-409',
+        })
+      )
+    ).toEqual({ key: 'cannotRevokeOwnAdmin', requestId: 'req-self-409' });
   });
 
   it('renders localized groups and presets cleanly in English locale', () => {

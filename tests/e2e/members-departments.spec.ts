@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { and, eq, inArray, ne, or } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import {
@@ -77,6 +77,13 @@ async function signInAs(
   await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(password);
   await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
   await page.waitForURL(`${BASE_ORIGIN}${returnTo}`);
+}
+
+async function openMemberRowMenu(row: Locator): Promise<void> {
+  const trigger = row.getByLabel(viMessages.memberAdmin.rowActionsMenu);
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(row.locator('details.ui-action-menu')).toHaveAttribute('open', '');
 }
 
 test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
@@ -436,7 +443,9 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     await expect(createdRow).toContainText(newEmail);
     await expect(createdRow).toContainText(busyDeptName);
 
-    await createdRow.getByRole('button', { name: viMessages.memberAdmin.editAction, exact: true }).click();
+    await expect(createdRow.getByRole('menuitem', { name: viMessages.memberAdmin.editAction, exact: true })).not.toBeVisible();
+    await openMemberRowMenu(createdRow);
+    await createdRow.getByRole('menuitem', { name: viMessages.memberAdmin.editAction, exact: true }).click();
     const editDrawer = page.getByRole('dialog');
     const sidInput = editDrawer.getByLabel(viMessages.memberAdmin.studentIdLabel, { exact: true });
     await expect(sidInput).toHaveValue(newStudentId);
@@ -459,7 +468,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await page.getByLabel(viMessages.members.searchLabel).fill(updatedFullName);
       const updatedRow = table.locator('tbody tr', { hasText: updatedFullName });
       await expect(updatedRow).toBeVisible();
-      await updatedRow.getByRole('button', { name: viMessages.memberAdmin.deactivateAction }).click();
+      await openMemberRowMenu(updatedRow);
+      await updatedRow.getByRole('menuitem', { name: viMessages.memberAdmin.deactivateAction, exact: true }).click();
       const statusModal = page.getByRole('dialog');
       const deactivateRespPromise = page.waitForResponse(
         (res) => res.url().endsWith('/deactivate') && res.request().method() === 'POST',
@@ -472,7 +482,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await memberPage.reload();
       await memberPage.waitForURL(`${BASE_ORIGIN}/login?expired=1&returnTo=%2Fprofile`);
 
-      await updatedRow.getByRole('button', { name: viMessages.memberAdmin.activateAction }).click();
+      await openMemberRowMenu(updatedRow);
+      await updatedRow.getByRole('menuitem', { name: viMessages.memberAdmin.activateAction, exact: true }).click();
       const reactivateModal = page.getByRole('dialog');
       const activateRespPromise = page.waitForResponse(
         (res) => res.url().endsWith('/activate') && res.request().method() === 'POST',
@@ -500,7 +511,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await page.getByLabel(viMessages.members.searchLabel).fill(adminFullName);
       const adminRow = table.locator('tbody tr', { hasText: adminFullName });
       await expect(adminRow).toBeVisible();
-      await adminRow.getByRole('button', { name: viMessages.memberAdmin.deactivateAction }).click();
+      await openMemberRowMenu(adminRow);
+      await adminRow.getByRole('menuitem', { name: viMessages.memberAdmin.deactivateAction, exact: true }).click();
 
       const lastAdminModal = page.getByRole('dialog');
       const conflictRespPromise = page.waitForResponse(
@@ -721,21 +733,29 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await hrPage.getByLabel(viMessages.members.searchLabel).fill(adminFullName);
       const adminRowForHr = hrTable.locator('tbody tr', { hasText: adminFullName });
       await expect(adminRowForHr).toBeVisible();
+      await openMemberRowMenu(adminRowForHr);
       await expect(
-        adminRowForHr.getByRole('button', { name: viMessages.memberAdmin.editAction, exact: true }),
+        adminRowForHr.getByRole('menuitem', { name: viMessages.memberAdmin.editAction, exact: true }),
       ).toBeVisible();
       await expect(
-        adminRowForHr.getByRole('button', { name: viMessages.memberAdmin.resetPasswordAction, exact: true }),
+        adminRowForHr.getByRole('menuitem', { name: viMessages.memberAdmin.resetPasswordAction, exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        adminRowForHr.getByText(viMessages.memberAdmin.resetPasswordAction, { exact: true }),
       ).toHaveCount(0);
 
       await hrPage.getByLabel(viMessages.members.searchLabel).fill(resetTargetFullName);
       const targetRowForHr = hrTable.locator('tbody tr', { hasText: resetTargetFullName });
       await expect(targetRowForHr).toBeVisible();
+      await openMemberRowMenu(targetRowForHr);
       await expect(
-        targetRowForHr.getByRole('button', { name: viMessages.memberAdmin.editAction, exact: true }),
+        targetRowForHr.getByRole('menuitem', { name: viMessages.memberAdmin.editAction, exact: true }),
       ).toBeVisible();
       await expect(
-        targetRowForHr.getByRole('button', { name: viMessages.memberAdmin.resetPasswordAction, exact: true }),
+        targetRowForHr.getByRole('menuitem', { name: viMessages.memberAdmin.resetPasswordAction, exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        targetRowForHr.getByText(viMessages.memberAdmin.resetPasswordAction, { exact: true }),
       ).toHaveCount(0);
 
       const directAdminResetRes = await hrPage.request.post(
@@ -775,7 +795,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       const targetRow = adminTable.locator('tbody tr', { hasText: resetTargetFullName });
       await expect(targetRow).toBeVisible();
 
-      const adminResetBtn = targetRow.getByRole('button', {
+      await openMemberRowMenu(targetRow);
+      const adminResetBtn = targetRow.getByRole('menuitem', {
         name: viMessages.memberAdmin.resetPasswordAction,
         exact: true,
       });
@@ -1112,7 +1133,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await expect(targetRow).toBeVisible();
       await expectColorfulInitialsAvatar(targetRow.locator('.ui-avatar'), basicUserId, basicFullName);
 
-      await targetRow.getByRole('button', { name: viMessages.memberAdmin.editAction, exact: true }).click();
+      await openMemberRowMenu(targetRow);
+      await targetRow.getByRole('menuitem', { name: viMessages.memberAdmin.editAction, exact: true }).click();
       const editDrawer = hrPage.getByRole('dialog');
       await expect(editDrawer).toBeVisible();
       await expectColorfulInitialsAvatar(

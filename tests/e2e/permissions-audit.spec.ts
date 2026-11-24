@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { and, eq, inArray, ne, or } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import {
+  clubAssets,
   departments,
   loginAttempts,
   permissions,
@@ -14,6 +15,7 @@ import { DEFAULT_MEMBER_PERMISSIONS } from '@/lib/permissions';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import viMessages from '../../messages/vi.json';
+import { createSolidPngBuffer } from './helpers/media-fixtures';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
@@ -190,6 +192,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
   test.afterAll(async () => {
     if (db) {
       const cleanupIds = [adminUserId, hrUpdaterUserId, targetUserId, auditViewerUserId];
+      await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
       await db.delete(sessions).where(inArray(sessions.userId, cleanupIds));
       await db.delete(userPermissions).where(inArray(userPermissions.userId, cleanupIds));
       await db.delete(departments).where(eq(departments.name, tempDeptName));
@@ -260,7 +263,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     await tracker.assertClean();
   });
 
-  test('manages permissions, immediate AC-07 effect, WQ-06 preset replacement, and 409 last admin on S10', async ({
+  test('manages permissions, immediate AC-07 effect, WQ-06 preset replacement, compact S10 layout, self-demote guard, and AC-09 409 on S10/S09', async ({
     browser,
     page,
   }) => {
@@ -278,9 +281,32 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
       await expect(targetBtn).toBeVisible();
       await targetBtn.click();
 
+      // CR-02B: header shows active member without redundant editingBanner, multi-column .perm-groups, compact count bar
+      await expect(page.locator('.perm-who')).toContainText(targetFullName);
       await expect(
         page.getByText(viMessages.permissionsAdmin.editingBanner.replace('{name}', targetFullName)),
-      ).toBeVisible();
+      ).toHaveCount(0);
+
+      const permGroupsLayout = await page.locator('.perm-groups').evaluate((grid) => {
+        const computedCols = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/);
+        const cards = Array.from(grid.querySelectorAll('.perm-group'));
+        const distinctX = new Set(cards.map((card) => Math.round(card.getBoundingClientRect().left)));
+        return {
+          columnCount: computedCols.length,
+          distinctXCount: distinctX.size,
+          cardCount: cards.length,
+        };
+      });
+      expect(permGroupsLayout.cardCount).toBe(6);
+      expect(permGroupsLayout.columnCount).toBeGreaterThanOrEqual(2);
+      expect(permGroupsLayout.distinctXCount).toBeGreaterThanOrEqual(2);
+
+      const saveBar = page.locator('.perm-savebar');
+      await expect(saveBar.locator('.perm-effective')).toContainText(
+        viMessages.permissionsAdmin.effectiveSummaryCount.replace('{count}', '4'),
+      );
+      await expect(saveBar).not.toContainText('member.view · task.update_assigned');
+      await expect(saveBar).not.toContainText(viMessages.permissionsAdmin.unsavedChanges);
 
       const deptManageCheckbox = page
         .locator('label.perm-row', { hasText: 'department.manage' })
@@ -291,6 +317,12 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
 
       await deptManageCheckbox.check();
       await boardCreateCheckbox.check();
+      await expect(saveBar.locator('.perm-effective')).toContainText(
+        viMessages.permissionsAdmin.effectiveSummaryCount.replace('{count}', '6'),
+      );
+      await expect(saveBar.locator('.perm-unsaved-note')).toHaveText(
+        viMessages.permissionsAdmin.unsavedChanges,
+      );
 
       const saveGrantPromise = page.waitForResponse(
         (res) =>
@@ -299,6 +331,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
       );
       await page.getByRole('button', { name: viMessages.permissionsAdmin.saveChanges }).click();
       expect((await saveGrantPromise).status()).toBe(200);
+      await expect(saveBar).not.toContainText(viMessages.permissionsAdmin.unsavedChanges);
 
       // AC-07: live session picks up newly granted permissions immediately without re-login
       const createDeptStatus = await memberPage.evaluate(async (name) => {
@@ -356,7 +389,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
       viMessages.permissionsAdmin.effectiveSummaryCount.replace('{count}', '9'),
     );
 
-    // Grant then revoke admin flag for target member
+    // Grant admin flag to another member -> now >= 2 active admins exist
     const grantAdminPromise = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/v1/members/${targetUserId}/admin`) &&
@@ -366,15 +399,54 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     expect((await grantAdminPromise).status()).toBe(200);
     await expect(page.getByText(viMessages.permissionsAdmin.adminAccessNotice)).toBeVisible();
 
+    const searchInput = page.getByLabel(viMessages.permissionsAdmin.searchLabel);
+    const adminPanel = page.locator('.perm-admin-panel');
+    const removeAdminBtn = adminPanel.getByRole('button', {
+      name: viMessages.permissionsAdmin.removeAdminButton,
+      exact: true,
+    });
+
+    // CR-02B: Admin selecting themselves with >= 2 admins sees disabled button + hint, API returns 409 CANNOT_REVOKE_OWN_ADMIN
+    await searchInput.fill(adminFullName);
+    const adminSelfBtn = page.getByRole('button', { name: new RegExp(adminFullName) });
+    await expect(adminSelfBtn).toBeVisible();
+    await adminSelfBtn.click();
+    await expect(removeAdminBtn).toBeDisabled();
+    await expect(adminPanel).toContainText(viMessages.permissionsAdmin.cannotRevokeSelfHint);
+
+    const selfDemoteMultiRes = await page.request.put(`/api/v1/members/${adminUserId}/admin`, {
+      data: { isAdmin: false },
+    });
+    expect(selfDemoteMultiRes.status()).toBe(409);
+    expect(JSON.parse(await selfDemoteMultiRes.text())).toMatchObject({
+      error: {
+        code: 'CANNOT_REVOKE_OWN_ADMIN',
+        messageKey: 'errors.cannotRevokeOwnAdmin',
+      },
+    });
+    const [adminRowMultiCheck] = await db
+      .select({ isAdmin: profiles.isAdmin })
+      .from(profiles)
+      .where(eq(profiles.id, adminUserId));
+    expect(adminRowMultiCheck?.isAdmin).toBe(true);
+
+    // Admin CAN still revoke admin flag on ANOTHER member (200)
+    await searchInput.fill(targetFullName);
+    const targetAdminBtn = page.getByRole('button', { name: new RegExp(targetFullName) });
+    await expect(targetAdminBtn).toBeVisible();
+    await targetAdminBtn.click();
+    await expect(removeAdminBtn).toBeEnabled();
+    await expect(adminPanel).not.toContainText(viMessages.permissionsAdmin.cannotRevokeSelfHint);
+
     const revokeAdminPromise = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/v1/members/${targetUserId}/admin`) &&
         res.request().method() === 'PUT',
     );
-    await page.getByRole('button', { name: viMessages.permissionsAdmin.removeAdminButton }).click();
+    await removeAdminBtn.click();
     expect((await revokeAdminPromise).status()).toBe(200);
 
-    // AC-09: block demoting the last active admin (409)
+    // Sole active admin: self-demote still returns 409 CANNOT_REVOKE_OWN_ADMIN + AC-09 LAST_ACTIVE_ADMIN on deactivate (API + S09 UI)
     const otherAdmins = await db
       .select({ id: profiles.id })
       .from(profiles)
@@ -389,23 +461,70 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
           .where(inArray(profiles.id, otherAdminIds));
       }
 
-      const searchInput = page.getByLabel(viMessages.permissionsAdmin.searchLabel);
       await searchInput.fill(adminFullName);
       const adminBtn = page.getByRole('button', { name: new RegExp(adminFullName) });
       await expect(adminBtn).toBeVisible();
       await adminBtn.click();
 
-      const conflictPromise = page.waitForResponse(
-        (res) =>
-          res.url().includes(`/api/v1/members/${adminUserId}/admin`) &&
-          res.request().method() === 'PUT',
-      );
-      await page.getByRole('button', { name: viMessages.permissionsAdmin.removeAdminButton }).click();
-      expect((await conflictPromise).status()).toBe(409);
+      await expect(removeAdminBtn).toBeDisabled();
+      await expect(adminPanel).toContainText(viMessages.permissionsAdmin.cannotRevokeSelfHint);
 
-      const adminAlert = page.locator('.perm-admin-panel').getByRole('alert');
-      await expect(adminAlert).toContainText(viMessages.permissionsAdmin.lastAdminBannerTitle);
-      await expect(adminAlert).toContainText(viMessages.errors.lastActiveAdmin);
+      const selfDemoteSoleRes = await page.request.put(`/api/v1/members/${adminUserId}/admin`, {
+        data: { isAdmin: false },
+      });
+      expect(selfDemoteSoleRes.status()).toBe(409);
+      expect(JSON.parse(await selfDemoteSoleRes.text())).toMatchObject({
+        error: {
+          code: 'CANNOT_REVOKE_OWN_ADMIN',
+          messageKey: 'errors.cannotRevokeOwnAdmin',
+        },
+      });
+      const [adminRowSoleCheck] = await db
+        .select({ isAdmin: profiles.isAdmin })
+        .from(profiles)
+        .where(eq(profiles.id, adminUserId));
+      expect(adminRowSoleCheck?.isAdmin).toBe(true);
+
+      // AC-09: Deactivating sole active admin returns 409 LAST_ACTIVE_ADMIN on API and shows alert in S09 UI
+      const deactivateSoleRes = await page.request.post(
+        `/api/v1/members/${adminUserId}/deactivate`,
+      );
+      expect(deactivateSoleRes.status()).toBe(409);
+      expect(JSON.parse(await deactivateSoleRes.text())).toMatchObject({
+        error: {
+          code: 'LAST_ACTIVE_ADMIN',
+          messageKey: 'errors.lastActiveAdmin',
+        },
+      });
+      const [adminActiveCheck] = await db
+        .select({ isActive: profiles.isActive })
+        .from(profiles)
+        .where(eq(profiles.id, adminUserId));
+      expect(adminActiveCheck?.isActive).toBe(true);
+
+      await page.goto('/admin/members');
+      await page.getByLabel(viMessages.members.searchLabel).fill(adminFullName);
+      const adminRow = page.locator('.directory-table-wrap table.ui-table tbody tr', {
+        hasText: adminFullName,
+      });
+      await expect(adminRow).toBeVisible();
+      await adminRow.getByLabel(viMessages.memberAdmin.rowActionsMenu).click();
+      await adminRow
+        .getByRole('menuitem', { name: viMessages.memberAdmin.deactivateAction, exact: true })
+        .click();
+
+      const lastAdminModal = page.getByRole('dialog');
+      const deactivateConflictPromise = page.waitForResponse(
+        (res) => res.url().endsWith('/deactivate') && res.request().method() === 'POST',
+      );
+      await lastAdminModal
+        .getByRole('button', { name: viMessages.memberAdmin.deactivateConfirm, exact: true })
+        .click();
+      expect((await deactivateConflictPromise).status()).toBe(409);
+      await expect(lastAdminModal.getByRole('alert')).toContainText(
+        viMessages.errors.lastActiveAdmin,
+      );
+      await lastAdminModal.getByRole('button', { name: viMessages.common.cancel }).click();
     } finally {
       if (otherAdminIds.length > 0) {
         await db
@@ -418,15 +537,51 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     await tracker.assertClean();
   });
 
-  test('renders read-only audit ledger on S13 without PII or edit controls (FR-16, AC-10)', async ({
+  test('renders read-only audit ledger on S13 with formatted CR-01/CR-02 metadata and zero PII or binary (FR-16, AC-10, CR-02B)', async ({
+    browser,
     page,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
+    const resetTempSecret = 'AuditResetMeta#2026';
+    const pngBytes = createSolidPngBuffer(20, 20, [219, 39, 119, 255]);
+    const pngBase64 = pngBytes.toString('base64');
+    const pngDataUrl = `data:image/png;base64,${pngBase64}`;
 
-    let auditApiBody = '';
+    // Generate real CR-01 & CR-02 audit events using an admin session
+    const adminContext = await browser.newContext();
+    const adminPage = await adminContext.newPage();
+    try {
+      await signInAs(adminPage, adminStudentId, '/admin/members');
+      const logoPutRes = await adminPage.request.put('/api/v1/branding/logo', {
+        data: { dataUrl: pngDataUrl },
+      });
+      expect(logoPutRes.status()).toBe(200);
+      const logoDelRes = await adminPage.request.delete('/api/v1/branding/logo');
+      expect(logoDelRes.status()).toBe(200);
+      const avatarPutRes = await adminPage.request.put(`/api/v1/members/${targetUserId}/avatar`, {
+        data: { dataUrl: pngDataUrl },
+      });
+      expect(avatarPutRes.status()).toBe(200);
+      const avatarDelRes = await adminPage.request.delete(`/api/v1/members/${targetUserId}/avatar`);
+      expect(avatarDelRes.status()).toBe(200);
+      const resetRes = await adminPage.request.post(
+        `/api/v1/members/${targetUserId}/reset-password`,
+        { data: { newPassword: resetTempSecret } },
+      );
+      expect(resetRes.status()).toBe(200);
+    } finally {
+      await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+      await db
+        .update(profiles)
+        .set({ avatarData: null, avatarMime: null, avatarUpdatedAt: null, updatedAt: new Date() })
+        .where(eq(profiles.id, targetUserId));
+      await adminContext.close();
+    }
+
+    const capturedAuditBodies: string[] = [];
     page.on('response', async (res) => {
       if (res.url().includes('/api/v1/audit-logs') && res.status() === 200) {
-        auditApiBody = await res.text();
+        capturedAuditBodies.push(await res.text());
       }
     });
 
@@ -434,6 +589,9 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     await expect(page.locator('.audit-table tbody tr').first()).toBeVisible();
 
     const actionFilter = page.getByLabel(viMessages.auditLogs.actionFilterLabel);
+    const detailPane = page.locator('aside.audit-side');
+
+    // 1. Permission preset audit detail
     const filteredRespPromise = page.waitForResponse(
       (res) =>
         res.url().includes('/api/v1/audit-logs') &&
@@ -445,24 +603,105 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     const presetRow = page.locator('.audit-table tbody tr', { hasText: targetFullName }).first();
     await expect(presetRow).toBeVisible();
     await presetRow.click();
-
-    const detailPane = page.locator('aside.audit-side');
     await expect(detailPane).toContainText(viMessages.auditLogs.detailHeading);
     await expect(detailPane).toContainText(viMessages.permissions.presets.department_lead);
     await expect(detailPane).toContainText(viMessages.auditLogs.detailPrivacyNotice);
 
+    // 2. CR-02 branding.logo_updated formatted metadata labels (assetKey, mimeType, byteLength)
+    const logoUpdRespPromise = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/v1/audit-logs') &&
+        res.url().includes('action=branding.logo_updated'),
+    );
+    await actionFilter.selectOption('branding.logo_updated');
+    expect((await logoUpdRespPromise).status()).toBe(200);
+
+    const logoUpdRow = page
+      .locator('.audit-table tbody tr', { hasText: viMessages.auditLogs.actions.brandingLogoUpdated })
+      .first();
+    await expect(logoUpdRow).toBeVisible();
+    await logoUpdRow.click();
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailLabels.assetKey);
+    await expect(detailPane).toContainText('club_logo');
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailLabels.mimeType);
+    await expect(detailPane).toContainText('image/png');
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailLabels.byteLength);
+    await expect(detailPane).toContainText(/\d+(\.\d+)?\s*(B|KB)/);
+
+    // 3. CR-02 branding.logo_removed & member.avatar_removed formatted metadata labels
+    const logoRemRespPromise = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/v1/audit-logs') &&
+        res.url().includes('action=branding.logo_removed'),
+    );
+    await actionFilter.selectOption('branding.logo_removed');
+    expect((await logoRemRespPromise).status()).toBe(200);
+
+    const logoRemRow = page
+      .locator('.audit-table tbody tr', { hasText: viMessages.auditLogs.actions.brandingLogoRemoved })
+      .first();
+    await expect(logoRemRow).toBeVisible();
+    await logoRemRow.click();
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailLabels.assetKey);
+    await expect(detailPane).toContainText('club_logo');
+
+    const avatarRemRespPromise = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/v1/audit-logs') &&
+        res.url().includes('action=member.avatar_removed'),
+    );
+    await actionFilter.selectOption('member.avatar_removed');
+    expect((await avatarRemRespPromise).status()).toBe(200);
+
+    const avatarRemRow = page.locator('.audit-table tbody tr', { hasText: targetFullName }).first();
+    await expect(avatarRemRow).toBeVisible();
+    await avatarRemRow.click();
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailLabels.removed);
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailValues.yes);
+
+    // 4. CR-01 member.password_reset formatted metadata labels (forceChangeOnLogin, sessionsRevoked)
+    const pwResetRespPromise = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/v1/audit-logs') &&
+        res.url().includes('action=member.password_reset'),
+    );
+    await actionFilter.selectOption('member.password_reset');
+    expect((await pwResetRespPromise).status()).toBe(200);
+
+    const pwResetRow = page.locator('.audit-table tbody tr', { hasText: targetFullName }).first();
+    await expect(pwResetRow).toBeVisible();
+    await pwResetRow.click();
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailLabels.forceChangeOnLogin);
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailLabels.sessionsRevoked);
+    await expect(detailPane).toContainText(viMessages.auditLogs.detailValues.yes);
+
     await expect(page.locator('.audit-layout button', { hasText: /xóa|delete|sửa|edit/i })).toHaveCount(0);
 
     const pageText = await page.locator('main').innerText();
-    for (const sensitive of [adminStudentId, targetStudentId, hrStudentId, adminEmail, targetEmail, hrEmail]) {
+    const forbiddenValues = [
+      adminStudentId,
+      targetStudentId,
+      hrStudentId,
+      adminEmail,
+      targetEmail,
+      hrEmail,
+      resetTempSecret,
+      DEV_SEED_PASSWORD,
+      pngBase64,
+      'data:image/',
+    ];
+    for (const sensitive of forbiddenValues) {
       expect(pageText).not.toContain(sensitive);
-      expect(auditApiBody).not.toContain(sensitive);
     }
-    expect(auditApiBody).not.toContain('"studentId"');
-    expect(auditApiBody).not.toContain('"email"');
-    expect(auditApiBody).not.toContain('passwordHash');
-    expect(auditApiBody).not.toContain('password_hash');
-    expect(auditApiBody).not.toContain(DEV_SEED_PASSWORD);
+    for (const body of capturedAuditBodies) {
+      for (const sensitive of forbiddenValues) {
+        expect(body).not.toContain(sensitive);
+      }
+      expect(body).not.toContain('"studentId"');
+      expect(body).not.toContain('"email"');
+      expect(body).not.toContain('passwordHash');
+      expect(body).not.toContain('password_hash');
+    }
 
     await tracker.assertClean();
   });

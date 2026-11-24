@@ -38,6 +38,8 @@ export function normalizeStoredPermissions(codes: readonly string[]): Permission
 }
 
 export interface AdminFlagCheckInput {
+  readonly actorId: string;
+  readonly targetUserId: string;
   readonly currentIsAdmin: boolean;
   readonly nextIsAdmin: boolean;
   readonly targetIsActive: boolean;
@@ -45,6 +47,14 @@ export interface AdminFlagCheckInput {
 }
 
 export function assertAdminFlagChangeAllowed(input: AdminFlagCheckInput): void {
+  if (
+    input.actorId === input.targetUserId &&
+    input.currentIsAdmin &&
+    !input.nextIsAdmin
+  ) {
+    throw conflict('errors.cannotRevokeOwnAdmin', {}, 'CANNOT_REVOKE_OWN_ADMIN');
+  }
+
   if (
     input.currentIsAdmin &&
     !input.nextIsAdmin &&
