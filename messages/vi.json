@@ -14,6 +14,7 @@
     "boards": "Board",
     "myTasks": "Task của tôi",
     "members": "Thành viên",
+    "archive": "Lưu trữ",
     "profile": "Hồ sơ",
     "memberAdmin": "Quản trị thành viên",
     "permissions": "Phân quyền",
@@ -260,6 +261,12 @@
     "boardColumnMismatch": "Cột được chọn không thuộc board này.",
     "invalidImageFormat": "Định dạng ảnh không được hỗ trợ. Chỉ chấp nhận PNG, JPEG hoặc WEBP (không nhận SVG).",
     "imageTooLarge": "Ảnh vẫn vượt quá 256 KB sau khi nén. Vui lòng chọn ảnh nhỏ hơn.",
+    "boardArchived": "Board cha của task này hiện đang bị lưu trữ. Hãy khôi phục board trước khi khôi phục task.",
+    "boardHasNoColumns": "Board không còn cột nào để đặt task khôi phục. Hãy tạo ít nhất một cột trước.",
+    "taskNotDeleted": "Task này hiện đang hoạt động, không nằm trong Lưu trữ.",
+    "memberAlreadyActive": "Tài khoản thành viên này hiện đang hoạt động.",
+    "boardNotArchived": "Board này hiện đang hoạt động, không ở trạng thái lưu trữ.",
+    "entityNotArchived": "Chỉ có thể xóa vĩnh viễn các mục đang nằm trong Lưu trữ.",
     "401": {
       "code": "401",
       "title": "Chưa đăng nhập",
@@ -543,11 +550,23 @@
       "byteLength": "Dung lượng",
       "removed": "Đã gỡ ảnh",
       "forceChangeOnLogin": "Buộc đổi mật khẩu khi đăng nhập",
-      "sessionsRevoked": "Đã thu hồi các phiên"
+      "sessionsRevoked": "Đã thu hồi các phiên",
+      "retentionDays": "Thời hạn tự xóa mới",
+      "previousRetentionDays": "Thời hạn trước đó",
+      "purgeMode": "Chế độ xóa vĩnh viễn",
+      "cascadedTasks": "Số task bị xóa theo board",
+      "taskId": "Mã task",
+      "boardId": "Mã board",
+      "purgedMemberId": "Mã thành viên đã xóa"
     },
     "detailValues": {
       "yes": "Có",
-      "no": "Không"
+      "no": "Không",
+      "retentionNever": "Không tự xóa",
+      "retentionDaysCount": "{days} ngày",
+      "purgeModeMarkedPurged": "Đánh dấu đã xóa vĩnh viễn",
+      "purgeModeAnonymized": "Ẩn danh PII (giữ lịch sử)",
+      "purgeModePhysicalDelete": "Xóa hẳn bản ghi"
     },
     "actions": {
       "memberCreated": "Tạo thành viên",
@@ -570,7 +589,13 @@
       "boardUpdated": "Cập nhật board",
       "boardArchived": "Lưu trữ board",
       "brandingLogoUpdated": "Cập nhật logo CLB",
-      "brandingLogoRemoved": "Khôi phục logo CLB mặc định"
+      "brandingLogoRemoved": "Khôi phục logo CLB mặc định",
+      "archiveMemberRestored": "Khôi phục thành viên từ Lưu trữ",
+      "archiveBoardRestored": "Khôi phục board từ Lưu trữ",
+      "archiveTaskPurged": "Xóa vĩnh viễn task",
+      "archiveBoardPurged": "Xóa vĩnh viễn board",
+      "archiveMemberPurged": "Xóa vĩnh viễn thành viên",
+      "archiveRetentionUpdated": "Cập nhật thời hạn tự xóa Lưu trữ"
     }
   },
   "boards": {
@@ -708,5 +733,73 @@
     "loadError": "Không tải được danh sách task của bạn.",
     "loadMore": "Tải thêm task",
     "loadingMore": "Đang tải thêm..."
+  },
+  "archive": {
+    "kicker": "Không gian làm việc",
+    "title": "Trung tâm Lưu trữ",
+    "subtitle": "Khôi phục task đã xóa mềm, thành viên đã rời hoặc board đã lưu trữ. Chỉ admin mới có thể xóa vĩnh viễn hoặc đổi lịch tự xóa.",
+    "forbiddenTitle": "Bạn không có quyền xem Lưu trữ",
+    "forbiddenDescription": "Cần ít nhất một quyền quản lý lưu trữ (task.delete, member.deactivate hoặc board.delete) hoặc quyền admin.",
+    "tabsAriaLabel": "Nhóm mục lưu trữ",
+    "tabs": {
+      "tasks": "Task đã xóa",
+      "members": "Thành viên đã rời",
+      "boards": "Board lưu trữ"
+    },
+    "searchLabel": "Tìm trong Lưu trữ",
+    "searchPlaceholder": "Tìm theo tiêu đề task, tên hoặc email...",
+    "resetSearch": "Xóa tìm kiếm",
+    "loadMore": "Tải thêm",
+    "loadingMore": "Đang tải thêm...",
+    "loadErrorTitle": "Không tải được dữ liệu Lưu trữ",
+    "emptyTitle": "Chưa có mục nào trong Lưu trữ",
+    "emptyDescription": "Các task đã xóa mềm, thành viên đã rời hoặc board lưu trữ sẽ hiển thị tại đây.",
+    "restoreButton": "Khôi phục",
+    "restoringButton": "Đang khôi phục...",
+    "purgeButton": "Xóa vĩnh viễn",
+    "colTask": "Task",
+    "colBoardColumn": "Board / Cột",
+    "colAssignees": "Người được giao",
+    "colDeletedAt": "Xóa lúc",
+    "colLeftAt": "Rời CLB lúc",
+    "colBoard": "Board",
+    "colDepartment": "Ban",
+    "colTaskCount": "Số task",
+    "colArchivedAt": "Lưu trữ lúc",
+    "colCreatedBy": "Người tạo",
+    "colActions": "Thao tác",
+    "boardArchivedBadge": "Board đã lưu trữ",
+    "deletedColumnFallback": "Cột cũ đã xóa (sẽ khôi phục vào cột đầu)",
+    "boardTaskCount": "{count} task",
+    "retentionTitle": "Chính sách tự động xóa vĩnh viễn",
+    "retentionLabel": "Thời hạn tự xóa",
+    "retentionAdminOnlyNote": "Chỉ admin mới có thể thay đổi chính sách tự động xóa.",
+    "retentionUpdatedNote": "Cập nhật gần nhất: {time}",
+    "retentionUpdatedByNote": "Cập nhật gần nhất: {time} · bởi {name}",
+    "retentionSave": "Lưu chính sách",
+    "retentionSaving": "Đang lưu...",
+    "retentionLoadError": "Không tải được cấu hình thời hạn lưu trữ.",
+    "retentionSavedToast": "Đã cập nhật thời hạn tự xóa Lưu trữ.",
+    "retentionOptions": {
+      "never": "Không tự xóa",
+      "days7": "1 tuần (7 ngày)",
+      "days30": "1 tháng (30 ngày)",
+      "days90": "3 tháng (90 ngày)"
+    },
+    "entityTypes": {
+      "tasks": "task",
+      "members": "thành viên",
+      "boards": "board"
+    },
+    "purgeModalTitle": "Xác nhận xóa vĩnh viễn",
+    "purgeModalBody": "Bạn sắp xóa vĩnh viễn {entityType} \"{name}\". Thao tác này không thể hoàn tác.",
+    "purgeModalHistoryNote": "Dữ liệu định danh cá nhân (PII) sẽ bị xóa hoặc ẩn danh, trong khi nhật ký quản trị và lịch sử task bất biến vẫn được giữ nguyên.",
+    "purgeModalConfirm": "Xóa vĩnh viễn",
+    "purging": "Đang xóa...",
+    "taskRestoredToast": "Đã khôi phục task \"{title}\".",
+    "memberRestoredToast": "Đã khôi phục tài khoản \"{name}\".",
+    "boardRestoredToast": "Đã khôi phục board \"{name}\".",
+    "purgedToast": "Đã xóa vĩnh viễn {entityType} \"{name}\".",
+    "privacyHint": "MSSV và email chỉ hiển thị khi bạn có quyền member.view_detail."
   }
 }

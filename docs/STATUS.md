@@ -1,7 +1,7 @@
 # STATUS
 
 Cập nhật: 2026-11-24 · Phiên: 6
-Epic hiện tại: CR-04 (`[RỦI RO CAO]`) · Item: CR-04-01, CR-04-02, CR-04-03 · Trạng thái: In progress trên nhánh `feat/CR04-archive-center` (đã merge `CR-02B` vào `main`)
+Epic hiện tại: CR-04 (`[RỦI RO CAO]`) · Item: CR-04-01, CR-04-02, CR-04-03 · Trạng thái: Done trên nhánh `feat/CR04-archive-center` (chờ chủ dự án duyệt merge PR)
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -28,8 +28,16 @@ Epic hiện tại: CR-04 (`[RỦI RO CAO]`) · Item: CR-04-01, CR-04-02, CR-04-0
   - Frontend & Bố cục (`CR-02B-02`): `src/app/page.tsx` chuyển hướng ngay sang `/login` (chưa đăng nhập) hoặc `/boards` / `/profile?changePassword=1` (đã đăng nhập), link logo về `/boards`; khóa nút tự gỡ Admin ở `AdminFlagPanel`; gộp nút hàng `S09` vào menu `⋯` (`src/components/ActionMenu.tsx`), bỏ banner thừa & căn lưới 2 cột `S10`, cân cột `S08` & `S03`–`S06`, invalidate cache avatar trên board/task/myTasks & render metadata `branding`/`avatar` ở `AuditDetailPane`, `vi`/`en` 100%.
   - Kiểm thử & QA (`CR-02B-03`, `qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`221/963`), `openapi:check`, **`212` unit test / `42` tệp**, **`18` integration PostgreSQL / `11` tệp**, `next build` (`28/28` trang/route), **`19/19` Chrome E2E** -> **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor không chặn).
 
+- **CR-04 (`[RỦI RO CAO]` — Done trên `feat/CR04-archive-center`, chờ chủ dự án duyệt merge PR):**
+  - Hợp đồng & CSDL (`CR-04-01`): Migration cộng thêm [0004_archive_purged_and_retention.sql](file:///g:/Code/Project/BEAM-club-management/db/migrations/0004_archive_purged_and_retention.sql) (`purged_at` trên `profiles`/`boards`/`tasks`, mở ngoại lệ một chiều `prevent_student_id_change` & thêm `prevent_entity_unpurge`, seed `app_settings('archive_retention')`), cập nhật [ERD.md](file:///g:/Code/Project/BEAM-club-management/docs/ERD.md), [openapi.yaml](file:///g:/Code/Project/BEAM-club-management/docs/openapi.yaml) (`schema.d.ts`), và [archive.ts](file:///g:/Code/Project/BEAM-club-management/src/lib/archive.ts).
+  - Backend (`CR-04-01`): Lọc `purged_at IS NULL` toàn hệ thống (`404` sau purge), module [archive](file:///g:/Code/Project/BEAM-club-management/src/server/modules/archive/index.ts) (`GET /archive` phân quyền 3 tab + che task ẩn `404` + che PII `member.view_detail`, `POST /archive/{type}/{id}/restore` + `/tasks/{id}/restore` hỗ trợ `WQ-33` & `409 BOARD_ARCHIVED`, `DELETE /archive/{type}/{id}` chỉ Admin ẩn danh PII `'Thành viên đã xóa'` bảo toàn `task_events`/`audit_logs` hoặc xóa vật lý tài khoản chưa phát sinh lịch sử, `GET/PUT /settings/archive-retention`, và `POST /internal/cron/archive-purge` bảo vệ bằng `CRON_SECRET`).
+  - Frontend (`CR-04-02`): Điều hướng `/archive` trên `AppShell`, trang [archive/page.tsx](file:///g:/Code/Project/BEAM-club-management/src/app/archive/page.tsx) và `src/features/archive/*` (3 tab lọc theo quyền, thanh hạn tự dọn 7/30/90 ngày chỉ Admin chỉnh, khôi phục & modal xóa vĩnh viễn, che PII, song ngữ `vi`/`en`, audit formatter `archive.*`).
+  - Kiểm thử & QA (`CR-04-03`, `qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`248/1130`), `openapi:check`, **`228` unit test / `44` tệp**, **`20` integration PostgreSQL / `12` tệp**, `next build` (`32` trang/route), **`23/23` Chrome E2E** (gồm [archive.spec.ts](file:///g:/Code/Project/BEAM-club-management/tests/e2e/archive.spec.ts)) và audit `6A.8` đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor không chặn).
+
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Không có mục bị chặn; đang triển khai **`CR-04`** trên nhánh `feat/CR04-archive-center` theo duyệt của chủ dự án (`A1`–`A5`).
+- Chờ Sang xác nhận:
+  1. **Duyệt merge nhánh `feat/CR04-archive-center` vào `main`.**
+  2. **Duyệt danh sách item `CR-03` (`[RỦI RO CAO]` Giao task cho Ban `task_departments` + Email SMTP & Thông báo chuông)** để bắt đầu triển khai tiếp.
 
 ## Việc tiếp theo
-- Hoàn tất **`CR-04`** (Kho lưu trữ tập trung Archive `/archive` cho Task/User/Board, `CR-04-01..03`) kèm kiểm thử & review độc lập `qa-engineer` -> trình PR xin chủ dự án duyệt merge -> chuyển sang **`CR-03`** (Giao task theo Ban & Thông báo) -> **`E6–E9`**.
+- Sau khi Sang duyệt merge `CR-04`: merge `--no-ff` vào `main`, rồi triển khai **`CR-03`** (Giao task theo Ban & Thông báo) -> **`E6–E9`**.

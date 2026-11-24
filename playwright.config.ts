@@ -53,6 +53,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  timeout: 30_000,
+  globalTimeout: 180_000,
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:3001',
@@ -68,10 +70,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx next start -H 127.0.0.1 -p 3001',
+    command: 'node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3001',
     url: 'http://127.0.0.1:3001/login',
     reuseExistingServer: false,
-    timeout: 60_000,
+    timeout: 45_000,
     env: serverEnv,
   },
 });

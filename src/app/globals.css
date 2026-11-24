@@ -3963,6 +3963,117 @@ svg {
   flex-wrap: wrap;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Unified Archive Center (CR-04) ---------- */
+
+.archive-retention-bar {
+  display: grid;
+  gap: 10px;
+}
+
+.archive-retention-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.archive-retention-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.archive-retention-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.archive-retention-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.archive-retention-select {
+  width: auto;
+  min-width: 185px;
+}
+
+.archive-task-title-cell,
+.archive-board-col-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.archive-primary-title {
+  font-weight: 700;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.archive-inline-badges,
+.archive-board-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.archive-board-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.archive-col-name {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.archive-fallback-note {
+  font-size: 11.5px;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.archive-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.archive-mobile-time {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.archive-privacy-banner {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--paper);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

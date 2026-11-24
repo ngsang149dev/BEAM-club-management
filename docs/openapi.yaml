@@ -31,6 +31,8 @@ tags:
     description: Task CRUD, drag-and-drop move, assignees, hidden flag, and soft delete
   - name: History & Trash
     description: Append-only task event history, command-based revert, and board trash recovery
+  - name: Archive
+    description: Unified Archive center for soft-deleted tasks, deactivated members, archived boards, retention settings, and safe permanent purge
   - name: Comments
     description: Task comments
   - name: Settings & Audit
@@ -1751,6 +1753,216 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  # ---------------------------------------------------------------------------
+  # Unified Archive Center (CR-04)
+  # ---------------------------------------------------------------------------
+  /archive:
+    get:
+      tags: [Archive]
+      summary: List archived tasks, deactivated members, or archived boards
+      description: |
+        Requires permission matching the requested `tab` (or `is_admin=true`):
+        - `tasks`: requires `task.delete` (excludes `purged_at IS NOT NULL` and enforces `taskVisibilityPolicy` for hidden tasks).
+        - `members`: requires `member.deactivate` (excludes `purged_at IS NOT NULL` and masks `studentId`/`email` unless caller holds `member.view_detail` or admin).
+        - `boards`: requires `board.delete` (excludes `purged_at IS NOT NULL`).
+      parameters:
+        - name: tab
+          in: query
+          schema:
+            $ref: "#/components/schemas/ArchiveTab"
+            default: tasks
+        - name: q
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated archived items for the selected tab
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArchivePageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /archive/tasks/{id}/restore:
+    post:
+      tags: [Archive]
+      summary: Restore a soft-deleted task from the Archive
+      description: |
+        Requires `task.delete` (or admin). Hidden tasks (`is_hidden=true`) MUST return `404` to unauthorized callers before any permission/state check.
+        Returns `409 BOARD_ARCHIVED` when the parent board is currently archived, restores to the original column or falls back to the board's first column (`WQ-33`), and records `task.restored` in `task_events`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Task restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /archive/members/{id}/restore:
+    post:
+      tags: [Archive]
+      summary: Restore (reactivate) an archived member account
+      description: |
+        Requires `member.deactivate` (or admin). Sets `is_active=true` and `left_at=null`, returning `404` if the member does not exist or has already been purged (`purged_at IS NOT NULL`), and `409 MEMBER_ALREADY_ACTIVE` if already active.
+        PII (`studentId`, `email`) in response obeys `member.view_detail` / admin rules.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Member reactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /archive/boards/{id}/restore:
+    post:
+      tags: [Archive]
+      summary: Restore (unarchive) an archived board
+      description: Requires `board.delete` (or admin). Clears `archived_at=null`, returning `404` if missing or purged and `409 BOARD_NOT_ARCHIVED` if currently active.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Board restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardSummaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /archive/{entityType}/{id}:
+    delete:
+      tags: [Archive]
+      summary: Permanently purge an archived task, member, or board (Admin-only)
+      description: |
+        Requires `is_admin=true` (`403` otherwise). Only items already archived (`deleted_at IS NOT NULL`, `is_active=false`, or `archived_at IS NOT NULL`) can be purged (`409` if still active).
+        Tasks and boards receive `purged_at = now()` (boards also release department link and cascade `deleted_at`/`purged_at` to tasks on the board) while preserving append-only history tables.
+        Inactive members are either physically deleted from `profiles` when unreferenced (after clearing own `sessions`, `member_departments`, and `user_permissions`) or PII-anonymized (`full_name="Thành viên đã xóa"`, `purged_at=now()`) when history references exist.
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArchiveTab"
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Archived entity permanently purged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurgeArchiveItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /settings/archive-retention:
+    get:
+      tags: [Archive, Settings & Audit]
+      summary: Get automatic Archive purge retention setting
+      description: Requires `is_admin=true` or any Archive view permission (`task.delete`, `member.deactivate`, `board.delete`).
+      responses:
+        "200":
+          description: Current Archive auto-purge retention configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArchiveRetentionSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    put:
+      tags: [Archive, Settings & Audit]
+      summary: Update automatic Archive purge retention setting (Admin-only)
+      description: Requires `is_admin=true`. Stores `{ retentionDays }` (`null`, `7`, `30`, or `90`) in `app_settings` key `'archive_retention'` and logs to `audit_logs`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateArchiveRetentionRequest"
+      responses:
+        "200":
+          description: Updated Archive retention configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArchiveRetentionSettingsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /internal/cron/archive-purge:
+    post:
+      tags: [Internal Cron, Archive]
+      summary: Run daily automatic Archive retention purge job
+      description: |
+        Protected by `cronSecret` (`Authorization: Bearer <CRON_SECRET>`).
+        Reads `app_settings('archive_retention')`; when `retentionDays` is `7`, `30`, or `90`, permanently purges expired soft-deleted tasks, archived boards, and deactivated members using the exact same safe PII-anonymization/history-preservation rules.
+      security:
+        - cronSecret: []
+      responses:
+        "200":
+          description: Archive auto-purge execution summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronArchivePurgeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 # =============================================================================
 # Components
 # =============================================================================
@@ -2922,5 +3134,125 @@ components:
           type: integer
           minimum: 0
         skippedAlreadySent:
+          type: integer
+          minimum: 0
+
+    # -------------------------------------------------------------------------
+    # Unified Archive Center (CR-04)
+    # -------------------------------------------------------------------------
+    ArchiveTab:
+      type: string
+      enum: [tasks, members, boards]
+
+    ArchivePurgeMode:
+      type: string
+      enum: [marked_purged, anonymized, physical_delete]
+
+    ArchiveRetentionDays:
+      type: ["integer", "null"]
+      enum: [7, 30, 90, null]
+
+    ArchiveTaskItem:
+      type: object
+      required: [task, boardName, boardArchived, columnName]
+      properties:
+        task:
+          $ref: "#/components/schemas/TaskDto"
+        boardName:
+          type: string
+        boardArchived:
+          type: boolean
+        columnName:
+          type: ["string", "null"]
+
+    ArchiveBoardItem:
+      type: object
+      required: [board, taskCount]
+      properties:
+        board:
+          $ref: "#/components/schemas/BoardSummaryDto"
+        taskCount:
+          type: integer
+          minimum: 0
+
+    ArchivePageResponse:
+      type: object
+      required: [tab, tasks, members, boards, meta]
+      properties:
+        tab:
+          $ref: "#/components/schemas/ArchiveTab"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArchiveTaskItem"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberListItem"
+        boards:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArchiveBoardItem"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    PurgeArchiveItemResponse:
+      type: object
+      required: [purged, entityType, id, mode]
+      properties:
+        purged:
+          type: boolean
+        entityType:
+          $ref: "#/components/schemas/ArchiveTab"
+        id:
+          type: string
+          format: uuid
+        mode:
+          $ref: "#/components/schemas/ArchivePurgeMode"
+
+    ArchiveRetentionSettingsDto:
+      type: object
+      required: [retentionDays, updatedAt, updatedBy]
+      properties:
+        retentionDays:
+          $ref: "#/components/schemas/ArchiveRetentionDays"
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+        updatedBy:
+          oneOf:
+            - $ref: "#/components/schemas/MemberPublicSummary"
+            - type: "null"
+
+    ArchiveRetentionSettingsResponse:
+      type: object
+      required: [settings]
+      properties:
+        settings:
+          $ref: "#/components/schemas/ArchiveRetentionSettingsDto"
+
+    UpdateArchiveRetentionRequest:
+      type: object
+      required: [retentionDays]
+      properties:
+        retentionDays:
+          $ref: "#/components/schemas/ArchiveRetentionDays"
+
+    CronArchivePurgeResponse:
+      type: object
+      required: [retentionDays, cutoffAt, purgedTasks, purgedBoards, purgedMembers]
+      properties:
+        retentionDays:
+          $ref: "#/components/schemas/ArchiveRetentionDays"
+        cutoffAt:
+          type: ["string", "null"]
+          format: date-time
+        purgedTasks:
+          type: integer
+          minimum: 0
+        purgedBoards:
+          type: integer
+          minimum: 0
+        purgedMembers:
           type: integer
           minimum: 0

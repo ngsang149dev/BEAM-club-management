@@ -2571,6 +2571,357 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List archived tasks, deactivated members, or archived boards
+         * @description Requires permission matching the requested `tab` (or `is_admin=true`):
+         *     - `tasks`: requires `task.delete` (excludes `purged_at IS NOT NULL` and enforces `taskVisibilityPolicy` for hidden tasks).
+         *     - `members`: requires `member.deactivate` (excludes `purged_at IS NOT NULL` and masks `studentId`/`email` unless caller holds `member.view_detail` or admin).
+         *     - `boards`: requires `board.delete` (excludes `purged_at IS NOT NULL`).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    tab?: components["schemas"]["ArchiveTab"];
+                    q?: string;
+                    cursor?: components["parameters"]["CursorParam"];
+                    limit?: components["parameters"]["LimitParam"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated archived items for the selected tab */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ArchivePageResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/archive/tasks/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a soft-deleted task from the Archive
+         * @description Requires `task.delete` (or admin). Hidden tasks (`is_hidden=true`) MUST return `404` to unauthorized callers before any permission/state check.
+         *     Returns `409 BOARD_ARCHIVED` when the parent board is currently archived, restores to the original column or falls back to the board's first column (`WQ-33`), and records `task.restored` in `task_events`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Task restored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskMutationResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/archive/members/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore (reactivate) an archived member account
+         * @description Requires `member.deactivate` (or admin). Sets `is_active=true` and `left_at=null`, returning `404` if the member does not exist or has already been purged (`purged_at IS NOT NULL`), and `409 MEMBER_ALREADY_ACTIVE` if already active.
+         *     PII (`studentId`, `email`) in response obeys `member.view_detail` / admin rules.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Member reactivated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemberItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/archive/boards/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore (unarchive) an archived board
+         * @description Requires `board.delete` (or admin). Clears `archived_at=null`, returning `404` if missing or purged and `409 BOARD_NOT_ARCHIVED` if currently active.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Board restored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BoardSummaryResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/archive/{entityType}/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Permanently purge an archived task, member, or board (Admin-only)
+         * @description Requires `is_admin=true` (`403` otherwise). Only items already archived (`deleted_at IS NOT NULL`, `is_active=false`, or `archived_at IS NOT NULL`) can be purged (`409` if still active).
+         *     Tasks and boards receive `purged_at = now()` (boards also release department link and cascade `deleted_at`/`purged_at` to tasks on the board) while preserving append-only history tables.
+         *     Inactive members are either physically deleted from `profiles` when unreferenced (after clearing own `sessions`, `member_departments`, and `user_permissions`) or PII-anonymized (`full_name="Thành viên đã xóa"`, `purged_at=now()`) when history references exist.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    entityType: components["schemas"]["ArchiveTab"];
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Archived entity permanently purged */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PurgeArchiveItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/archive-retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get automatic Archive purge retention setting
+         * @description Requires `is_admin=true` or any Archive view permission (`task.delete`, `member.deactivate`, `board.delete`).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Current Archive auto-purge retention configuration */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ArchiveRetentionSettingsResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        /**
+         * Update automatic Archive purge retention setting (Admin-only)
+         * @description Requires `is_admin=true`. Stores `{ retentionDays }` (`null`, `7`, `30`, or `90`) in `app_settings` key `'archive_retention'` and logs to `audit_logs`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateArchiveRetentionRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated Archive retention configuration */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ArchiveRetentionSettingsResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/cron/archive-purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run daily automatic Archive retention purge job
+         * @description Protected by `cronSecret` (`Authorization: Bearer <CRON_SECRET>`).
+         *     Reads `app_settings('archive_retention')`; when `retentionDays` is `7`, `30`, or `90`, permanently purges expired soft-deleted tasks, archived boards, and deactivated members using the exact same safe PII-anonymization/history-preservation rules.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Archive auto-purge execution summary */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CronArchivePurgeResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3042,6 +3393,56 @@ export interface components {
             emailsSent: number;
             remindersRecorded: number;
             skippedAlreadySent: number;
+        };
+        /** @enum {string} */
+        ArchiveTab: "tasks" | "members" | "boards";
+        /** @enum {string} */
+        ArchivePurgeMode: "marked_purged" | "anonymized" | "physical_delete";
+        /** @enum {integer|null} */
+        ArchiveRetentionDays: 7 | 30 | 90 | null;
+        ArchiveTaskItem: {
+            task: components["schemas"]["TaskDto"];
+            boardName: string;
+            boardArchived: boolean;
+            columnName: string | null;
+        };
+        ArchiveBoardItem: {
+            board: components["schemas"]["BoardSummaryDto"];
+            taskCount: number;
+        };
+        ArchivePageResponse: {
+            tab: components["schemas"]["ArchiveTab"];
+            tasks: components["schemas"]["ArchiveTaskItem"][];
+            members: components["schemas"]["MemberListItem"][];
+            boards: components["schemas"]["ArchiveBoardItem"][];
+            meta: components["schemas"]["CursorPageMeta"];
+        };
+        PurgeArchiveItemResponse: {
+            purged: boolean;
+            entityType: components["schemas"]["ArchiveTab"];
+            /** Format: uuid */
+            id: string;
+            mode: components["schemas"]["ArchivePurgeMode"];
+        };
+        ArchiveRetentionSettingsDto: {
+            retentionDays: components["schemas"]["ArchiveRetentionDays"];
+            /** Format: date-time */
+            updatedAt: string | null;
+            updatedBy: components["schemas"]["MemberPublicSummary"] | null;
+        };
+        ArchiveRetentionSettingsResponse: {
+            settings: components["schemas"]["ArchiveRetentionSettingsDto"];
+        };
+        UpdateArchiveRetentionRequest: {
+            retentionDays: components["schemas"]["ArchiveRetentionDays"];
+        };
+        CronArchivePurgeResponse: {
+            retentionDays: components["schemas"]["ArchiveRetentionDays"];
+            /** Format: date-time */
+            cutoffAt: string | null;
+            purgedTasks: number;
+            purgedBoards: number;
+            purgedMembers: number;
         };
     };
     responses: {

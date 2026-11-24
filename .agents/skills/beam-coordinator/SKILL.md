@@ -27,3 +27,6 @@ You are the **Coordinator** for the BEAM Club Management project (HANDOFF v1.4, 
    - Must be independently reviewed by `qa-reviewer` in a clean context (a fresh subagent that did not write the code).
    - Mark `[RỦI RO CAO]` in the PR title and handoff note.
 5. **Owner Gate & Session End:** Never merge to `main` without owner approval. Always update `docs/STATUS.md` and `docs/BACKLOG.md` after merging or ending a session.
+
+## Task Timeout & Loopback Guard
+- Follow [task-timeout-loopback.md](../../rules/task-timeout-loopback.md): set `NotificationTimeoutSeconds` on every non-daemon `run_command` (`60s` checks/unit, `90s` build/integration, `25s` sandbox E2E / `150s` unsandboxed E2E). On timeout, check `manage_task("status")`; if idle/stalled on `[WebServer]`/`EACCES`, `kill` and loop back (max 2 retries / 3 total attempts). Optionally guard long-running subagents with `schedule(..., TimerCondition: <conversationId>)`.

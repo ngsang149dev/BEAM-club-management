@@ -301,4 +301,90 @@ describe('AuditLogsView & S13 helpers', () => {
       )
     ).toEqual({ key: 'invalidCursor', requestId: undefined });
   });
+
+  it('formats archive restore, purge, and retention audit actions and safe metadata in vi and en', () => {
+    expect(resolveAuditActionKey('archive.member_restored')).toBe('archiveMemberRestored');
+    expect(resolveAuditActionKey('archive.board_restored')).toBe('archiveBoardRestored');
+    expect(resolveAuditActionKey('archive.task_purged')).toBe('archiveTaskPurged');
+    expect(resolveAuditActionKey('archive.board_purged')).toBe('archiveBoardPurged');
+    expect(resolveAuditActionKey('archive.member_purged')).toBe('archiveMemberPurged');
+    expect(resolveAuditActionKey('settings.archive_retention_updated')).toBe('archiveRetentionUpdated');
+
+    const retentionEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      targetUser: null,
+      action: 'settings.archive_retention_updated',
+      detail: {
+        retentionDays: 30,
+        previousRetentionDays: null,
+      },
+    };
+    const boardPurgeEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      targetUser: null,
+      action: 'archive.board_purged',
+      detail: {
+        purgeMode: 'marked_purged',
+        cascadedTasks: 4,
+        boardId: 'board-123',
+      },
+    };
+    const memberPurgeEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      targetUser: null,
+      action: 'archive.member_purged',
+      detail: {
+        purgeMode: 'anonymized',
+        purgedMemberId: 'member-456',
+      },
+    };
+    const taskPurgeEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      targetUser: null,
+      action: 'archive.task_purged',
+      detail: {
+        purgeMode: 'marked_purged',
+        taskId: 'task-789',
+      },
+    };
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: {
+        pages: [{ items: [retentionEntry, boardPurgeEntry, memberPurgeEntry, taskPurgeEntry], meta: { nextCursor: null, limit: 20 } }],
+      },
+    });
+    const viHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(viHtml).toContain('Cập nhật thời hạn tự xóa Lưu trữ');
+    expect(viHtml).toContain('Xóa vĩnh viễn board');
+    expect(viHtml).toContain('Xóa vĩnh viễn thành viên');
+    expect(viHtml).toContain('Xóa vĩnh viễn task');
+    expect(viHtml).toContain('30 ngày');
+    expect(viHtml).toContain('Không tự xóa');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: {
+        pages: [{ items: [boardPurgeEntry, retentionEntry, memberPurgeEntry], meta: { nextCursor: null, limit: 20 } }],
+      },
+    });
+    const enHtml = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(enHtml).toContain('Permanently purged board');
+    expect(enHtml).toContain('Marked purged');
+    expect(enHtml).toContain('Cascaded tasks');
+    expect(enHtml).toContain('board-123');
+    expect(enHtml).toContain('4');
+  });
 });

@@ -257,9 +257,11 @@ describe('POST /api/v1/tasks/[id]/move integration', () => {
       const events = await tx.select().from(taskEvents).where(eq(taskEvents.taskId, movedTaskId));
       expect(events).toHaveLength(2);
       expect(events.map((e) => e.type)).toEqual(['task.moved', 'task.moved']);
-      expect(events[0]?.revertsEventId).toBeNull();
-      expect(events[0]?.forced).toBe(false);
-      expect(events[0]?.changes).toEqual({
+      const firstMoveEvent = events.find((e) => e.id === moveBody.eventId);
+      expect(firstMoveEvent).toBeDefined();
+      expect(firstMoveEvent?.revertsEventId).toBeNull();
+      expect(firstMoveEvent?.forced).toBe(false);
+      expect(firstMoveEvent?.changes).toEqual({
         column_id: { from: todoColId, to: doingColId },
         position: { from: 1000, to: 2000 },
       });

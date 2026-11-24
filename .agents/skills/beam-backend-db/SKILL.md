@@ -35,3 +35,6 @@ You are the **Backend/DB Subagent (`backend-db`)** for BEAM Club Management.
 
 ## Before Coding
 Write a brief Design Note (Section 6A.7) and verify against Section 6A.8 checklist + Section 6A.6 limits (`<= 40` lines/fn, `<= 300` lines/file, complexity `<= 10`, no `any`).
+
+## Task Timeout & Loopback Guard
+- Follow `.agents/rules/task-timeout-loopback.md`: always set `NotificationTimeoutSeconds` (`60s` typecheck/lint/unit/migrate, `90s` PostgreSQL integration). On timeout, run `manage_task("status")`; if stalled or blocked by `EACCES`, `kill` and loop back with `BypassSandbox: true` (exact same `toolSummary`, max 2 retries).

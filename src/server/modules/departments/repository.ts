@@ -1,4 +1,4 @@
-import { asc, count, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { boards, departments, memberDepartments } from '@db/schema';
 import { conflict } from '@/lib/errors';
 import type { DbExecutor } from '@/server/shared/db';
@@ -192,7 +192,7 @@ export class DrizzleDepartmentsRepository implements DepartmentsRepository {
         cnt: count().as('board_cnt'),
       })
       .from(boards)
-      .where(isNotNull(boards.departmentId))
+      .where(and(isNotNull(boards.departmentId), isNull(boards.purgedAt)))
       .groupBy(boards.departmentId)
       .as('bc');
 

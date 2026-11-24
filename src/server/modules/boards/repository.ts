@@ -68,7 +68,7 @@ export interface BoardsRepository {
 type BoardRow = typeof boards.$inferSelect;
 
 function buildBoardListConditions(params: ListBoardsRepoParams): SQL | undefined {
-  const filters: SQL[] = [];
+  const filters: SQL[] = [isNull(boards.purgedAt)];
   if (!params.includeArchived) filters.push(isNull(boards.archivedAt));
   if (params.departmentId) filters.push(eq(boards.departmentId, params.departmentId));
   if (params.cursor) {
@@ -76,7 +76,7 @@ function buildBoardListConditions(params: ListBoardsRepoParams): SQL | undefined
     const cond = or(lt(boards.createdAt, createdAt), and(eq(boards.createdAt, createdAt), lt(boards.id, id)));
     if (cond) filters.push(cond);
   }
-  return filters.length > 0 ? and(...filters) : undefined;
+  return and(...filters);
 }
 
 export class DrizzleBoardsRepository implements BoardsRepository {
@@ -96,14 +96,26 @@ export class DrizzleBoardsRepository implements BoardsRepository {
 
   async findBoardById(boardId: string, tx?: TransactionContext): Promise<BoardSummaryRecord | null> {
     const executor = tx ?? this.db;
-    const rows = await executor.select().from(boards).where(eq(boards.id, boardId)).limit(1);
+    const rows = await executor.select().from(boards).where(and(eq(boards.id, boardId), isNull(boards.purgedAt))).limit(1);
     if (!rows[0]) return null;
     return (await this.hydrateBoards(executor, rows))[0] ?? null;
   }
 
   async findColumnsByBoardId(boardId: string, tx?: TransactionContext): Promise<ColumnRecord[]> {
     const executor = tx ?? this.db;
-    return executor.select().from(columns).where(eq(columns.boardId, boardId)).orderBy(asc(columns.orderIndex), asc(columns.id));
+    return executor
+      .select({
+        id: columns.id,
+        boardId: columns.boardId,
+        name: columns.name,
+        orderIndex: columns.orderIndex,
+        createdAt: columns.createdAt,
+        updatedAt: columns.updatedAt,
+      })
+      .from(columns)
+      .innerJoin(boards, eq(columns.boardId, boards.id))
+      .where(and(eq(columns.boardId, boardId), isNull(boards.purgedAt)))
+      .orderBy(asc(columns.orderIndex), asc(columns.id));
   }
 
   async createBoardWithDefaultColumns(input: CreateBoardRepoParams, tx: TransactionContext): Promise<{ readonly board: BoardSummaryRecord; readonly columns: ColumnRecord[] }> {
@@ -122,34 +134,34 @@ export class DrizzleBoardsRepository implements BoardsRepository {
   }
 
   async updateBoard(input: UpdateBoardRepoParams, tx: TransactionContext): Promise<BoardSummaryRecord | null> {
-    const locked = await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, input.boardId)).for('update').limit(1);
+    const locked = await tx.select({ id: boards.id }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).for('update').limit(1);
     if (!locked[0]) return null;
     if (typeof input.departmentId === 'string') await this.assertDepartmentExists(input.departmentId, tx);
     const patch: Partial<typeof boards.$inferInsert> = { updatedAt: input.now };
     if (input.name !== undefined) patch.name = input.name;
     if (input.departmentId !== undefined) patch.departmentId = input.departmentId;
     if (input.unarchive === true) patch.archivedAt = null;
-    const [updated] = await tx.update(boards).set(patch).where(eq(boards.id, input.boardId)).returning();
+    const [updated] = await tx.update(boards).set(patch).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).returning();
     if (!updated) return null;
     return (await this.hydrateBoards(tx, [updated]))[0] ?? null;
   }
 
   async archiveBoard(input: { readonly boardId: string; readonly now: Date }, tx: TransactionContext): Promise<{ readonly board: BoardSummaryRecord; readonly wasAlreadyArchived: boolean } | null> {
-    const locked = await tx.select().from(boards).where(eq(boards.id, input.boardId)).for('update').limit(1);
+    const locked = await tx.select().from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).for('update').limit(1);
     const existing = locked[0];
     if (!existing) return null;
     const wasAlreadyArchived = existing.archivedAt !== null;
     const [updated] = await tx
       .update(boards)
       .set({ archivedAt: existing.archivedAt ?? input.now, updatedAt: input.now })
-      .where(eq(boards.id, input.boardId))
+      .where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt)))
       .returning();
     if (!updated) return null;
     return { board: (await this.hydrateBoards(tx, [updated]))[0]!, wasAlreadyArchived };
   }
 
   async createColumn(input: { readonly boardId: string; readonly name: string; readonly orderIndex?: number; readonly now: Date }, tx: TransactionContext): Promise<ColumnRecord | null> {
-    const locked = await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, input.boardId)).for('update').limit(1);
+    const locked = await tx.select({ id: boards.id }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).for('update').limit(1);
     if (!locked[0]) return null;
     const existing = await tx.select().from(columns).where(eq(columns.boardId, input.boardId)).orderBy(asc(columns.orderIndex), asc(columns.id));
     const appendOrder = (existing.at(-1)?.orderIndex ?? -1) + 1;
@@ -164,15 +176,17 @@ export class DrizzleBoardsRepository implements BoardsRepository {
   }
 
   async renameColumn(input: { readonly columnId: string; readonly name: string; readonly now: Date }, tx: TransactionContext): Promise<ColumnRecord | null> {
+    const locked = await tx.select({ id: columns.id }).from(columns).innerJoin(boards, eq(columns.boardId, boards.id)).where(and(eq(columns.id, input.columnId), isNull(boards.purgedAt))).for('update').limit(1);
+    if (!locked[0]) return null;
     const [updated] = await tx.update(columns).set({ name: input.name, updatedAt: input.now }).where(eq(columns.id, input.columnId)).returning();
     return updated ?? null;
   }
 
   async deleteColumnSafely(columnId: string, tx: TransactionContext): Promise<{ readonly id: string; readonly boardId: string } | null> {
-    const locked = await tx.select({ id: columns.id, boardId: columns.boardId }).from(columns).where(eq(columns.id, columnId)).for('update').limit(1);
+    const locked = await tx.select({ id: columns.id, boardId: columns.boardId }).from(columns).innerJoin(boards, eq(columns.boardId, boards.id)).where(and(eq(columns.id, columnId), isNull(boards.purgedAt))).for('update').limit(1);
     const col = locked[0];
     if (!col) return null;
-    const countRows = await tx.select({ value: count() }).from(tasks).where(and(eq(tasks.columnId, columnId), isNull(tasks.deletedAt)));
+    const countRows = await tx.select({ value: count() }).from(tasks).where(and(eq(tasks.columnId, columnId), isNull(tasks.deletedAt), isNull(tasks.purgedAt)));
     assertColumnCanBeDeleted(Number(countRows[0]?.value ?? 0));
     await tx.update(tasks).set({ columnId: null }).where(and(eq(tasks.columnId, columnId), isNotNull(tasks.deletedAt)));
     await tx.delete(columns).where(eq(columns.id, columnId));
@@ -180,7 +194,7 @@ export class DrizzleBoardsRepository implements BoardsRepository {
   }
 
   async reorderColumns(input: { readonly boardId: string; readonly columnIds: readonly string[]; readonly now: Date }, tx: TransactionContext): Promise<ColumnRecord[] | null> {
-    const lockedBoard = await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, input.boardId)).for('update').limit(1);
+    const lockedBoard = await tx.select({ id: boards.id }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).for('update').limit(1);
     if (!lockedBoard[0]) return null;
     const existing = await tx.select().from(columns).where(eq(columns.boardId, input.boardId)).for('update');
     assertColumnOrderMatches(existing.map((c) => c.id), input.columnIds);

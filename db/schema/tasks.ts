@@ -36,6 +36,7 @@ export const tasks = pgTable(
     isHidden: boolean('is_hidden').notNull().default(false),
     version: integer('version').notNull().default(1),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
+    purgedAt: timestamp('purged_at', { withTimezone: true, mode: 'date' }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => profiles.id, { onDelete: 'restrict' }),
@@ -53,6 +54,10 @@ export const tasks = pgTable(
       'tasks_active_column_not_null_chk',
       sql`${table.deletedAt} IS NOT NULL OR ${table.columnId} IS NOT NULL`,
     ),
+    check(
+      'tasks_purged_requires_deleted_chk',
+      sql`${table.purgedAt} IS NULL OR ${table.deletedAt} IS NOT NULL`,
+    ),
     index('tasks_board_column_position_active_idx')
       .on(table.boardId, table.columnId, table.position)
       .where(isNull(table.deletedAt)),
@@ -62,6 +67,9 @@ export const tasks = pgTable(
     index('tasks_board_deleted_at_idx')
       .on(table.boardId, table.deletedAt.desc())
       .where(isNotNull(table.deletedAt)),
+    index('tasks_archive_deleted_at_idx')
+      .on(table.deletedAt.desc(), table.id.desc())
+      .where(sql`${table.deletedAt} IS NOT NULL AND ${table.purgedAt} IS NULL`),
     index('tasks_created_by_idx').on(table.createdBy),
   ],
 );

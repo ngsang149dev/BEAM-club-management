@@ -376,17 +376,23 @@ describe('Branding Route Handlers integration', () => {
         .select()
         .from(auditLogs)
         .where(eq(auditLogs.actorId, adminId));
-      expect(auditRows.map((r) => r.action)).toEqual([
-        'branding.logo_updated',
-        'branding.logo_updated',
+      expect(auditRows.map((r) => r.action).sort()).toEqual([
         'branding.logo_removed',
+        'branding.logo_updated',
+        'branding.logo_updated',
       ]);
-      expect(auditRows[0]?.detail).toEqual({
+      const pngAudit = auditRows.find(
+        (r) =>
+          r.action === 'branding.logo_updated' &&
+          (r.detail as { mimeType?: string }).mimeType === 'image/png',
+      );
+      const removedAudit = auditRows.find((r) => r.action === 'branding.logo_removed');
+      expect(pngAudit?.detail).toEqual({
         assetKey: 'club_logo',
         mimeType: 'image/png',
         byteLength: SAMPLE_PNG_BYTES.byteLength,
       });
-      expect(auditRows[2]?.detail).toEqual({ assetKey: 'club_logo' });
+      expect(removedAudit?.detail).toEqual({ assetKey: 'club_logo' });
 
       const serializedAudits = JSON.stringify(auditRows);
       const serializedLogs = capturedLogs.join('\n');

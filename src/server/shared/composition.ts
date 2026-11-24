@@ -1,4 +1,9 @@
 import {
+  type ArchiveRepository,
+  ArchiveService,
+  DrizzleArchiveRepository,
+} from '@/server/modules/archive';
+import {
   type AuditLogWriter,
   type AuditRepository,
   AuditService,
@@ -62,6 +67,7 @@ export interface ServerContainer {
   readonly brandingService: BrandingService;
   readonly tasksService: TasksService;
   readonly boardsService: BoardsService;
+  readonly archiveService: ArchiveService;
   dispose(): Promise<void>;
 }
 
@@ -89,6 +95,8 @@ export interface ContainerOverrides {
   readonly tasksService?: TasksService;
   readonly boardsRepo?: BoardsRepository;
   readonly boardsService?: BoardsService;
+  readonly archiveRepo?: ArchiveRepository;
+  readonly archiveService?: ArchiveService;
 }
 
 const globalForContainer = globalThis as typeof globalThis & {
@@ -218,7 +226,17 @@ function buildWorkstreamServices(infra: SharedInfra, overrides: ContainerOverrid
       clock: infra.clock,
       logger: infra.logger,
     });
-  return { tasksService, boardsService };
+  const archiveService =
+    overrides.archiveService ??
+    new ArchiveService({
+      archiveRepo: overrides.archiveRepo ?? new DrizzleArchiveRepository(infra.db),
+      auditWriter: infra.auditWriter,
+      transactionRunner: infra.transactionRunner,
+      clock: infra.clock,
+      config: infra.config,
+      logger: infra.logger,
+    });
+  return { tasksService, boardsService, archiveService };
 }
 
 export function createContainer(overrides: ContainerOverrides = {}): ServerContainer {

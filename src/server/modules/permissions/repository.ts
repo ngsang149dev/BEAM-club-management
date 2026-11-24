@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   permissionPresets,
   permissions,
@@ -217,7 +217,7 @@ export class DrizzlePermissionsRepository implements PermissionsRepository {
         isActive: profiles.isActive,
       })
       .from(profiles)
-      .where(eq(profiles.id, userId));
+      .where(and(eq(profiles.id, userId), isNull(profiles.purgedAt)));
     const profileRows = await (tx ? baseQuery.for('update').limit(1) : baseQuery.limit(1));
     const target = profileRows[0];
     if (!target) return null;
@@ -261,7 +261,7 @@ export class DrizzlePermissionsRepository implements PermissionsRepository {
     const lockedRows = await tx
       .select({ userId: profiles.id, isAdmin: profiles.isAdmin, isActive: profiles.isActive })
       .from(profiles)
-      .where(eq(profiles.id, input.userId))
+      .where(and(eq(profiles.id, input.userId), isNull(profiles.purgedAt)))
       .for('update')
       .limit(1);
     const target = lockedRows[0];
@@ -270,7 +270,7 @@ export class DrizzlePermissionsRepository implements PermissionsRepository {
     const countRows = await tx
       .select({ value: count() })
       .from(profiles)
-      .where(and(eq(profiles.isAdmin, true), eq(profiles.isActive, true)));
+      .where(and(eq(profiles.isAdmin, true), eq(profiles.isActive, true), isNull(profiles.purgedAt)));
     const activeAdminCount = Number(countRows[0]?.value ?? 0);
 
     assertAdminFlagChangeAllowed({
