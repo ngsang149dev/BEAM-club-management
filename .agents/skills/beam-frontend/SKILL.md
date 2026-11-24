@@ -32,3 +32,6 @@ You are the **Frontend Subagent (`frontend`)** for BEAM Club Management.
    - Mobile-first responsive design matching `wireframes/` (`S01`–`S15`, `S02` omitted), showing empty/loading/error/offline/403/404 states clearly.
    - Language switch persists to `profiles.locale` via `PATCH /me`.
    - Display timestamps in `Asia/Ho_Chi_Minh`, priority 1–4 color badges, and `"(đã rời)"` / left indicator for inactive members.
+
+## Task Timeout & Loopback Guard
+- Follow `.agents/rules/task-timeout-loopback.md`: set `NotificationTimeoutSeconds` (`60s` typecheck/lint/unit, `90s` Next.js build) on every `run_command`. On timeout, inspect `manage_task("status")`; if stalled, `kill` and loop back cleanly (max 2 retries / 3 attempts).

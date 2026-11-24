@@ -30,3 +30,6 @@ You must review specifications, tests, and implementation diffs **independently*
    - Both `messages/vi.json` and `messages/en.json` have matching keys with no leftover hardcoded UI strings.
 4. **High-Risk Item Protocol:**
    - Verify `[RỦI RO CAO]` items cover all edge cases (race conditions on `tasks.version`/last admin, session TTLs, rate limits, append-only DB triggers, idempotent reminder deduplication).
+
+## Task Timeout & Loopback Guard
+- Follow `.agents/rules/task-timeout-loopback.md`: always set `NotificationTimeoutSeconds` on every command (`60s` static/unit, `90s` integration/build, `25s` sandboxed E2E / `150s` unsandboxed E2E). If `test:e2e` stalls on `[WebServer]` in sandbox, `kill` via `manage_task` and loop back cleanly with `BypassSandbox: true` (same `toolSummary`, max 2 retries / 3 total attempts).
