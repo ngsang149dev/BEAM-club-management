@@ -34,6 +34,8 @@ erDiagram
         text student_id UK
         text email UK
         text full_name
+        text password_hash "NULL"
+        boolean must_change_password
         boolean is_admin
         boolean is_active
         timestamptz left_at
@@ -239,6 +241,8 @@ Lưu danh tính nội bộ, trạng thái hoạt động, cờ admin và tùy ch
 | `student_id` | `text` | NO | — | `UNIQUE` (`profiles_student_id_uq`), bất biến sau khi tạo |
 | `email` | `text` | NO | — | Unique không phân biệt hoa thường qua `profiles_email_lower_uq` |
 | `full_name` | `text` | NO | — | Hiển thị ở board/task/comment |
+| `password_hash` | `text` | YES | `NULL` | Hash `scrypt$N$r$p$salt$hash`; không bao giờ xuất ra API/log |
+| `must_change_password` | `boolean` | NO | `false` | Bật `true` khi mới tạo hoặc được Admin đặt lại mật khẩu |
 | `is_admin` | `boolean` | NO | `false` | Toàn quyền + quản trị quyền/admin |
 | `is_active` | `boolean` | NO | `true` | `false` = đã rời CLB (`"(đã rời)"`) |
 | `left_at` | `timestamptz` | YES | `NULL` | Mốc đánh dấu rời CLB |

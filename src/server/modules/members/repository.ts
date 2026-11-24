@@ -20,6 +20,7 @@ export interface MemberProfileRecord {
   readonly isActive: boolean;
   readonly leftAt: Date | null;
   readonly locale: 'vi' | 'en';
+  readonly mustChangePassword: boolean;
   readonly departments: readonly MemberDepartmentRecord[];
 }
 
@@ -36,6 +37,8 @@ export interface CreateMemberParams {
   readonly studentId: string;
   readonly email: string;
   readonly fullName: string;
+  readonly passwordHash: string;
+  readonly mustChangePassword: boolean;
   readonly locale: 'vi' | 'en';
   readonly departmentIds: readonly string[];
   readonly defaultPermissions: readonly PermissionCode[];
@@ -63,6 +66,10 @@ export interface MembersRepository {
   deactivateMember(input: { readonly id: string; readonly leftAt: Date; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null>;
   revokeAllActiveSessions(userId: string, now: Date, tx: TransactionContext): Promise<void>;
   activateMember(input: { readonly id: string; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null>;
+  resetPasswordAndRevokeAllSessions(
+    input: { readonly userId: string; readonly passwordHash: string; readonly mustChangePassword: boolean; readonly now: Date },
+    tx: TransactionContext,
+  ): Promise<MemberProfileRecord | null>;
 }
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -114,6 +121,7 @@ function toMemberRecord(row: ProfileRow, deptList: readonly MemberDepartmentReco
     isActive: row.isActive,
     leftAt: row.leftAt,
     locale: row.locale === 'en' ? 'en' : 'vi',
+    mustChangePassword: row.mustChangePassword,
     departments: deptList,
   };
 }
@@ -185,6 +193,8 @@ export class DrizzleMembersRepository implements MembersRepository {
           studentId: input.studentId,
           email: input.email,
           fullName: input.fullName,
+          passwordHash: input.passwordHash,
+          mustChangePassword: input.mustChangePassword,
           locale: input.locale,
           isAdmin: false,
           isActive: true,
@@ -244,6 +254,24 @@ export class DrizzleMembersRepository implements MembersRepository {
 
   async activateMember(input: { readonly id: string; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null> {
     return this.updateActiveState({ id: input.id, isActive: true, leftAt: null, now: input.now }, tx);
+  }
+
+  async resetPasswordAndRevokeAllSessions(
+    input: { readonly userId: string; readonly passwordHash: string; readonly mustChangePassword: boolean; readonly now: Date },
+    tx: TransactionContext,
+  ): Promise<MemberProfileRecord | null> {
+    try {
+      const [updated] = await tx
+        .update(profiles)
+        .set({ passwordHash: input.passwordHash, mustChangePassword: input.mustChangePassword, updatedAt: input.now })
+        .where(eq(profiles.id, input.userId))
+        .returning();
+      if (!updated) return null;
+      await this.revokeAllActiveSessions(input.userId, input.now, tx);
+      return this.hydrateSingle(updated, tx);
+    } catch (error) {
+      rethrowMemberWriteError(error);
+    }
   }
 
   private async updateActiveState(

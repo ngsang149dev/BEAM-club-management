@@ -38,6 +38,7 @@ import { createContainer, setContainerForTesting } from '@/server/shared/composi
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
 
 class TestRollbackSentinel extends Error {}
@@ -145,10 +146,11 @@ describe('Boards & Columns Route Handlers integration', () => {
       ]).onConflictDoNothing();
 
       await tx.insert(departments).values({ id: deptId, name: `Boards Dept ${suffix}` });
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
       await tx.insert(profiles).values([
-        { id: adminId, studentId: adminSid, email: `b-admin-${suffix}@eiu.edu.vn`, fullName: `Board Admin ${suffix}`, isAdmin: true, isActive: true, locale: 'vi' },
-        { id: updaterId, studentId: updaterSid, email: `b-upd-${suffix}@eiu.edu.vn`, fullName: `Board Updater ${suffix}`, isAdmin: false, isActive: true, locale: 'en' },
-        { id: viewerId, studentId: viewerSid, email: `b-view-${suffix}@eiu.edu.vn`, fullName: `Board Viewer ${suffix}`, isAdmin: false, isActive: true, locale: 'vi' },
+        { id: adminId, studentId: adminSid, email: `b-admin-${suffix}@eiu.edu.vn`, fullName: `Board Admin ${suffix}`, passwordHash: seedPasswordHash, isAdmin: true, isActive: true, locale: 'vi' },
+        { id: updaterId, studentId: updaterSid, email: `b-upd-${suffix}@eiu.edu.vn`, fullName: `Board Updater ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'en' },
+        { id: viewerId, studentId: viewerSid, email: `b-view-${suffix}@eiu.edu.vn`, fullName: `Board Viewer ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'vi' },
       ]);
       await tx.insert(memberDepartments).values({ userId: adminId, departmentId: deptId });
       await tx.insert(userPermissions).values([
@@ -161,7 +163,7 @@ describe('Boards & Columns Route Handlers integration', () => {
         cookiePairFromLogin(await loginPost(new Request('http://localhost:3000/api/v1/auth/login', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.51.100.${baseHost + hostOffset}` },
-          body: JSON.stringify({ studentId }),
+          body: JSON.stringify({ studentId, password: DEV_SEED_PASSWORD }),
         })));
 
       const adminCookie = await loginAs(adminSid, 0);

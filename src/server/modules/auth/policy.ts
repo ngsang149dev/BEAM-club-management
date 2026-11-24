@@ -1,8 +1,10 @@
 import { createHmac, randomBytes } from 'node:crypto';
+import { DEFAULT_LOGIN_REDIRECT, sanitizeReturnTo } from '@/lib/auth';
 import type { Config } from '@/server/shared/config';
 
 export const RATE_LIMIT_WINDOW_MINUTES = 15;
 export const RATE_LIMIT_MAX_FAILED_ATTEMPTS = 10;
+export const FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT = '/profile?changePassword=1';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -54,4 +56,14 @@ export function generateOpaqueSessionToken(): string {
 
 export function hashSessionToken(rawToken: string, sessionSecret: string): string {
   return createHmac('sha256', sessionSecret).update(rawToken).digest('hex');
+}
+
+export function resolveLoginRedirect(
+  returnTo: string | null | undefined,
+  mustChangePassword: boolean,
+): string {
+  const defaultRedirect = mustChangePassword
+    ? FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT
+    : DEFAULT_LOGIN_REDIRECT;
+  return sanitizeReturnTo(returnTo, defaultRedirect);
 }

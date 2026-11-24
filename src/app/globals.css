@@ -556,6 +556,13 @@ svg {
   background: var(--danger-bg);
 }
 
+.ui-banner.is-success {
+  border-color: #15803d;
+  border-left: 4px solid #15803d;
+  background: #f0fdf4;
+  color: #14532d;
+}
+
 .ui-banner-title {
   display: block;
   font-weight: 700;
@@ -1571,6 +1578,14 @@ svg {
   align-content: start;
 }
 
+.profile-main.is-password-priority > .profile-hero {
+  order: -2;
+}
+
+.profile-main.is-password-priority > #change-password {
+  order: -1;
+}
+
 .profile-hero,
 .profile-section,
 .profile-card {
@@ -1860,6 +1875,10 @@ svg {
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
+.ui-input.has-error {
+  border-color: var(--danger);
+}
+
 .ui-input.mono {
   font-family: var(--font-mono);
 }
@@ -2066,6 +2085,8 @@ svg {
 
 .admin-row-actions {
   display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 6px;
 }
@@ -3579,6 +3600,95 @@ svg {
     min-width: 260px;
     max-width: 88vw;
   }
+}
+
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input {
+  padding-right: 42px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.password-toggle-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.password-toggle-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.login-dev-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 6px;
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+
+.ui-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.profile-section.is-highlighted {
+  border-color: var(--pink-strong);
+  box-shadow: var(--shadow-pink);
+}
+
+.profile-password-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.profile-password-head h3 {
+  margin: 0;
+}
+
+.profile-password-head p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+
+.profile-password-form {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-password-actions {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

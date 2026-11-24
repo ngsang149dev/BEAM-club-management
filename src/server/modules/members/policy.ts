@@ -1,4 +1,4 @@
-import { badRequest } from '@/lib/errors';
+import { badRequest, forbidden } from '@/lib/errors';
 import { isAllowedEmailDomain, uuidSchema } from '@/lib/members';
 import type { AuthActor } from '@/server/shared/authorize';
 
@@ -12,6 +12,15 @@ export function canViewMemberDetail(actor: AuthActor): boolean {
     return false;
   }
   return actor.isAdmin || actor.permissions.includes('member.view_detail');
+}
+
+export function assertCanResetMemberPassword(
+  actor: AuthActor,
+  target: { readonly isAdmin: boolean },
+): void {
+  if (target.isAdmin && !actor.isAdmin) {
+    throw forbidden('errors.forbidden', { requiresAdmin: true });
+  }
 }
 
 export function assertAllowedEmailDomain(

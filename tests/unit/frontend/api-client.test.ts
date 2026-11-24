@@ -19,6 +19,7 @@ describe('apiFetch typed OpenAPI client', () => {
         email: 'a@eiu.edu.vn',
         locale: 'vi',
         isAdmin: false,
+        mustChangePassword: false,
       },
       permissions: ['member.view'],
     };

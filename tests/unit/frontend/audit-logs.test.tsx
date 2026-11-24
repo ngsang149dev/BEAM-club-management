@@ -164,6 +164,28 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(resolveAuditActionKey('board.created')).toBe('boardCreated');
     expect(resolveAuditActionKey('board.updated')).toBe('boardUpdated');
     expect(resolveAuditActionKey('board.archived')).toBe('boardArchived');
+    expect(resolveAuditActionKey('member.password_reset')).toBe('memberPasswordReset');
+
+    const pwResetEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      action: 'member.password_reset',
+      detail: { mustChangePassword: true },
+    };
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [pwResetEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const pwResetViHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(pwResetViHtml).toContain('Đặt lại mật khẩu');
+    expect(pwResetViHtml).not.toContain('BeamDev');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [pwResetEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    expect(renderAudit({ permissions: ['audit.view'], locale: 'en' })).toContain('Reset member password');
 
     const boardEntry: AuditLogDto = { ...ENTRY_PERM, action: 'board.archived', targetUser: null, detail: { name: 'Board X' } };
     auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({

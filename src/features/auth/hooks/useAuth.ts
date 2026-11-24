@@ -10,6 +10,7 @@ export type LoginRequest = components['schemas']['LoginRequest'];
 export type LoginResponse = components['schemas']['LoginResponse'];
 export type SessionInfoResponse = components['schemas']['SessionInfoResponse'];
 export type MeResponse = components['schemas']['MeResponse'];
+export type ChangeMyPasswordRequest = components['schemas']['ChangeMyPasswordRequest'];
 
 export const AUTH_QUERY_KEYS = {
   session: ['auth', 'session'] as const,
@@ -58,6 +59,18 @@ export function useMeQuery(enabled = true) {
   });
 }
 
+export function resolveLoginRedirectTarget(
+  returnToInput: string | null | undefined,
+  response: LoginResponse
+): string {
+  const hasExplicitReturnTo =
+    typeof returnToInput === 'string' && returnToInput.trim().length > 0;
+  if (!hasExplicitReturnTo && response.user.mustChangePassword) {
+    return '/profile?changePassword=1';
+  }
+  return sanitizeReturnTo(response.redirectTo);
+}
+
 export function useLoginMutation() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -65,11 +78,11 @@ export function useLoginMutation() {
   return useMutation({
     mutationFn: (payload: LoginRequest) =>
       apiFetch('/auth/login', { method: 'post', body: payload }),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       writeLocaleCookie(data.user.locale);
       queryClient.clear();
       queryClient.setQueryData(AUTH_QUERY_KEYS.loggedOut, false);
-      router.replace(sanitizeReturnTo(data.redirectTo));
+      router.replace(resolveLoginRedirectTarget(variables.returnTo, data));
       router.refresh();
     },
   });
@@ -116,6 +129,22 @@ export function useUpdateLocaleMutation() {
     onSuccess: (data) => {
       writeLocaleCookie(data.profile.locale);
       queryClient.setQueryData(AUTH_QUERY_KEYS.me, data);
+    },
+  });
+}
+
+export function useChangeMyPasswordMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: ChangeMyPasswordRequest) =>
+      apiFetch('/me/password', { method: 'post', body: payload }),
+    onSuccess: async (data) => {
+      queryClient.setQueryData(AUTH_QUERY_KEYS.me, data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
+        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.session }),
+      ]);
     },
   });
 }

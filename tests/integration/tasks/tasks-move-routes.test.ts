@@ -19,6 +19,7 @@ import { createContainer, setContainerForTesting } from '@/server/shared/composi
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
 
 class TestRollbackSentinel extends Error {}
@@ -125,10 +126,11 @@ describe('POST /api/v1/tasks/[id]/move integration', () => {
         { code: 'task.update_assigned', groupName: 'tasks', description: 'TUAS', scopable: false },
       ]).onConflictDoNothing();
 
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
       await tx.insert(profiles).values([
-        { id: adminId, studentId: adminSid, email: `mv-adm-${suffix}@eiu.edu.vn`, fullName: `Move Admin ${suffix}`, isAdmin: true, isActive: true, locale: 'vi' },
-        { id: assignedId, studentId: assignedSid, email: `mv-ass-${suffix}@eiu.edu.vn`, fullName: `Move Assigned ${suffix}`, isAdmin: false, isActive: true, locale: 'en' },
-        { id: anyEditorId, studentId: anySid, email: `mv-any-${suffix}@eiu.edu.vn`, fullName: `Move Any ${suffix}`, isAdmin: false, isActive: true, locale: 'vi' },
+        { id: adminId, studentId: adminSid, email: `mv-adm-${suffix}@eiu.edu.vn`, fullName: `Move Admin ${suffix}`, passwordHash: seedPasswordHash, isAdmin: true, isActive: true, locale: 'vi' },
+        { id: assignedId, studentId: assignedSid, email: `mv-ass-${suffix}@eiu.edu.vn`, fullName: `Move Assigned ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'en' },
+        { id: anyEditorId, studentId: anySid, email: `mv-any-${suffix}@eiu.edu.vn`, fullName: `Move Any ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'vi' },
       ]);
       await tx.insert(userPermissions).values([
         { userId: assignedId, permissionCode: 'task.update_assigned', grantedBy: null },
@@ -168,7 +170,7 @@ describe('POST /api/v1/tasks/[id]/move integration', () => {
         cookiePairFromLogin(await loginPost(new Request('http://localhost:3000/api/v1/auth/login', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.51.100.${baseHost + hostOffset}` },
-          body: JSON.stringify({ studentId }),
+          body: JSON.stringify({ studentId, password: DEV_SEED_PASSWORD }),
         })));
 
       const assignedCookie = await loginAs(assignedSid, 0);

@@ -18,6 +18,7 @@ export interface MemberDetailDto extends MemberPublicSummaryDto {
   readonly email: string;
   readonly locale: 'vi' | 'en';
   readonly isAdmin: boolean;
+  readonly mustChangePassword: boolean;
 }
 
 export type MemberDto = MemberDetailDto | MemberPublicSummaryDto;
@@ -61,6 +62,7 @@ export function toMemberDto(
     email: record.email,
     locale: record.locale,
     isAdmin: record.isAdmin,
+    mustChangePassword: record.mustChangePassword,
   };
 }
 

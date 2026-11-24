@@ -43,6 +43,7 @@ const ACTIVE_MEMBER: MemberDetail = {
   email: 'nva@eiu.edu.vn',
   locale: 'vi',
   isAdmin: false,
+  mustChangePassword: false,
 };
 
 const INACTIVE_ADMIN: MemberDetail = {
@@ -55,6 +56,7 @@ const INACTIVE_ADMIN: MemberDetail = {
   email: 'ttb@eiu.edu.vn',
   locale: 'vi',
   isAdmin: true,
+  mustChangePassword: false,
 };
 
 function renderWithIntl(node: ReactNode, locale: 'vi' | 'en' = 'vi') {

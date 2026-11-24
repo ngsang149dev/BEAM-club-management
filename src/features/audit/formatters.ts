@@ -3,6 +3,7 @@ export type AuditDateRange = '7d' | '30d' | '90d' | 'all';
 export type AuditActionMessageKey =
   | 'memberCreated'
   | 'memberUpdated'
+  | 'memberPasswordReset'
   | 'memberDeactivated'
   | 'memberActivated'
   | 'departmentCreated'
@@ -21,6 +22,7 @@ export type AuditActionMessageKey =
 const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'member.created': 'memberCreated',
   'member.updated': 'memberUpdated',
+  'member.password_reset': 'memberPasswordReset',
   'member.deactivated': 'memberDeactivated',
   'member.activated': 'memberActivated',
   'department.created': 'departmentCreated',
@@ -52,6 +54,7 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'admin.revoked', key: 'adminRevoked' },
   { value: 'member.created', key: 'memberCreated' },
   { value: 'member.updated', key: 'memberUpdated' },
+  { value: 'member.password_reset', key: 'memberPasswordReset' },
   { value: 'member.deactivated', key: 'memberDeactivated' },
   { value: 'member.activated', key: 'memberActivated' },
   { value: 'department.created', key: 'departmentCreated' },

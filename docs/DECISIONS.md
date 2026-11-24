@@ -47,3 +47,17 @@ Bối cảnh: Cần đóng toàn bộ câu hỏi mở tại `wireframes/OPEN-QUE
   - Các câu `WQ-01`, `WQ-03`, `WQ-04`, `WQ-11`, `WQ-13`, `WQ-16`, `WQ-18`, `WQ-23`, `WQ-25`, `WQ-28`, `WQ-30`, `WQ-31`, `WQ-34`, `WQ-35` (và nhóm đã khớp HANDOFF `WQ-07`, `WQ-08`, `WQ-14`, `WQ-17`, `WQ-20`, `WQ-22`, `WQ-24`, `WQ-26`, `WQ-29`): giữ đúng theo giả định đã chốt trong `wireframes/OPEN-QUESTIONS.md`.
 Ảnh hưởng (openapi, schema, tài liệu): Đóng cổng 0A; khóa mô hình dữ liệu 0B và hợp đồng API 0C.
 Trạng thái: Đã duyệt bởi chủ dự án
+
+---
+
+## Quyết định `CR-01` — Đăng nhập bằng mật khẩu cho toàn bộ tài khoản (`A4`, `A5`) — 2026-11-24
+
+- **Ngữ cảnh:** Nâng cấp `FR-04` theo yêu cầu bảo mật từ chủ dự án (`A4`, `A5`): áp dụng mật khẩu đồng nhất cho toàn bộ tài khoản (`admin` và `member`), giữ giới hạn thử theo IP và session TTL (`24h`/`30 ngày`).
+- **Quyết định kỹ thuật:**
+  1. **Lưu trữ & băm mật khẩu (`0002_passwords.sql`):** Thêm cột cộng thêm `password_hash text NULL` và `must_change_password boolean NOT NULL DEFAULT false` vào `profiles`. Băm mật khẩu bằng `Node crypto.scrypt` (`N=16384, r=8, p=1, keylen=64`, salt 16 byte ngẫu nhiên) và so sánh thời gian hằng số (`timingSafeEqual`). Khi MSSV không tồn tại, đã khóa hoặc chưa có hash vẫn thực thi kiểm tra với `DUMMY_PASSWORD_HASH` trước khi trả `401 INVALID_CREDENTIALS`.
+  2. **Chính sách mật khẩu dùng chung (`src/lib/auth.ts`):** Mật khẩu mới tối thiểu `8`, tối đa `128` ký tự và không chấp nhận toàn khoảng trắng. Không ghi mật khẩu thô hay `password_hash` vào API DTO, URL, `audit_logs`, `task_events`, email nhắc hoặc `Logger` (`passwordhash` thêm vào `SENSITIVE_KEYS`).
+  3. **Mật khẩu ban đầu khi tạo thành viên (`POST /api/v1/members`, `S09`):** Cho phép truyền `initialPassword` (`8..128`); nếu API bỏ trống sẽ dùng `Config.defaultInitialPassword` (`DEFAULT_INITIAL_PASSWORD` từ env; ở môi trường non-production mặc định `'BeamDev@2026'`, ở `production` bắt buộc cấu hình hoặc nhập tay), đồng thời đặt `must_change_password = true`. Seed dev (`db/seed.sql`) gán sẵn hash cho `'BeamDev@2026'`.
+  4. **Tự đổi mật khẩu (`POST /api/v1/me/password`, `S08`):** Yêu cầu `currentPassword` và `newPassword`. Trả **`400 INVALID_CURRENT_PASSWORD`** nếu sai mật khẩu hiện tại (không dùng `401` để tránh cưỡng chế đăng xuất), thu hồi mọi `sessions` khác nhưng giữ nguyên session hiện tại, và tắt `must_change_password = false`. Khi đăng nhập lần đầu (`mustChangePassword = true`) mà không có `returnTo` tường minh, giao diện điều hướng tới `/profile?changePassword=1`.
+  5. **Đặt lại mật khẩu (`POST /api/v1/members/{id}/reset-password`, `S09`):** Yêu cầu `member.update` hoặc `is_admin`. **Nếu tài khoản đích là `is_admin = true` mà người thao tác không phải Admin (`!actor.isAdmin`), chặn `403 FORBIDDEN`.** Đặt lại `password_hash`, bật `must_change_password = true`, thu hồi toàn bộ `sessions` đang mở của mục tiêu và ghi `audit_logs` (`action = 'member.password_reset'`) không kèm mật khẩu/hash.
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm trên `docs/ERD.md`, `db/migrations/0002_passwords.sql`, `docs/openapi.yaml` (`MemberDetail.mustChangePassword`, `LoginRequest.password`, `CreateMemberRequest.initialPassword`, `POST /me/password`, `POST /members/{id}/reset-password`).
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`1. Duyệt / 2. Duyệt`, 2026-11-24).

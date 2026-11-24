@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { studentIdSchema } from './auth';
+import { newPasswordSchema, studentIdSchema } from './auth';
 
 export const DEFAULT_ALLOWED_EMAIL_DOMAIN = 'eiu.edu.vn';
 
@@ -43,6 +43,7 @@ export const createMemberFormSchema = z.object({
   fullName: memberFullNameSchema,
   departmentIds: z.array(uuidSchema),
   locale: z.enum(['vi', 'en']),
+  initialPassword: newPasswordSchema,
 });
 
 export type CreateMemberFormInput = z.infer<typeof createMemberFormSchema>;
@@ -53,9 +54,34 @@ export const createMemberRequestSchema = z.object({
   fullName: memberFullNameSchema,
   departmentIds: z.array(uuidSchema).default([]),
   locale: z.enum(['vi', 'en']).default('vi'),
+  initialPassword: newPasswordSchema.optional(),
 });
 
 export type CreateMemberRequestInput = z.infer<typeof createMemberRequestSchema>;
+
+export const resetMemberPasswordFormSchema = z
+  .object({
+    newPassword: newPasswordSchema,
+    confirmPassword: newPasswordSchema,
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'Passwords do not match',
+  });
+
+export type ResetMemberPasswordFormInput = z.infer<
+  typeof resetMemberPasswordFormSchema
+>;
+
+export const resetMemberPasswordRequestSchema = z
+  .object({
+    newPassword: newPasswordSchema,
+  })
+  .strict();
+
+export type ResetMemberPasswordRequestInput = z.infer<
+  typeof resetMemberPasswordRequestSchema
+>;
 
 export const updateMemberRequestSchema = z
   .object({

@@ -20,6 +20,7 @@ describe('loadConfig', () => {
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
+      defaultInitialPassword: 'BeamDev@2026',
       cronSecret: BASE_ENV.CRON_SECRET,
       smtp: {
         host: undefined,
@@ -81,5 +82,20 @@ describe('loadConfig', () => {
     expect(caughtMessage).toContain('NEXT_PUBLIC_APP_URL');
     expect(caughtMessage).not.toContain('secret-value-short');
     expect(caughtMessage).not.toContain(BASE_ENV.DATABASE_URL!);
+  });
+
+  it('requires explicit DEFAULT_INITIAL_PASSWORD in production instead of using dev fallback', () => {
+    const prodWithoutDefault = loadConfig({
+      ...BASE_ENV,
+      NODE_ENV: 'production',
+    });
+    expect(prodWithoutDefault.defaultInitialPassword).toBeUndefined();
+
+    const prodWithDefault = loadConfig({
+      ...BASE_ENV,
+      NODE_ENV: 'production',
+      DEFAULT_INITIAL_PASSWORD: 'ProdInitial#2026',
+    });
+    expect(prodWithDefault.defaultInitialPassword).toBe('ProdInitial#2026');
   });
 });

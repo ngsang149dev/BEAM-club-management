@@ -5,106 +5,25 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
+import { PasswordInput } from '@/components/PasswordInput';
 import { isApiClientError } from '@/features/shared/api/client';
 import { loginFormSchema, type LoginFormInput } from '@/lib/auth';
 import { useLoginMutation } from '../hooks/useAuth';
-import { sanitizeReturnTo } from '../return-to';
+import { resolveExplicitReturnTo } from '../return-to';
+import { LoginShowcase } from './LoginShowcase';
 
 export interface LoginFormProps {
   expired?: boolean;
   returnTo?: string;
 }
 
+export { resolveExplicitReturnTo };
+
 function formatWaitDuration(seconds: number): string {
   const safeSeconds = Math.max(0, Math.ceil(seconds));
   const mins = Math.floor(safeSeconds / 60);
   const secs = safeSeconds % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
-
-function PriorityBars({ level, label }: { level: 1 | 2 | 3 | 4; label: string }) {
-  return (
-    <span className={`ui-prio p${level}`}>
-      <span className="ui-prio-bars" aria-hidden="true">
-        {[1, 2, 3, 4].map((bar) => (
-          <i key={bar} className={bar <= level ? 'on' : undefined} />
-        ))}
-      </span>
-      <span>{label}</span>
-    </span>
-  );
-}
-
-function ShowcaseColumn({
-  title,
-  cards,
-}: {
-  title: string;
-  cards: readonly { title: string; level: 1 | 2 | 3 | 4; levelLabel: string; hidden?: boolean }[];
-}) {
-  return (
-    <div className="login-mini-col">
-      <div className="login-mini-head">
-        <span>{title}</span>
-        <b>{cards.length}</b>
-      </div>
-      {cards.map((card) => (
-        <div key={card.title} className={`login-mini-card${card.hidden ? ' is-hidden' : ''}`}>
-          <span className="login-mini-title">{card.title}</span>
-          <span className="login-mini-meta">
-            <PriorityBars level={card.level} label={card.levelLabel} />
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LoginShowcase() {
-  const tApp = useTranslations('app');
-  const tAuth = useTranslations('auth.showcase');
-  const tPrio = useTranslations('priority');
-  return (
-    <section className="login-left" aria-hidden="true">
-      <div className="login-brand-row">
-        <div className="login-word">
-          <span className="ui-logo"><i /><i /><i /><i /></span>
-          <span className="login-word-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
-        </div>
-        <span className="login-left-tag">{tAuth('tag')}</span>
-      </div>
-      <div className="login-copy">
-        <span className="login-copy-kicker">{tAuth('kicker')}</span>
-        <h2>{tAuth('headline')}</h2>
-      </div>
-      <div className="login-board-wrap">
-        <div className="login-mini">
-          <ShowcaseColumn
-            title={tAuth('columns.todo')}
-            cards={[
-              { title: tAuth('sampleTasks.t1'), level: 3, levelLabel: tPrio('high') },
-              { title: tAuth('sampleTasks.t2'), level: 1, levelLabel: tPrio('low') },
-            ]}
-          />
-          <ShowcaseColumn
-            title={tAuth('columns.doing')}
-            cards={[
-              { title: tAuth('sampleTasks.t3'), level: 4, levelLabel: tPrio('urgent') },
-              { title: tAuth('sampleTasks.t4'), level: 4, levelLabel: tPrio('urgent'), hidden: true },
-            ]}
-          />
-          <ShowcaseColumn
-            title={tAuth('columns.done')}
-            cards={[
-              { title: tAuth('sampleTasks.t5'), level: 3, levelLabel: tPrio('high') },
-              { title: tAuth('sampleTasks.t6'), level: 2, levelLabel: tPrio('medium') },
-            ]}
-          />
-        </div>
-      </div>
-      <p className="login-caption">{tAuth('caption')}</p>
-    </section>
-  );
 }
 
 export function resolveBannerConfig(
@@ -182,26 +101,32 @@ function LoginHeaderBar() {
   );
 }
 
-function LoginFormFields({
-  inputId,
-  hasError,
-  isBusy,
-  register,
-  onClearApiError,
-}: {
-  inputId: string;
-  hasError: boolean;
+interface LoginFormFieldsProps {
+  studentIdInputId: string;
+  passwordInputId: string;
+  studentIdError: boolean;
+  passwordError: boolean;
   isBusy: boolean;
   register: ReturnType<typeof useForm<LoginFormInput>>['register'];
   onClearApiError: () => void;
-}) {
+}
+
+function LoginFormFields({
+  studentIdInputId,
+  passwordInputId,
+  studentIdError,
+  passwordError,
+  isBusy,
+  register,
+  onClearApiError,
+}: LoginFormFieldsProps) {
   const tAuth = useTranslations('auth');
   return (
     <>
       <div className="login-field">
-        <label className="login-label" htmlFor={inputId}>{tAuth('studentIdLabel')}</label>
+        <label className="login-label" htmlFor={studentIdInputId}>{tAuth('studentIdLabel')}</label>
         <input
-          id={inputId}
+          id={studentIdInputId}
           type="text"
           autoComplete="username"
           inputMode="text"
@@ -209,10 +134,24 @@ function LoginFormFields({
           autoCorrect="off"
           spellCheck={false}
           placeholder={tAuth('studentIdPlaceholder')}
-          className={`login-input${hasError ? ' has-error' : ''}`}
-          aria-invalid={hasError}
+          className={`login-input${studentIdError ? ' has-error' : ''}`}
+          aria-invalid={studentIdError}
           disabled={isBusy}
           {...register('studentId', { onChange: onClearApiError })}
+        />
+      </div>
+      <div className="login-field">
+        <label className="login-label" htmlFor={passwordInputId}>{tAuth('passwordLabel')}</label>
+        <PasswordInput
+          id={passwordInputId}
+          autoComplete="current-password"
+          placeholder={tAuth('passwordPlaceholder')}
+          className="login-input"
+          hasError={passwordError}
+          showLabel={tAuth('showPassword')}
+          hideLabel={tAuth('hidePassword')}
+          disabled={isBusy}
+          {...register('password', { onChange: onClearApiError })}
         />
       </div>
       <label className="login-remember">
@@ -228,17 +167,23 @@ function LoginFormFields({
 
 export function LoginForm({ expired = false, returnTo }: LoginFormProps) {
   const studentIdInputId = useId();
+  const passwordInputId = useId();
   const tApp = useTranslations('app');
   const tAuth = useTranslations('auth');
   const loginMutation = useLoginMutation();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormInput>({
     resolver: zodResolver(loginFormSchema),
-    defaultValues: { studentId: '', remember: false },
+    defaultValues: { studentId: '', password: '', remember: false },
   });
   const isBusy = isSubmitting || loginMutation.isPending;
 
   function onSubmit(values: LoginFormInput): void {
-    loginMutation.mutate({ studentId: values.studentId, remember: values.remember, returnTo: sanitizeReturnTo(returnTo) });
+    loginMutation.mutate({
+      studentId: values.studentId,
+      password: values.password,
+      remember: values.remember,
+      returnTo: resolveExplicitReturnTo(returnTo),
+    });
   }
 
   return (
@@ -248,12 +193,14 @@ export function LoginForm({ expired = false, returnTo }: LoginFormProps) {
         <LoginHeaderBar />
         <div className="login-center">
           <form className="login-form" method="post" onSubmit={handleSubmit(onSubmit)} noValidate>
-            <LoginStatusBanner error={loginMutation.error} hasValidationError={Boolean(errors.studentId)} expired={expired} />
+            <LoginStatusBanner error={loginMutation.error} hasValidationError={Boolean(errors.studentId || errors.password)} expired={expired} />
             <h1 className="login-title">{tAuth('title')}</h1>
             <p className="login-lead">{tAuth('subtitle')}</p>
             <LoginFormFields
-              inputId={studentIdInputId}
-              hasError={Boolean(errors.studentId)}
+              studentIdInputId={studentIdInputId}
+              passwordInputId={passwordInputId}
+              studentIdError={Boolean(errors.studentId)}
+              passwordError={Boolean(errors.password)}
               isBusy={isBusy}
               register={register}
               onClearApiError={() => { if (loginMutation.error) loginMutation.reset(); }}
@@ -262,6 +209,7 @@ export function LoginForm({ expired = false, returnTo }: LoginFormProps) {
               {isBusy ? tAuth('signingIn') : tAuth('signInButton')}
             </button>
             <p className="login-help">{tAuth('helpNote')}</p>
+            {process.env.NODE_ENV === 'development' ? <p className="login-dev-hint">{tAuth('devSeedHint')}</p> : null}
           </form>
         </div>
         <footer className="login-foot"><span>{tApp('footerNote')}</span></footer>

@@ -16,6 +16,7 @@ import { POST as loginPost } from '@/app/api/v1/auth/login/route';
 import { GET as sessionGet } from '@/app/api/v1/auth/session/route';
 import { POST as memberActivatePost } from '@/app/api/v1/members/[id]/activate/route';
 import { POST as memberDeactivatePost } from '@/app/api/v1/members/[id]/deactivate/route';
+import { POST as memberResetPasswordPost } from '@/app/api/v1/members/[id]/reset-password/route';
 import {
   GET as memberGet,
   PATCH as memberPatch,
@@ -37,6 +38,7 @@ import {
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
 
 class TestRollbackSentinel extends Error {}
@@ -134,6 +136,7 @@ describe('Members Route Handlers integration', () => {
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
+      defaultInitialPassword: DEV_SEED_PASSWORD,
       cronSecret: 'members-cron-secret',
       smtp: {},
       appUrl: 'http://localhost:3000',
@@ -175,12 +178,14 @@ describe('Members Route Handlers integration', () => {
       ]);
 
       // Create sole active admin + test actors inside this rolled-back tx
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
       await tx.insert(profiles).values([
         {
           id: adminId,
           studentId: adminSid,
           email: `m-admin-${suffix}@eiu.edu.vn`,
           fullName: `AAA Admin ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: true,
           isActive: true,
           locale: 'vi',
@@ -190,6 +195,7 @@ describe('Members Route Handlers integration', () => {
           studentId: basicSid,
           email: basicEmail,
           fullName: `AAB Basic ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'vi',
@@ -199,6 +205,7 @@ describe('Members Route Handlers integration', () => {
           studentId: hrSid,
           email: `m-hr-${suffix}@eiu.edu.vn`,
           fullName: `AAC HR ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'en',
@@ -208,6 +215,7 @@ describe('Members Route Handlers integration', () => {
           studentId: noPermSid,
           email: `m-noperm-${suffix}@eiu.edu.vn`,
           fullName: 'ZZ NoPerm Account',
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'vi',
@@ -217,6 +225,7 @@ describe('Members Route Handlers integration', () => {
           studentId: detailSid,
           email: `m-detail-${suffix}@eiu.edu.vn`,
           fullName: 'ZZ Detail Viewer',
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'en',
@@ -238,7 +247,11 @@ describe('Members Route Handlers integration', () => {
         { userId: detailViewerId, permissionCode: 'member.view_detail', grantedBy: null },
       ]);
 
-      const loginAs = async (studentId: string, hostOffset: number) =>
+      const loginAs = async (
+        studentId: string,
+        hostOffset: number,
+        password = DEV_SEED_PASSWORD,
+      ) =>
         cookiePairFromLogin(
           await loginPost(
             new Request('http://localhost:3000/api/v1/auth/login', {
@@ -247,7 +260,7 @@ describe('Members Route Handlers integration', () => {
                 'content-type': 'application/json',
                 'x-forwarded-for': `198.51.100.${baseHost + hostOffset}`,
               },
-              body: JSON.stringify({ studentId }),
+              body: JSON.stringify({ studentId, password }),
             }),
           ),
         );
@@ -326,6 +339,8 @@ describe('Members Route Handlers integration', () => {
       };
       expect('studentId' in createdBody.member).toBe(false);
       expect('email' in createdBody.member).toBe(false);
+      expect('mustChangePassword' in createdBody.member).toBe(false);
+      expect('passwordHash' in createdBody.member).toBe(false);
       expect(createdBody.member.departments.map((d) => d.id)).toEqual([
         deptAId,
         deptBId,
@@ -571,6 +586,7 @@ describe('Members Route Handlers integration', () => {
         email: createdEmail,
         locale: 'en',
         isAdmin: false,
+        mustChangePassword: true,
       });
 
       const badPatchSid = await memberPatch(
@@ -767,17 +783,198 @@ describe('Members Route Handlers integration', () => {
         ((await activeFilterRestoredRes.json()) as { items: Array<{ id: string }> }).items,
       ).toHaveLength(4);
 
-      // 7. Verify audit_logs and logs contain ZERO studentId or email PII
+      // 7. Verify reset-password route (401/403/400/404, non-admin admin-target 403 guard, session revocation, audit_logs)
+      const resetUnauth = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(resetUnauth.status).toBe(401);
+
+      const resetNoPerm = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: basicCookie },
+          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(resetNoPerm.status).toBe(403);
+
+      const resetBadBody = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: hrCookie },
+          body: JSON.stringify({ newPassword: 'short' }),
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(resetBadBody.status).toBe(400);
+
+      const resetMissing = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${missingId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: hrCookie },
+          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+        }),
+        { params: Promise.resolve({ id: missingId }) },
+      );
+      expect(resetMissing.status).toBe(404);
+
+      // Non-admin with member.update CANNOT reset an Admin's password -> 403
+      const hrResetAdmin = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${adminId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: hrCookie },
+          body: JSON.stringify({ newPassword: 'AttemptAdminReset#2026' }),
+        }),
+        { params: Promise.resolve({ id: adminId }) },
+      );
+      expect(hrResetAdmin.status).toBe(403);
+      expect(
+        (await sessionGet(new Request('http://localhost:3000/api/v1/auth/session', { headers: { cookie: adminCookie } }))).status,
+      ).toBe(200);
+
+      // Regular member logs in with initial default password -> gets active session & /profile?changePassword=1
+      const initialLoginRes = await loginPost(
+        new Request('http://localhost:3000/api/v1/auth/login', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': `198.51.100.${baseHost + 6}`,
+          },
+          body: JSON.stringify({ studentId: createdSid, password: DEV_SEED_PASSWORD }),
+        }),
+      );
+      expect(initialLoginRes.status).toBe(200);
+      expect(((await initialLoginRes.json()) as { redirectTo: string }).redirectTo).toBe(
+        '/profile?changePassword=1',
+      );
+      const createdLiveCookie = cookiePairFromLogin(initialLoginRes);
+
+      // HR resets regular member password -> 200 MemberPublicSummary, revokes member session, sets mustChangePassword=true
+      const hrResetMember = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: hrCookie },
+          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(hrResetMember.status).toBe(200);
+      expect(hrResetMember.headers.get('cache-control')).toBe('no-store');
+      const hrResetBody = (await hrResetMember.json()) as {
+        member: Record<string, unknown>;
+      };
+      expect('studentId' in hrResetBody.member).toBe(false);
+      expect('mustChangePassword' in hrResetBody.member).toBe(false);
+      expect('passwordHash' in hrResetBody.member).toBe(false);
+
+      expect(
+        (await sessionGet(new Request('http://localhost:3000/api/v1/auth/session', { headers: { cookie: createdLiveCookie } }))).status,
+      ).toBe(401);
+
+      const postResetLoginRes = await loginPost(
+        new Request('http://localhost:3000/api/v1/auth/login', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': `198.51.100.${baseHost + 7}`,
+          },
+          body: JSON.stringify({ studentId: createdSid, password: 'ResetByHr#2026' }),
+        }),
+      );
+      expect(postResetLoginRes.status).toBe(200);
+      expect(((await postResetLoginRes.json()) as { user: { mustChangePassword: boolean } }).user.mustChangePassword).toBe(
+        true,
+      );
+
+      // Admin resets Admin password -> 200 MemberDetail with mustChangePassword=true & revokes admin session
+      const adminResetSelf = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${adminId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ newPassword: 'ResetByAdmin#2026' }),
+        }),
+        { params: Promise.resolve({ id: adminId }) },
+      );
+      expect(adminResetSelf.status).toBe(200);
+      const adminResetBody = (await adminResetSelf.json()) as {
+        member: Record<string, unknown> & { mustChangePassword: boolean };
+      };
+      expect(adminResetBody.member.mustChangePassword).toBe(true);
+      expect('passwordHash' in adminResetBody.member).toBe(false);
+      expect(
+        (await sessionGet(new Request('http://localhost:3000/api/v1/auth/session', { headers: { cookie: adminCookie } }))).status,
+      ).toBe(401);
+
+      // Custom initialPassword on POST /members lets new user log in and triggers /profile?changePassword=1
+      const customPwSid = `MSSV-MCUSTOM-${suffix}`;
+      const customCreateRes = await membersPost(
+        new Request('http://localhost:3000/api/v1/members', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: hrCookie },
+          body: JSON.stringify({
+            studentId: customPwSid,
+            email: `custom-init-${suffix}@eiu.edu.vn`,
+            fullName: `Custom Init ${suffix}`,
+            initialPassword: 'InitialCustom#2026',
+          }),
+        }),
+      );
+      expect(customCreateRes.status).toBe(201);
+      const customLoginRes = await loginPost(
+        new Request('http://localhost:3000/api/v1/auth/login', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': `198.51.100.${baseHost + 8}`,
+          },
+          body: JSON.stringify({
+            studentId: customPwSid,
+            password: 'InitialCustom#2026',
+          }),
+        }),
+      );
+      expect(customLoginRes.status).toBe(200);
+      expect(
+        ((await customLoginRes.json()) as {
+          redirectTo: string;
+          user: { mustChangePassword: boolean };
+        }),
+      ).toMatchObject({
+        redirectTo: '/profile?changePassword=1',
+        user: { mustChangePassword: true },
+      });
+
+      // 8. Verify audit_logs and logs contain ZERO studentId, email, password, or hash
       const auditRows = await tx
         .select()
         .from(auditLogs)
-        .where(inArray(auditLogs.targetUserId, [createdId]));
-      expect(auditRows.map((r) => r.action).sort()).toEqual([
+        .where(inArray(auditLogs.targetUserId, [createdId, adminId]));
+      expect(
+        auditRows
+          .filter((r) => r.targetUserId === createdId)
+          .map((r) => r.action)
+          .sort(),
+      ).toEqual([
         'member.activated',
         'member.created',
         'member.deactivated',
+        'member.password_reset',
         'member.updated',
       ]);
+      const resetAudits = auditRows.filter((r) => r.action === 'member.password_reset');
+      expect(resetAudits).toHaveLength(2);
+      for (const row of resetAudits) {
+        expect(row.detail).toEqual({
+          forceChangeOnLogin: true,
+          sessionsRevoked: true,
+        });
+      }
 
       const serializedAudits = JSON.stringify(auditRows);
       const serializedLogs = capturedLogs.join('\n');
@@ -790,12 +987,18 @@ describe('Members Route Handlers integration', () => {
         createdSid,
         createdEmail,
         basicEmail,
+        DEV_SEED_PASSWORD,
+        seedPasswordHash,
+        'ResetByHr#2026',
+        'ResetByAdmin#2026',
+        'AttemptAdminReset#2026',
+        'InitialCustom#2026',
       ]) {
         expect(serializedAudits).not.toContain(secretPii);
         expect(serializedLogs).not.toContain(secretPii);
       }
 
-      // 8. Verify repository maps concurrent FK 23503 on member_departments -> 400 INVALID_DEPARTMENT_IDS
+      // 9. Verify repository maps concurrent FK 23503 on member_departments -> 400 INVALID_DEPARTMENT_IDS
       const directRepo = new DrizzleMembersRepository(tx);
       await expect(
         tx.transaction((subTx) =>
@@ -804,6 +1007,8 @@ describe('Members Route Handlers integration', () => {
               studentId: `MSSV-FK-${suffix}`,
               email: `fk-${suffix}@eiu.edu.vn`,
               fullName: 'FK Race Member',
+              passwordHash: seedPasswordHash,
+              mustChangePassword: true,
               locale: 'vi',
               departmentIds: [randomUUID()],
               defaultPermissions: [],

@@ -35,6 +35,7 @@ import { createContainer, setContainerForTesting } from '@/server/shared/composi
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
 
 class TestRollbackSentinel extends Error {}
@@ -181,12 +182,14 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
       setContainerForTesting(container);
       await seedCatalogAndPresets(tx);
 
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
       await tx.insert(profiles).values([
         {
           id: adminId,
           studentId: adminSid,
           email: `p-admin-${suffix}@eiu.edu.vn`,
           fullName: `Perm Admin ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: true,
           isActive: true,
           locale: 'vi',
@@ -196,6 +199,7 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
           studentId: updaterSid,
           email: `p-upd-${suffix}@eiu.edu.vn`,
           fullName: `Perm HR ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'en',
@@ -205,6 +209,7 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
           studentId: targetSid,
           email: `p-targ-${suffix}@eiu.edu.vn`,
           fullName: `Perm Target ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'vi',
@@ -232,7 +237,7 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
                 'content-type': 'application/json',
                 'x-forwarded-for': `198.51.100.${baseHost + hostOffset}`,
               },
-              body: JSON.stringify({ studentId }),
+              body: JSON.stringify({ studentId, password: DEV_SEED_PASSWORD }),
             }),
           ),
         );

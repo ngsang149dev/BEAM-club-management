@@ -193,6 +193,7 @@ describe('AuthGuard', () => {
           email: 'b@eiu.edu.vn',
           locale: 'vi',
           isAdmin: false,
+          mustChangePassword: false,
         },
         permissions: ['member.view', 'department.manage'],
       },

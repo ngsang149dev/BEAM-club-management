@@ -4,10 +4,12 @@ import {
   createMemberRequestSchema,
   isAllowedEmailDomain,
   listMembersQuerySchema,
+  resetMemberPasswordRequestSchema,
   updateMemberRequestSchema,
 } from '@/lib/members';
 import {
   assertAllowedEmailDomain,
+  assertCanResetMemberPassword,
   canViewMemberDetail,
   decodeMemberCursor,
   encodeMemberCursor,
@@ -77,6 +79,38 @@ describe('members policy & shared schemas', () => {
     expect(canViewMemberDetail(detailViewer)).toBe(true);
     expect(canViewMemberDetail(admin)).toBe(true);
     expect(canViewMemberDetail(inactiveAdmin)).toBe(false);
+  });
+
+  it('allows non-admin member.update only on non-admin targets when resetting passwords', () => {
+    const manager: AuthActor = {
+      id: 'u1',
+      isActive: true,
+      isAdmin: false,
+      permissions: ['member.update'],
+    };
+    const admin: AuthActor = {
+      id: 'u2',
+      isActive: true,
+      isAdmin: true,
+      permissions: [],
+    };
+
+    expect(() =>
+      assertCanResetMemberPassword(manager, { isAdmin: false }),
+    ).not.toThrow();
+    expect(() =>
+      assertCanResetMemberPassword(admin, { isAdmin: true }),
+    ).not.toThrow();
+
+    try {
+      assertCanResetMemberPassword(manager, { isAdmin: true });
+      throw new Error('Expected AppError');
+    } catch (error) {
+      const appError = error as AppError;
+      expect(appError.httpStatus).toBe(403);
+      expect(appError.code).toBe('FORBIDDEN');
+      expect(appError.details).toEqual({ requiresAdmin: true });
+    }
   });
 
   it('encodes and decodes keyset cursors and rejects tampered cursors', () => {
@@ -159,5 +193,36 @@ describe('members policy & shared schemas', () => {
     expect(listMembersQuerySchema.parse({ isActive: 'false' }).isActive).toBe(false);
     expect(listMembersQuerySchema.safeParse({ isActive: 'maybe' }).success).toBe(false);
     expect(listMembersQuerySchema.safeParse({ limit: '101' }).success).toBe(false);
+
+    expect(
+      createMemberRequestSchema.parse({
+        studentId: 'MSSV-DEV-901',
+        email: 'pw@eiu.edu.vn',
+        fullName: 'Password Member',
+        initialPassword: 'CustomInitial#2026',
+      }).initialPassword,
+    ).toBe('CustomInitial#2026');
+    expect(
+      createMemberRequestSchema.safeParse({
+        studentId: 'MSSV-DEV-902',
+        email: 'pw2@eiu.edu.vn',
+        fullName: 'Short Pass',
+        initialPassword: 'short',
+      }).success,
+    ).toBe(false);
+
+    expect(
+      resetMemberPasswordRequestSchema.parse({ newPassword: 'ResetPass#2026' }),
+    ).toEqual({ newPassword: 'ResetPass#2026' });
+    expect(
+      resetMemberPasswordRequestSchema.safeParse({ newPassword: '        ' })
+        .success,
+    ).toBe(false);
+    expect(
+      resetMemberPasswordRequestSchema.safeParse({
+        newPassword: 'ResetPass#2026',
+        extra: 'nope',
+      }).success,
+    ).toBe(false);
   });
 });

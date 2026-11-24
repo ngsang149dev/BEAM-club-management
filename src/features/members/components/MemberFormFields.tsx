@@ -1,7 +1,8 @@
 'use client';
 
-import { useId } from 'react';
+import { useId, useState, type InputHTMLAttributes } from 'react';
 import { useTranslations } from 'next-intl';
+import { PasswordInput } from '@/components/PasswordInput';
 import type { DepartmentDto } from '@/features/departments/hooks/useDepartments';
 import { describeMemberError } from '../error-mapping';
 
@@ -16,6 +17,57 @@ export function formatMemberServerError(
   return descriptor.key === 'invalidEmailDomain' && descriptor.values
     ? tErr('invalidEmailDomain', descriptor.values)
     : tErr(descriptor.key);
+}
+
+export function InitialPasswordField({
+  registration,
+  hasError,
+  disabled,
+  onGenerate,
+}: {
+  registration: InputHTMLAttributes<HTMLInputElement>;
+  hasError: boolean;
+  disabled?: boolean;
+  onGenerate: () => void;
+}) {
+  const t = useTranslations('memberAdmin');
+  const tAuth = useTranslations('auth');
+  const id = useId();
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="ui-field">
+      <div className="ui-field-label-row">
+        <label className="ui-label" htmlFor={id}>{t('initialPasswordLabel')}</label>
+        <button
+          type="button"
+          className="ui-btn ghost is-sm"
+          disabled={disabled}
+          onClick={() => {
+            onGenerate();
+            setVisible(true);
+          }}
+        >
+          {t('generatePasswordButton')}
+        </button>
+      </div>
+      <PasswordInput
+        id={id}
+        className="ui-input"
+        autoComplete="new-password"
+        placeholder={t('initialPasswordPlaceholder')}
+        hasError={hasError}
+        showLabel={tAuth('showPassword')}
+        hideLabel={tAuth('hidePassword')}
+        visible={visible}
+        onVisibilityChange={setVisible}
+        disabled={disabled}
+        {...registration}
+      />
+      <p className="ui-field-hint">{t('initialPasswordHint')}</p>
+      {hasError ? <p className="ui-field-error" role="alert">{t('validationInitialPassword')}</p> : null}
+    </div>
+  );
 }
 
 export function DepartmentCheckboxGroup({

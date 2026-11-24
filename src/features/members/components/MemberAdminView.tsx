@@ -1,109 +1,31 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
-import { useDepartmentsQuery, type DepartmentDto } from '@/features/departments/hooks/useDepartments';
+import type { DepartmentDto } from '@/features/departments/hooks/useDepartments';
 import { isApiClientError } from '@/features/shared/api/client';
 import { Can, usePermissions } from '@/features/shared/permissions/can';
 import { describeMemberError } from '../error-mapping';
 import {
-  useActivateMemberMutation,
-  useCreateMemberMutation,
-  useDeactivateMemberMutation,
-  useMembersInfiniteQuery,
-  useUpdateMemberMutation,
-  type MemberListItem,
-  type MembersFilterState,
-  type UpdateMemberRequest,
-} from '../hooks/useMembers';
-import type { CreateMemberValues } from '../schemas';
+  DEFAULT_ADMIN_FILTERS,
+  useMemberAdminState,
+} from '../hooks/useMemberAdminState';
 import { MemberAdminTable } from './MemberAdminTable';
 import { MemberCreateDrawer, MemberEditDrawer } from './MemberFormDrawer';
 import { MemberStatusModal } from './MemberStatusModal';
 import { MembersToolbar } from './MembersToolbar';
+import { ResetPasswordModal } from './ResetPasswordModal';
 
-const DEFAULT_ADMIN_FILTERS: MembersFilterState = {
-  q: '',
-  departmentId: '',
-  status: 'all',
-  limit: 20,
-};
-
-type AdminModalState =
-  | { kind: 'closed' }
-  | { kind: 'create' }
-  | { kind: 'edit'; member: MemberListItem }
-  | { kind: 'status'; member: MemberListItem; action: 'deactivate' | 'activate' };
-
-function useMemberAdminState(allowed: boolean, canViewList: boolean) {
-  const t = useTranslations('memberAdmin');
-  const [filters, setFilters] = useState<MembersFilterState>(DEFAULT_ADMIN_FILTERS);
-  const [modalState, setModalState] = useState<AdminModalState>({ kind: 'closed' });
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const departmentsQuery = useDepartmentsQuery(allowed);
-  const membersQuery = useMembersInfiniteQuery(filters, canViewList);
-  const createMutation = useCreateMemberMutation();
-  const updateMutation = useUpdateMemberMutation();
-  const deactivateMutation = useDeactivateMemberMutation();
-  const activateMutation = useActivateMemberMutation();
-
-  const closeModal = () => {
-    createMutation.reset();
-    updateMutation.reset();
-    deactivateMutation.reset();
-    activateMutation.reset();
-    setModalState({ kind: 'closed' });
-  };
-
-  const handleSuccess = (message: string) => {
-    setToastMessage(message);
-    closeModal();
-  };
-
-  const submitCreate = (values: CreateMemberValues) => {
-    createMutation.mutate(values, {
-      onSuccess: (res) => handleSuccess(t('createdToast', { name: res.member.fullName })),
-    });
-  };
-
-  const submitEdit = (payload: UpdateMemberRequest) => {
-    if (modalState.kind !== 'edit') return;
-    updateMutation.mutate(
-      { id: modalState.member.id, payload },
-      { onSuccess: (res) => handleSuccess(t('updatedToast', { name: res.member.fullName })) }
-    );
-  };
-
-  const confirmStatusChange = () => {
-    if (modalState.kind !== 'status') return;
-    const isDeactivate = modalState.action === 'deactivate';
-    const mutate = isDeactivate ? deactivateMutation.mutate : activateMutation.mutate;
-    const toastKey = isDeactivate ? 'deactivatedToast' : 'activatedToast';
-    mutate(modalState.member.id, {
-      onSuccess: (res) => handleSuccess(t(toastKey, { name: res.member.fullName })),
-    });
-  };
-
-  return {
-    filters, setFilters, modalState, setModalState, toastMessage, departmentsQuery,
-    membersQuery, createMutation, updateMutation, deactivateMutation, activateMutation,
-    closeModal, submitCreate, submitEdit, confirmStatusChange,
-  };
-}
-
-function MemberAdminModalHost({
-  state,
-  canViewDetail,
-  departments,
-}: {
+interface MemberAdminModalHostProps {
   state: ReturnType<typeof useMemberAdminState>;
   canViewDetail: boolean;
   departments: DepartmentDto[];
-}) {
-  if (state.modalState.kind === 'create') {
+}
+
+function MemberAdminModalHost({ state, canViewDetail, departments }: MemberAdminModalHostProps) {
+  const modal = state.modalState;
+  if (modal.kind === 'create') {
     return (
       <MemberCreateDrawer
         departments={departments}
@@ -114,11 +36,11 @@ function MemberAdminModalHost({
       />
     );
   }
-  if (state.modalState.kind === 'edit') {
+  if (modal.kind === 'edit') {
     return (
       <MemberEditDrawer
-        key={state.modalState.member.id}
-        member={state.modalState.member}
+        key={modal.member.id}
+        member={modal.member}
         canViewDetail={canViewDetail}
         departments={departments}
         isSubmitting={state.updateMutation.isPending}
@@ -128,12 +50,24 @@ function MemberAdminModalHost({
       />
     );
   }
-  if (state.modalState.kind === 'status') {
-    const isDeactivate = state.modalState.action === 'deactivate';
+  if (modal.kind === 'resetPassword') {
+    return (
+      <ResetPasswordModal
+        key={modal.member.id}
+        member={modal.member}
+        isPending={state.resetPasswordMutation.isPending}
+        error={state.resetPasswordMutation.error}
+        onClose={state.closeModal}
+        onSubmit={state.submitResetPassword}
+      />
+    );
+  }
+  if (modal.kind === 'status') {
+    const isDeactivate = modal.action === 'deactivate';
     return (
       <MemberStatusModal
-        member={state.modalState.member}
-        action={state.modalState.action}
+        member={modal.member}
+        action={modal.action}
         isPending={isDeactivate ? state.deactivateMutation.isPending : state.activateMutation.isPending}
         error={isDeactivate ? state.deactivateMutation.error : state.activateMutation.error}
         onClose={state.closeModal}
@@ -175,15 +109,13 @@ function MemberLoadMoreFooter({
   );
 }
 
-function MemberAdminListArea({
-  canView,
-  canViewDetail,
-  state,
-}: {
+interface MemberAdminListAreaProps {
   canView: boolean;
   canViewDetail: boolean;
   state: ReturnType<typeof useMemberAdminState>;
-}) {
+}
+
+function MemberAdminListArea({ canView, canViewDetail, state }: MemberAdminListAreaProps) {
   const tDir = useTranslations('members');
   const tAdmin = useTranslations('memberAdmin');
   const tCommon = useTranslations('common');
@@ -227,6 +159,7 @@ function MemberAdminListArea({
         members={members}
         canViewDetail={canViewDetail}
         onEdit={(member) => { state.updateMutation.reset(); state.setModalState({ kind: 'edit', member }); }}
+        onResetPassword={(member) => { state.resetPasswordMutation.reset(); state.setModalState({ kind: 'resetPassword', member }); }}
         onStatusAction={(member, action) => { state.deactivateMutation.reset(); state.activateMutation.reset(); state.setModalState({ kind: 'status', member, action }); }}
       />
       <MemberLoadMoreFooter

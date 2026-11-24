@@ -12,6 +12,7 @@ import {
 } from '@db/schema';
 import { DEFAULT_MEMBER_PERMISSIONS } from '@/lib/permissions';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import viMessages from '../../messages/vi.json';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
@@ -44,10 +45,16 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
   };
 }
 
-async function signInAs(page: Page, studentId: string, returnTo = '/admin/permissions'): Promise<void> {
+async function signInAs(
+  page: Page,
+  studentId: string,
+  returnTo = '/admin/permissions',
+  password = DEV_SEED_PASSWORD,
+): Promise<void> {
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
-  await page.getByLabel(viMessages.auth.studentIdLabel).fill(studentId);
-  await page.getByRole('button', { name: viMessages.auth.signInButton }).click();
+  await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(studentId);
+  await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(password);
+  await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
   await page.waitForURL(`${BASE_ORIGIN}${returnTo}`);
 }
 
@@ -86,6 +93,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
 
     pool = createDbPool(testDatabaseUrl);
     db = createDb(pool);
+    const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
 
     await db
       .insert(permissions)
@@ -108,6 +116,8 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
         studentId: adminStudentId,
         email: adminEmail,
         fullName: adminFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: true,
         isActive: true,
         locale: 'vi',
@@ -117,6 +127,8 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
         studentId: hrStudentId,
         email: hrEmail,
         fullName: hrFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',
@@ -126,6 +138,8 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
         studentId: targetStudentId,
         email: targetEmail,
         fullName: targetFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',
@@ -135,6 +149,8 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
         studentId: auditViewerStudentId,
         email: auditViewerEmail,
         fullName: auditViewerFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',
@@ -444,6 +460,9 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     }
     expect(auditApiBody).not.toContain('"studentId"');
     expect(auditApiBody).not.toContain('"email"');
+    expect(auditApiBody).not.toContain('passwordHash');
+    expect(auditApiBody).not.toContain('password_hash');
+    expect(auditApiBody).not.toContain(DEV_SEED_PASSWORD);
 
     await tracker.assertClean();
   });

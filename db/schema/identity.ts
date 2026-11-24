@@ -19,6 +19,8 @@ export const profiles = pgTable(
     studentId: text('student_id').notNull(),
     email: text('email').notNull(),
     fullName: text('full_name').notNull(),
+    passwordHash: text('password_hash'),
+    mustChangePassword: boolean('must_change_password').notNull().default(false),
     isAdmin: boolean('is_admin').notNull().default(false),
     isActive: boolean('is_active').notNull().default(true),
     leftAt: timestamp('left_at', { withTimezone: true, mode: 'date' }),

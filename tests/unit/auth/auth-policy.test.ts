@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  changeMyPasswordFormSchema,
+  changeMyPasswordRequestSchema,
   DEFAULT_LOGIN_REDIRECT,
   loginFormSchema,
   loginRequestSchema,
@@ -10,11 +12,13 @@ import {
 import {
   computeSessionExpiry,
   computeSlidingExpiry,
+  FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
   generateOpaqueSessionToken,
   hashSessionToken,
   isRateLimited,
   isSessionExpired,
   RATE_LIMIT_MAX_FAILED_ATTEMPTS,
+  resolveLoginRedirect,
 } from '@/server/modules/auth/policy';
 
 describe('sanitizeReturnTo', () => {
@@ -68,26 +72,95 @@ describe('sanitizeReturnTo', () => {
 });
 
 describe('auth schemas', () => {
-  it('validates studentIdSchema, loginFormSchema, and loginRequestSchema bounds', () => {
+  it('validates studentIdSchema, loginFormSchema, loginRequestSchema, and password schemas', () => {
     const max64 = 'A'.repeat(64);
     const tooLong65 = 'A'.repeat(65);
 
     expect(studentIdSchema.parse(`  ${max64}  `)).toBe(max64);
     expect(studentIdSchema.safeParse(tooLong65).success).toBe(false);
 
-    expect(loginFormSchema.parse({ studentId: ' MSSV-DEV-001 ', remember: true })).toEqual({
+    expect(
+      loginFormSchema.parse({
+        studentId: ' MSSV-DEV-001 ',
+        password: 'BeamDev@2026',
+        remember: true,
+      }),
+    ).toEqual({
       studentId: 'MSSV-DEV-001',
+      password: 'BeamDev@2026',
       remember: true,
     });
-    expect(loginFormSchema.safeParse({ studentId: tooLong65, remember: false }).success).toBe(false);
+    expect(
+      loginFormSchema.safeParse({
+        studentId: tooLong65,
+        password: 'BeamDev@2026',
+        remember: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      loginFormSchema.safeParse({
+        studentId: 'MSSV-DEV-001',
+        password: '',
+        remember: false,
+      }).success,
+    ).toBe(false);
 
-    const parsed = loginRequestSchema.parse({ studentId: '  MSSV-DEV-001  ' });
+    const parsed = loginRequestSchema.parse({
+      studentId: '  MSSV-DEV-001  ',
+      password: 'BeamDev@2026',
+    });
     expect(parsed).toEqual({
       studentId: 'MSSV-DEV-001',
+      password: 'BeamDev@2026',
       remember: false,
     });
-    expect(loginRequestSchema.safeParse({ studentId: '   ' }).success).toBe(false);
-    expect(loginRequestSchema.safeParse({ studentId: tooLong65 }).success).toBe(false);
+    expect(
+      loginRequestSchema.safeParse({ studentId: '   ', password: 'BeamDev@2026' })
+        .success,
+    ).toBe(false);
+    expect(
+      loginRequestSchema.safeParse({ studentId: 'MSSV-DEV-001' }).success,
+    ).toBe(false);
+    expect(
+      loginRequestSchema.safeParse({ studentId: tooLong65, password: 'BeamDev@2026' })
+        .success,
+    ).toBe(false);
+
+    expect(
+      changeMyPasswordRequestSchema.parse({
+        currentPassword: 'OldPassword#1',
+        newPassword: 'NewPassword#2',
+      }),
+    ).toEqual({
+      currentPassword: 'OldPassword#1',
+      newPassword: 'NewPassword#2',
+    });
+    expect(
+      changeMyPasswordRequestSchema.safeParse({
+        currentPassword: 'OldPassword#1',
+        newPassword: 'short',
+      }).success,
+    ).toBe(false);
+    expect(
+      changeMyPasswordRequestSchema.safeParse({
+        currentPassword: 'OldPassword#1',
+        newPassword: '        ',
+      }).success,
+    ).toBe(false);
+    expect(
+      changeMyPasswordRequestSchema.safeParse({
+        currentPassword: 'OldPassword#1',
+        newPassword: 'NewPassword#2',
+        extra: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      changeMyPasswordFormSchema.safeParse({
+        currentPassword: 'OldPassword#1',
+        newPassword: 'NewPassword#2',
+        confirmPassword: 'MismatchPassword#2',
+      }).success,
+    ).toBe(false);
   });
 
   it('validates updateMeRequestSchema locales', () => {
@@ -169,5 +242,19 @@ describe('auth policy rules', () => {
     expect(h1a).toBe(h1b);
     expect(h1a).not.toBe(h1OtherSecret);
     expect(h1a).not.toBe(h2);
+  });
+
+  it('resolves login redirect with mustChangePassword default fallback', () => {
+    expect(resolveLoginRedirect(undefined, false)).toBe(DEFAULT_LOGIN_REDIRECT);
+    expect(resolveLoginRedirect(null, true)).toBe(
+      FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
+    );
+    expect(resolveLoginRedirect('   ', true)).toBe(
+      FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
+    );
+    expect(resolveLoginRedirect('https://evil.example', true)).toBe(
+      FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
+    );
+    expect(resolveLoginRedirect('/my-tasks', true)).toBe('/my-tasks');
   });
 });
