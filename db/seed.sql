@@ -125,7 +125,7 @@ VALUES
   ('20000000-0000-4000-8000-000000000002', 'Ban Truyền thông (Sample)'),
   ('20000000-0000-4000-8000-000000000003', 'Ban Sự kiện (Sample)'),
   ('20000000-0000-4000-8000-000000000004', 'Ban Nhân sự (Sample)')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
 INSERT INTO member_departments (user_id, department_id)
 VALUES

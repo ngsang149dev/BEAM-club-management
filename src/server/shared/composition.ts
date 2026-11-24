@@ -10,6 +10,11 @@ import {
   DrizzleAuthRepository,
 } from '@/server/modules/auth';
 import {
+  type BoardsRepository,
+  BoardsService,
+  DrizzleBoardsRepository,
+} from '@/server/modules/boards';
+import {
   type DepartmentsRepository,
   DepartmentsService,
   DrizzleDepartmentsRepository,
@@ -24,6 +29,11 @@ import {
   type PermissionsRepository,
   PermissionsService,
 } from '@/server/modules/permissions';
+import {
+  DrizzleTasksRepository,
+  type TasksRepository,
+  TasksService,
+} from '@/server/modules/tasks';
 import { type Clock, SystemClock } from './clock';
 import { type Config, loadConfig } from './config';
 import { createDatabaseClient, type Database } from './db';
@@ -44,6 +54,8 @@ export interface ServerContainer {
   readonly membersService: MembersService;
   readonly permissionsService: PermissionsService;
   readonly auditService: AuditService;
+  readonly tasksService: TasksService;
+  readonly boardsService: BoardsService;
   dispose(): Promise<void>;
 }
 
@@ -65,6 +77,10 @@ export interface ContainerOverrides {
   readonly membersService?: MembersService;
   readonly permissionsRepo?: PermissionsRepository;
   readonly permissionsService?: PermissionsService;
+  readonly tasksRepo?: TasksRepository;
+  readonly tasksService?: TasksService;
+  readonly boardsRepo?: BoardsRepository;
+  readonly boardsService?: BoardsService;
 }
 
 const globalForContainer = globalThis as typeof globalThis & {
@@ -163,10 +179,34 @@ function buildGovernanceServices(infra: SharedInfra, overrides: ContainerOverrid
   return { permissionsService, auditService };
 }
 
+function buildWorkstreamServices(infra: SharedInfra, overrides: ContainerOverrides) {
+  const tasksRepo = overrides.tasksRepo ?? new DrizzleTasksRepository(infra.db);
+  const tasksService =
+    overrides.tasksService ??
+    new TasksService({
+      tasksRepo,
+      transactionRunner: infra.transactionRunner,
+      clock: infra.clock,
+      logger: infra.logger,
+    });
+  const boardsService =
+    overrides.boardsService ??
+    new BoardsService({
+      boardsRepo: overrides.boardsRepo ?? new DrizzleBoardsRepository(infra.db),
+      tasksRepo,
+      auditWriter: infra.auditWriter,
+      transactionRunner: infra.transactionRunner,
+      clock: infra.clock,
+      logger: infra.logger,
+    });
+  return { tasksService, boardsService };
+}
+
 export function createContainer(overrides: ContainerOverrides = {}): ServerContainer {
   const infra = buildSharedInfra(overrides);
   const directory = buildDirectoryServices(infra, overrides);
   const governance = buildGovernanceServices(infra, overrides);
+  const workstream = buildWorkstreamServices(infra, overrides);
 
   return {
     config: infra.config,
@@ -179,6 +219,7 @@ export function createContainer(overrides: ContainerOverrides = {}): ServerConta
     auditWriter: infra.auditWriter,
     ...directory,
     ...governance,
+    ...workstream,
   };
 }
 

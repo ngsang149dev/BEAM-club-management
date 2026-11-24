@@ -1,0 +1,42 @@
+import type { NextResponse } from 'next/server';
+import { createColumnRequestSchema } from '@/lib/boards';
+import { uuidSchema } from '@/lib/members';
+import {
+  authenticateApiRequest,
+  createAuthenticatedJsonResponse,
+  getRequestId,
+  parseJsonBody,
+} from '@/server/shared/auth-http';
+import { getContainer } from '@/server/shared/composition';
+import { toErrorResponse } from '@/server/shared/http';
+
+interface RouteContext {
+  readonly params: Promise<{ id: string }>;
+}
+
+export async function POST(
+  request: Request,
+  context: RouteContext,
+): Promise<NextResponse> {
+  const requestId = getRequestId(request);
+  const container = getContainer();
+
+  try {
+    const auth = await authenticateApiRequest(request, container);
+    const { id } = await context.params;
+    const boardId = uuidSchema.parse(id);
+    const body = await parseJsonBody(request);
+    const input = createColumnRequestSchema.parse(body);
+    const data = await container.boardsService.createColumn(auth.actor, boardId, input);
+    return createAuthenticatedJsonResponse(data, {
+      status: 201,
+      requestId,
+      rawToken: auth.rawToken,
+      rememberMe: auth.session.rememberMe,
+      request,
+      config: container.config,
+    });
+  } catch (error) {
+    return toErrorResponse(error, container.logger, requestId);
+  }
+}
