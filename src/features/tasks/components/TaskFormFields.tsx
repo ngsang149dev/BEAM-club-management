@@ -60,7 +60,9 @@ export function TaskPrioritySelect({
 
   return (
     <div className="ui-field">
-      <label className="ui-label" htmlFor={id}>{tTasks('priorityLabel')}</label>
+      <div className="ui-field-label-row">
+        <label className="ui-label" htmlFor={id}>{tTasks('priorityLabel')}</label>
+      </div>
       <select
         id={id}
         className="ui-select"
@@ -92,22 +94,22 @@ export function TaskDueDateInput({
 
   return (
     <div className="ui-field">
-      <label className="ui-label" htmlFor={id}>{tTasks('dueAtLabel')}</label>
-      <div className="task-due-input-row">
-        <input
-          id={id}
-          className="ui-input"
-          type="date"
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-        />
+      <div className="ui-field-label-row">
+        <label className="ui-label" htmlFor={id}>{tTasks('dueAtLabel')}</label>
         {value && !disabled ? (
-          <button type="button" className="ui-btn ghost is-sm" onClick={() => onChange('')}>
+          <button type="button" className="task-due-clear-btn" onClick={() => onChange('')}>
             {tTasks('clearDueAt')}
           </button>
         ) : null}
       </div>
+      <input
+        id={id}
+        className="ui-input"
+        type="date"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
       <p className="ui-field-hint">{tTasks('dueAtHint')}</p>
     </div>
   );
