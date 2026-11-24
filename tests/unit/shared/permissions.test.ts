@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyPresetRequestSchema,
+  computePermissionDiff,
+  dedupeCanonicalPermissions,
   DEFAULT_MEMBER_PERMISSIONS,
   isPermissionCode,
+  listAuditLogsQuerySchema,
+  PERMISSION_CODES,
+  PERMISSION_PRESET_CODES,
   PERMISSION_PRESETS,
   PERMISSIONS,
+  replaceMemberPermissionsRequestSchema,
+  updateAdminFlagRequestSchema,
 } from '@/lib/permissions';
 
 const EXPECTED_CODES = [
@@ -91,5 +99,85 @@ describe('permissions registry', () => {
       'member.update',
       'member.deactivate',
     ]);
+  });
+
+  it('derives PERMISSION_CODES and PERMISSION_PRESET_CODES and canonicalizes diffs', () => {
+    expect(PERMISSION_CODES).toEqual([...EXPECTED_CODES]);
+    expect(PERMISSION_PRESET_CODES).toEqual([
+      'basic_member',
+      'department_lead',
+      'hr_manager',
+    ]);
+    expect(
+      dedupeCanonicalPermissions([
+        'audit.view',
+        'member.view',
+        'audit.view',
+        'board.create',
+      ]),
+    ).toEqual(['member.view', 'board.create', 'audit.view']);
+
+    expect(
+      computePermissionDiff(
+        ['member.view', 'task.update_assigned', 'comment.create', 'audit.view'],
+        ['comment.create', 'board.create', 'member.view'],
+      ),
+    ).toEqual({
+      added: ['board.create'],
+      removed: ['task.update_assigned', 'audit.view'],
+    });
+  });
+
+  it('validates strict E4 request and audit query schemas', () => {
+    expect(
+      replaceMemberPermissionsRequestSchema.safeParse({
+        permissionCodes: ['member.view', 'board.create'],
+      }).success,
+    ).toBe(true);
+    expect(
+      replaceMemberPermissionsRequestSchema.safeParse({
+        permissionCodes: ['unknown.perm'],
+      }).success,
+    ).toBe(false);
+    expect(
+      replaceMemberPermissionsRequestSchema.safeParse({
+        permissionCodes: [],
+        extra: true,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      applyPresetRequestSchema.safeParse({ presetCode: 'department_lead' }).success,
+    ).toBe(true);
+    expect(
+      applyPresetRequestSchema.safeParse({ presetCode: 'super_admin' }).success,
+    ).toBe(false);
+
+    expect(
+      updateAdminFlagRequestSchema.safeParse({ isAdmin: true }).success,
+    ).toBe(true);
+    expect(
+      updateAdminFlagRequestSchema.safeParse({ isAdmin: 'true' }).success,
+    ).toBe(false);
+
+    const parsedQuery = listAuditLogsQuerySchema.parse({
+      actorId: '',
+      from: '2026-11-20T00:00:00Z',
+      to: '2026-11-24T23:59:59+07:00',
+      limit: '25',
+    });
+    expect(parsedQuery.actorId).toBeUndefined();
+    expect(parsedQuery.from).toBeInstanceOf(Date);
+    expect(parsedQuery.to).toBeInstanceOf(Date);
+    expect(parsedQuery.limit).toBe(25);
+
+    const invertedRange = listAuditLogsQuerySchema.safeParse({
+      from: '2026-11-25T00:00:00Z',
+      to: '2026-11-24T00:00:00Z',
+    });
+    expect(invertedRange.success).toBe(false);
+    if (!invertedRange.success) {
+      expect(invertedRange.error.issues[0]?.message).toBe('errors.invalidDateRange');
+    }
   });
 });
