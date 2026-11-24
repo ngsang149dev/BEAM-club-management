@@ -30,7 +30,7 @@ vi.mock('next/link', () => ({
 
 import { AuditLogsView } from '@/features/audit/components/AuditLogsView';
 import { describeAuditError } from '@/features/audit/error-mapping';
-import { computeAuditFromIso, formatAuditTimestamp } from '@/features/audit/formatters';
+import { computeAuditFromIso, formatAuditTimestamp, resolveAuditActionKey } from '@/features/audit/formatters';
 
 type AuditLogDto = components['schemas']['AuditLogDto'];
 
@@ -161,6 +161,23 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(formatAuditTimestamp('2026-11-23T07:32:08Z', 'vi', true)).toContain('14:32:08');
     expect(computeAuditFromIso('all')).toBeUndefined();
     expect(computeAuditFromIso('30d', Date.UTC(2026, 10, 24))).toBe('2026-10-25T00:00:00.000Z');
+    expect(resolveAuditActionKey('board.created')).toBe('boardCreated');
+    expect(resolveAuditActionKey('board.updated')).toBe('boardUpdated');
+    expect(resolveAuditActionKey('board.archived')).toBe('boardArchived');
+
+    const boardEntry: AuditLogDto = { ...ENTRY_PERM, action: 'board.archived', targetUser: null, detail: { name: 'Board X' } };
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [boardEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    expect(renderAudit({ permissions: ['audit.view'], locale: 'vi' })).toContain('Lưu trữ board');
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [boardEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    expect(renderAudit({ permissions: ['audit.view'], locale: 'en' })).toContain('Archived board');
   });
 
   it('renders ErrorState with requestId and maps INVALID_DATE_RANGE / 403 / INVALID_CURSOR cleanly', () => {

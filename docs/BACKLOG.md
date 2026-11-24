@@ -9,8 +9,11 @@
 | **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Done |
 | **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Done |
 | **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Done |
-| **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | In progress |
-| **E6** | Kanban kéo thả (`@dnd-kit`), priority 1–4, lọc/tìm kiếm | FR-22, FR-25, FR-27 | Backlog |
+| **E5** | Board, cột, task, kéo thả `@dnd-kit`, UI Hồng–Trắng–Đen, "Task của tôi" | FR-06, FR-20–23 | Done (chờ duyệt merge PR) |
+| **CR-01** | Mật khẩu đăng nhập cho toàn bộ tài khoản (`A4`, `[RỦI RO CAO]`) | Nâng cấp `FR-04` | Draft (chờ duyệt sau merge E5) |
+| **CR-02** | Logo CLB & Ảnh đại diện thành viên (lưu PostgreSQL <= 256 KB, chữ cái đầu đa sắc, `A1`) | Nâng cấp `S02`/`S08`/`S09` | Draft (sau CR-01) |
+| **CR-03** | Giao task cho Ban (`task_departments`) + Email & Thông báo chuông (`A2`, `A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-20`–`23` | Draft (sau CR-02) |
+| **E6** | Lọc & tìm kiếm board/task nâng cao (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Backlog |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s, xóa mềm & Thùng rác | FR-60, FR-61, FR-62 | Backlog |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
@@ -245,46 +248,56 @@
 
 ---
 
-## Epic E5 — Board, Cột & Task cơ bản *(Đã duyệt bởi chủ dự án)*
+## Epic E5 — Board, Cột, Task, Kéo thả `@dnd-kit`, UI Polish & "Task của tôi" *(Done — chờ duyệt merge vào main)*
 
 ### E5-01
 - **ID:** `E5-01`
-- **Tiêu đề:** Backend Boards, Columns, Tasks, Assignees & "Task của tôi" (`task_events` + `taskVisibilityPolicy`) `[RỦI RO CAO]`
-- **Sub-agent phụ trách:** `backend-db` + `qa-reviewer` (ngữ cảnh sạch)
-- **Liên quan:** `FR-06`, `FR-20`, `FR-21`, `FR-23`, `AC-06`, `WQ-05`, `WQ-18`
+- **Tiêu đề:** Backend Boards, Columns, Tasks, Move (`POST /tasks/{id}/move`), Assignees & "Task của tôi" (`task_events` + `taskVisibilityPolicy`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db` + `qa-engineer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-06`, `FR-20`, `FR-21`, `FR-22`, `FR-23`, `AC-06`, `WQ-03`, `WQ-05`, `WQ-18`
 - **Phụ thuộc:** Epic E4 merged vào `main` (`docs/openapi.yaml` đã khóa)
-- **Mục tài liệu cần đọc:** `HANDOFF` mục 3.4, 4.1 (`FR-06`, `FR-20`, `FR-21`, `FR-23`), 8.3, 11.5 (`GET/POST /boards`, `GET/PATCH/DELETE /boards/{id}`, `POST /boards/{id}/columns`, `PATCH/DELETE /columns/{id}`, `PUT /boards/{id}/columns/order`, `GET/POST /tasks`, `GET/PATCH/DELETE /tasks/{id}`, `PUT /tasks/{id}/assignees`, `GET /me/tasks`); `docs/openapi.yaml`
-- **Phạm vi file được sửa:** `src/lib/boards.ts`, `src/lib/tasks.ts`, `src/server/modules/boards/*`, `src/server/modules/tasks/*`, `src/server/shared/composition.ts`, `src/app/api/v1/boards/**`, `src/app/api/v1/columns/**`, `src/app/api/v1/tasks/**`, `src/app/api/v1/me/tasks/**`, `tests/unit/boards/*`, `tests/unit/tasks/*`, `tests/integration/boards/*`, `tests/integration/tasks/*`
-- **Tiêu chí chấp nhận:** Nguồn sự thật `taskVisibilityPolicy` lọc `deleted_at IS NULL` & `is_hidden` ở mọi truy vấn list/detail/count/`/me/tasks`; tạo board tự tạo 4 cột mặc định (`Todo`, `Doing`, `Review`, `Done`); xóa cột đang còn task trả `409` (`WQ-05`); mọi thao tác ghi task qua `authorize` (`AC-06`: người không có `task.create` gọi API bị `403`, `task.update_assigned` chỉ sửa được task được giao cho mình) + ghi `task_events` append-only và trả `eventId` trong cùng transaction; DTO `assignee`/tạo bởi không lộ MSSV/email.
-- **Kiểm thử bắt buộc (viết trước):** Allow/deny từng mã quyền `board.*`, `task.create`, `task.assign`, `task.update_any`, `task.update_assigned`, `task.delete`; `409` xóa cột còn task (`WQ-05`); `taskVisibilityPolicy` & lọc `deleted_at IS NULL`; `task_events` append-only & trả `eventId`.
-- **Ngoài phạm vi:** Kéo thả Kanban (`E6`), bình luận & luồng UI bật/tắt task ẩn (`E7`), hoàn tác toast/Thùng rác UI (`E7A`).
+- **Mục tài liệu cần đọc:** `HANDOFF` mục 3.4, 4.1 (`FR-06`, `FR-20`–`FR-23`), 8.3, 11.5 (`GET/POST /boards`, `GET/PATCH/DELETE /boards/{id}`, `POST /boards/{id}/columns`, `PATCH/DELETE /columns/{id}`, `PUT /boards/{id}/columns/order`, `GET/POST /tasks`, `GET/PATCH/DELETE /tasks/{id}`, `POST /tasks/{id}/move`, `PUT /tasks/{id}/assignees`, `GET /me/tasks`); `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `db/seed.sql`, `src/lib/boards.ts`, `src/lib/tasks.ts`, `src/server/modules/boards/*`, `src/server/modules/tasks/*`, `src/server/shared/composition.ts`, `src/app/api/v1/boards/**`, `src/app/api/v1/columns/**`, `src/app/api/v1/tasks/**`, `src/app/api/v1/me/tasks/**`, `tests/unit/shared/boards-tasks.test.ts`, `tests/unit/boards/*`, `tests/unit/tasks/*`, `tests/integration/boards/*`, `tests/integration/tasks/*`
+- **Tiêu chí chấp nhận:** Nguồn sự thật `taskVisibilityPolicy` lọc `deleted_at IS NULL` & `is_hidden` ở mọi truy vấn list/detail/count/`move`/`/me/tasks`; tạo board tự tạo 4 cột mặc định (`Todo`, `Doing`, `Review`, `Done`); xóa cột đang còn task trả `409 COLUMN_NOT_EMPTY` (`WQ-05`); mọi thao tác ghi task qua `authorize` (`AC-06`: thiếu `task.create` nhận `403`, `task.update_assigned` chỉ sửa/kéo thả task được giao, chặn gán mới thành viên đã rời `400 INVALID_ASSIGNEE_IDS`); `POST /tasks/{id}/move` tính `position` & tự rebalance khi gap `< 0.001` kèm kiểm tra `version` (`409`); ghi `task_events` append-only và trả `eventId`; DTO không lộ MSSV/email; `db/seed.sql` cập nhật tên ban UTF-8 sạch.
+- **Kiểm thử bắt buộc:** Allow/deny mọi mã quyền `board.*`, `task.create`, `task.assign`, `task.update_any`, `task.update_assigned`, `task.delete`; `409` xóa cột còn task (`WQ-05`); `taskVisibilityPolicy` `404` & lọc `deleted_at IS NULL`; rebalance vị trí & `task_events` append-only.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done` (đạt `arch:check` `190/796`, unit test backend/shared, và `15 integration test PostgreSQL / 10 tệp` trên `beam_test`)
 
 ### E5-02
 - **ID:** `E5-02`
-- **Tiêu đề:** Giao diện Boards `S03`, Board cơ bản `S04`, Chi tiết Task `S05` & "Task của tôi" `S06`
-- **Sub-agent phụ trách:** `frontend` (chạy song song với `E5-01` sau khi khóa `src/lib/boards.ts`, `src/lib/tasks.ts` & `docs/openapi.yaml`)
-- **Liên quan:** `FR-06`, `FR-20`, `FR-21`, `FR-23`, `S03`, `S04`, `S05`, `S06`, `WQ-05`
+- **Tiêu đề:** Giao diện Boards `S03`, Kanban kéo thả `S04`, Chi tiết Task `S05`, "Task của tôi" `S06` & Bộ màu Hồng–Trắng–Đen
+- **Sub-agent phụ trách:** `frontend` + `qa-engineer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-06`, `FR-20`–`FR-23`, `S03`, `S04`, `S05`, `S06`, `WQ-03`, `WQ-05`, `WQ-12`
 - **Phụ thuộc:** Epic E4 merged vào `main` (`docs/openapi.yaml` đã khóa)
-- **Mục tài liệu cần đọc:** `HANDOFF` mục 11.3 (`S03`, `S04`, `S05`, `S06`), `wireframes/s03-boards.html`, `wireframes/s04-board.html`, `wireframes/s05-task.html`, `wireframes/s06-my-tasks.html`
-- **Phạm vi file được sửa:** `src/features/boards/*`, `src/features/tasks/*`, `src/app/boards/**`, `src/app/my-tasks/page.tsx`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
-- **Tiêu chí chấp nhận:** `S03` danh sách board + hộp thoại tạo/sửa/lưu trữ theo quyền `board.*`; `S04` hiển thị cột & thẻ task + hộp thoại quản lý cột (báo `409` khi xóa cột còn task) + nút tạo task theo quyền; `S05` khung/hộp thoại chi tiết task (mô tả, hạn chót `Asia/Ho_Chi_Minh`, priority 1–4, gán nhiều người nhận); `S06` (`/my-tasks`) liệt kê task được giao cho bản thân; 100% chuỗi UI qua `messages/{vi,en}.json`.
-- **Kiểm thử bắt buộc (viết trước):** Unit/component test `S03`/`S04`/`S05`/`S06` (ẩn/khóa nút theo quyền `<Can>`, xử lý `409` xóa cột, hiển thị priority 1–4 và ngày giờ VN, không lộ MSSV/email), parity `vi`/`en` + ICU placeholder.
-- **Ngoài phạm vi:** Kéo thả `@dnd-kit` (`E6`), bình luận (`E7`), toast hoàn tác & Thùng rác (`E7A`).
+- **Mục tài liệu cần đọc:** `HANDOFF` mục 11.3 (`S03`–`S06`), `wireframes/s03-boards.html`–`s06-my-tasks.html`
+- **Phạm vi file được sửa:** `src/app/globals.css`, `src/app/boards/**`, `src/app/my-tasks/page.tsx`, `src/features/boards/*`, `src/features/tasks/*`, `src/features/audit/formatters.ts`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:** Bộ màu Hồng–Trắng–Đen (`Crisp Editorial Pop`) kèm animation, căn giữa & phóng to desktop, board `/boards/[id]` full-width; `S03`/`S04` gộp nút hành động vào menu `⋯` (`ActionMenu`) theo quyền `board.*`, hỗ trợ kéo thả `@dnd-kit` cả **task** lẫn **cột** (giữ click `< 6px` mở Drawer `S05`); `S05` nhập hạn theo ngày `00:00 UTC+7` (`WQ-12`), cho phép bỏ gán thành viên đã rời, nhấn mạnh Priority `1–4` & hạn chót (`overdue`/`today`/`soon`), sửa race condition xóa task không làm treo Drawer ở `404`; `S06` (`/my-tasks`) mặc định ẩn task cột cuối (`WQ-03`); 100% chuỗi UI qua `messages/{vi,en}.json`.
+- **Kiểm thử bắt buộc:** Unit/component test `S03`–`S06`, `board-dnd-helpers`, `getTaskDueUrgency`, parity `vi`/`en` + ICU placeholder.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done` (đạt `167 unit test / 36 tệp`, `typecheck`, `lint`, `build` 37 route)
 
 ### E5-03
 - **ID:** `E5-03`
-- **Tiêu đề:** Kiểm thử tích hợp, E2E & review độc lập Epic E5 `[RỦI RO CAO]`
-- **Sub-agent phụ trách:** `qa-reviewer` (ngữ cảnh sạch)
-- **Liên quan:** `AC-06`, `FR-06`, `FR-20`, `FR-21`, `FR-23`, `WQ-05`, `AGENTS.md` mục 8
+- **Tiêu đề:** Kiểm thử tích hợp, E2E Chrome & review độc lập Epic E5 `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-engineer` (ngữ cảnh sạch)
+- **Liên quan:** `AC-06`, `FR-06`, `FR-20`–`FR-23`, `FR-42`, `WQ-03`, `WQ-05`, `WQ-12`, `AGENTS.md` mục 8
 - **Phụ thuộc:** `E5-01`, `E5-02`
-- **Mục tài liệu cần đọc:** `HANDOFF` mục 8.3, 9; `docs/openapi.yaml` (`/boards*`, `/columns*`, `/tasks*`, `/me/tasks`)
-- **Phạm vi file được sửa:** `tests/unit/boards/*`, `tests/unit/tasks/*`, `tests/integration/boards/*`, `tests/integration/tasks/*`, `tests/e2e/boards-tasks.spec.ts`
-- **Tiêu chí chấp nhận:** Đủ test allow/deny mọi mã quyền board/task, `AC-06` (từ chối API tạo task khi không có quyền `task.create`), `WQ-05` (xóa cột còn task `409`), `task_events` append-only, Playwright Chrome E2E `S03`/`S04`/`S05`/`S06`, và review ngữ cảnh sạch toàn bộ Epic E5 theo checklist `6A.8` đạt `PASS`.
-- **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
-- **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
+- **Phạm vi file được sửa:** `tests/e2e/boards-tasks.spec.ts`, `tests/e2e/members-departments.spec.ts`, `tests/unit/{boards,tasks}/*`, `tests/integration/{boards,tasks}/*`
+- **Tiêu chí chấp nhận:** Đủ test allow/deny mọi mã quyền board/task, `AC-06` (`403`), hidden task (`404`), `WQ-05` (`409`), `409 TASK_VERSION_CONFLICT`, `task_events` append-only không PII, Playwright Chrome E2E toàn hệ thống xanh, và review ngữ cảnh sạch checklist `6A.8` đạt `PASS`.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done` (`qa-engineer` **`VERDICT: PASS`**: 37 route `next build`, 167 unit / 36 tệp, 15 integration PostgreSQL / 10 tệp, **13/13 Chrome E2E** qua cả 4 spec)
+
+---
+
+## Đợt yêu cầu thay đổi sau E5 *(Draft — thực hiện theo thứ tự sau khi merge E5 theo quyết định `A1`–`A5`)*
+
+### CR-01 (`[RỦI RO CAO]`): Đăng nhập bằng mật khẩu cho toàn bộ tài khoản (`A4`, `A5`)
+- **`CR-01-01` (`backend-db`, `[RỦI RO CAO]`):** Cập nhật `docs/DECISIONS.md`, `docs/openapi.yaml`, `docs/ERD.md`, migration `0002_passwords.sql` (cột `password_hash`, `must_change_password` trên `profiles`), hash an toàn (`crypto.scrypt`), cập nhật `POST /auth/login` kiểm tra mật khẩu + giữ rate limit, `POST /members` cấp mật khẩu mặc định ban đầu, thêm `POST /me/password` để thành viên tự đổi mật khẩu, cập nhật `db/seed.sql` cho tài khoản dev/test.
+- **`CR-01-02` (`frontend`):** Thêm bước/cửa sổ nhập mật khẩu tại `S01` (`LoginForm`), hiển thị hoặc nhập mật khẩu mặc định khi admin tạo tài khoản tại `S09`, và khung Đổi mật khẩu cho thành viên tại `S08` (`/profile`), đủ chuỗi `vi`/`en`.
+- **`CR-01-03` (`qa-engineer`, `[RỦI RO CAO]`):** Test unit/integration/E2E Chrome luồng đăng nhập mật khẩu sai/đúng, tài khoản mới dùng mật khẩu mặc định -> tự đổi mật khẩu, không lộ `password_hash` ở mọi response/log, và audit `6A.8` `PASS`.
+
+### CR-02: Logo CLB & Ảnh đại diện thành viên (`A1`, `A5`)
+- Nén & lưu ảnh nhị phân/data URL trong PostgreSQL (tối đa `256 KB`); admin sửa logo CLB (`app_settings` + header/login); admin hoặc quyền `member.update` sửa ảnh thành viên (`S09`) và thành viên tự đổi ảnh ở `S08`; chưa có ảnh hiển thị chữ cái đầu tên với bảng màu đa dạng đồng bộ.
+
+### CR-03 (`[RỦI RO CAO]`): Giao task cho Ban (`task_departments`) & Thông báo (`A2`, `A3`, `A5`)
+- Lưu bảng `task_departments`, hiển thị badge Ban trên thẻ, thành viên Ban thấy ở `Task của tôi`, được sửa/kéo thả nếu có `task.update_assigned`, xem task ẩn giao cho Ban và nhận nhắc deadline; thu gọn picker chọn từng thành viên; tự động gửi Email (SMTP CLB) + Thông báo trong web (chuông topbar, đánh dấu đã đọc) khi giao task cho Ban kèm checkbox bật/tắt.

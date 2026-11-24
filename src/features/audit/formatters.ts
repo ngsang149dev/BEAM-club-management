@@ -13,7 +13,10 @@ export type AuditActionMessageKey =
   | 'adminUpdated'
   | 'adminGranted'
   | 'adminRevoked'
-  | 'remindersUpdated';
+  | 'remindersUpdated'
+  | 'boardCreated'
+  | 'boardUpdated'
+  | 'boardArchived';
 
 const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'member.created': 'memberCreated',
@@ -34,6 +37,9 @@ const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'admin.revoked': 'adminRevoked',
   'reminders.updated': 'remindersUpdated',
   'settings.reminders_updated': 'remindersUpdated',
+  'board.created': 'boardCreated',
+  'board.updated': 'boardUpdated',
+  'board.archived': 'boardArchived',
 };
 
 export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
@@ -51,6 +57,9 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'department.created', key: 'departmentCreated' },
   { value: 'department.updated', key: 'departmentUpdated' },
   { value: 'department.deleted', key: 'departmentDeleted' },
+  { value: 'board.created', key: 'boardCreated' },
+  { value: 'board.updated', key: 'boardUpdated' },
+  { value: 'board.archived', key: 'boardArchived' },
   { value: 'reminders.updated', key: 'remindersUpdated' },
 ];
 

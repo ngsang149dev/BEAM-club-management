@@ -1,0 +1,160 @@
+'use client';
+
+import { useId } from 'react';
+import { useTranslations } from 'next-intl';
+import { TASK_PRIORITIES, type TaskPriority } from '@/lib/tasks';
+import { describeTaskError } from '../error-mapping';
+import { PRIORITY_MESSAGE_KEY } from '../formatters';
+
+export interface TaskAssigneeOption {
+  readonly id: string;
+  readonly fullName: string;
+  readonly isActive: boolean;
+}
+
+export function TaskErrorBanner({
+  error,
+  onReloadConflict,
+}: {
+  error: unknown;
+  onReloadConflict?: () => void;
+}) {
+  const tErr = useTranslations('errors');
+  const tTasks = useTranslations('tasks');
+  const descriptor = describeTaskError(error);
+  if (!descriptor) return null;
+
+  return (
+    <div className="ui-banner is-danger" role="alert">
+      <div className="ui-banner-body">
+        <span className="ui-banner-text">{tErr(descriptor.key)}</span>
+        {descriptor.requestId ? (
+          <span className="ui-banner-meta">
+            {tErr('requestIdLabel')}: {descriptor.requestId}
+          </span>
+        ) : null}
+        {descriptor.key === 'taskVersionConflict' && onReloadConflict ? (
+          <div className="task-conflict-actions">
+            <button type="button" className="ui-btn ghost is-sm" onClick={onReloadConflict}>
+              {tTasks('versionConflictReload')}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function TaskPrioritySelect({
+  value,
+  disabled = false,
+  onChange,
+}: {
+  value: TaskPriority;
+  disabled?: boolean;
+  onChange: (next: TaskPriority) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+  const tPrio = useTranslations('priority');
+  const id = useId();
+
+  return (
+    <div className="ui-field">
+      <label className="ui-label" htmlFor={id}>{tTasks('priorityLabel')}</label>
+      <select
+        id={id}
+        className="ui-select"
+        value={String(value)}
+        disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value) as TaskPriority)}
+      >
+        {[...TASK_PRIORITIES].reverse().map((level) => (
+          <option key={level} value={String(level)}>
+            {tPrio(PRIORITY_MESSAGE_KEY[level])}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function TaskDueDateInput({
+  value,
+  disabled = false,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+  const id = useId();
+
+  return (
+    <div className="ui-field">
+      <label className="ui-label" htmlFor={id}>{tTasks('dueAtLabel')}</label>
+      <div className="task-due-input-row">
+        <input
+          id={id}
+          className="ui-input"
+          type="date"
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {value && !disabled ? (
+          <button type="button" className="ui-btn ghost is-sm" onClick={() => onChange('')}>
+            {tTasks('clearDueAt')}
+          </button>
+        ) : null}
+      </div>
+      <p className="ui-field-hint">{tTasks('dueAtHint')}</p>
+    </div>
+  );
+}
+
+export function TaskAssigneePicker({
+  members,
+  canViewMembers,
+  selectedIds,
+  disabled = false,
+  onToggle,
+}: {
+  members: readonly TaskAssigneeOption[];
+  canViewMembers: boolean;
+  selectedIds: readonly string[];
+  disabled?: boolean;
+  onToggle: (userId: string) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+  const tMember = useTranslations('member');
+
+  if (!canViewMembers) {
+    return <p className="ui-field-hint">{tTasks('assigneesRestrictedNote')}</p>;
+  }
+  if (members.length === 0) {
+    return <p className="ui-field-hint">{tTasks('assigneesEmpty')}</p>;
+  }
+
+  return (
+    <div className="dept-checkbox-grid">
+      {members.map((member) => {
+        const checked = selectedIds.includes(member.id);
+        return (
+          <label key={member.id} className={checked ? 'dept-check-item is-checked' : 'dept-check-item'}>
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={disabled}
+              onChange={() => onToggle(member.id)}
+            />
+            <span>
+              {member.fullName}
+              {!member.isActive ? ` ${tMember('leftBadge')}` : ''}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}

@@ -224,9 +224,12 @@ test.describe('Members & Departments E2E (S07, S09, S11)', () => {
     expect(mainContent).not.toContain(adminEmail);
 
     await page.getByRole('button', { name: viMessages.members.statusAll }).click();
+    const searchInput = page.getByLabel(viMessages.members.searchLabel);
+    await searchInput.fill(inactiveFullName);
     const inactiveRow = table.locator('tbody tr', { hasText: inactiveFullName });
     await expect(inactiveRow).toBeVisible();
     await expect(inactiveRow).toContainText(viMessages.member.leftBadge);
+    await searchInput.fill('');
 
     const deptSelect = page.getByLabel(viMessages.members.departmentFilterLabel);
     await deptSelect.selectOption(busyDeptId);
@@ -234,7 +237,6 @@ test.describe('Members & Departments E2E (S07, S09, S11)', () => {
     await expect(table.locator('tbody tr', { hasText: adminFullName })).toHaveCount(0);
     await deptSelect.selectOption('');
 
-    const searchInput = page.getByLabel(viMessages.members.searchLabel);
     await searchInput.fill(basicStudentId);
     await expect(page.getByText(viMessages.members.emptyTitle)).toBeVisible();
 
@@ -272,6 +274,7 @@ test.describe('Members & Departments E2E (S07, S09, S11)', () => {
     await expect(drawer).not.toBeVisible();
 
     const table = page.locator('.directory-table-wrap table.ui-table');
+    await page.getByLabel(viMessages.members.searchLabel).fill(newFullName);
     const createdRow = table.locator('tbody tr', { hasText: newFullName });
     await expect(createdRow).toBeVisible();
     await expect(createdRow).toContainText(newStudentId);
@@ -298,7 +301,9 @@ test.describe('Members & Departments E2E (S07, S09, S11)', () => {
       await signInAs(memberPage, newStudentId, '/profile');
       await expect(memberPage.locator('.profile-main')).toContainText(updatedFullName);
 
+      await page.getByLabel(viMessages.members.searchLabel).fill(updatedFullName);
       const updatedRow = table.locator('tbody tr', { hasText: updatedFullName });
+      await expect(updatedRow).toBeVisible();
       await updatedRow.getByRole('button', { name: viMessages.memberAdmin.deactivateAction }).click();
       const statusModal = page.getByRole('dialog');
       const deactivateRespPromise = page.waitForResponse(
