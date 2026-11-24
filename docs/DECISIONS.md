@@ -61,3 +61,19 @@ Trạng thái: Đã duyệt bởi chủ dự án
   5. **Đặt lại mật khẩu (`POST /api/v1/members/{id}/reset-password`, `S09`):** Yêu cầu `member.update` hoặc `is_admin`. **Nếu tài khoản đích là `is_admin = true` mà người thao tác không phải Admin (`!actor.isAdmin`), chặn `403 FORBIDDEN`.** Đặt lại `password_hash`, bật `must_change_password = true`, thu hồi toàn bộ `sessions` đang mở của mục tiêu và ghi `audit_logs` (`action = 'member.password_reset'`) không kèm mật khẩu/hash.
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm trên `docs/ERD.md`, `db/migrations/0002_passwords.sql`, `docs/openapi.yaml` (`MemberDetail.mustChangePassword`, `LoginRequest.password`, `CreateMemberRequest.initialPassword`, `POST /me/password`, `POST /members/{id}/reset-password`).
 - **Trạng thái:** Đã duyệt bởi chủ dự án (`1. Duyệt / 2. Duyệt`, 2026-11-24).
+
+---
+
+## Quyết định `CR-04` — Kho lưu trữ tập trung (Archive) cho Task, User & Board (`A1`–`A5`) — 2026-11-24
+
+- **Ngữ cảnh:** Nâng cấp quyết định `Q39` và màn hình Thùng rác `S15` (`E7A`) theo phản hồi trải nghiệm thực tế của chủ dự án: bổ sung Kho lưu trữ (Archive) tập trung với tùy chọn khôi phục, tự động dọn theo hạn (1 tuần / 1 tháng / 3 tháng) hoặc xóa vĩnh viễn ngay.
+- **Quyết định nghiệp vụ & kiến trúc (`A1`–`A5` đã chốt với chủ dự án):**
+  1. **Phạm vi đối tượng (`A1`):** Gộp chung 3 nhóm vào một Kho lưu trữ (`/archive`) kèm tab lọc: **Task đã xóa mềm** (`tasks.deleted_at IS NOT NULL`), **Thành viên đã khóa/xóa** (`profiles.is_active = false`), và **Board đã lưu trữ** (`boards.archived_at IS NOT NULL`).
+  2. **Thời hạn tự dọn & thao tác (`A2`):** Admin cấu hình hạn tự dọn mặc định (`never` / `7d` / `30d` / `90d`) trong `app_settings` (`key = 'archive_retention'`), chạy định kỳ mỗi ngày qua Cron; trong Kho lưu trữ có sẵn nút **Khôi phục (Restore)** và **Xóa vĩnh viễn ngay (Purge)**.
+  3. **Purge an toàn & bảo toàn lịch sử (`A3`):**
+     - Với Task / Board / User đã phát sinh dữ liệu lịch sử (`task_events`, `audit_logs`, bình luận): **đánh dấu `purged_at`** để xóa vĩnh viễn khỏi Kho lưu trữ (không thể khôi phục hoặc xem lại ở bất kỳ màn hình nghiệp vụ nào) nhưng giữ nguyên toàn vẹn khóa ngoại & tính `append-only` của `task_events` / `audit_logs`. Riêng User có lịch sử sẽ được **ẩn danh toàn bộ PII** (`full_name = 'Thành viên đã xóa'`, ẩn danh `student_id`/`email`, xóa `password_hash`, thu hồi toàn bộ quyền, ban và phiên đăng nhập).
+     - Với User **chưa từng phát sinh** bản ghi lịch sử/liên kết (`task_events`, `audit_logs`, task tạo/giao, bình luận, bảng): cho phép **xóa vật lý (`DELETE`)** trực tiếp dòng `profiles` khỏi PostgreSQL.
+  4. **Phân quyền (`A4`):** Người có quyền xóa/khóa loại đối tượng nào (`task.delete`, `member.deactivate`, `board.delete`) được xem và khôi phục loại đối tượng đó (task ẩn `is_hidden=true` vẫn tiếp tục lọc chặt `404` đối với người không phải assignee / creator / admin); **riêng thao tác Xóa vĩnh viễn (Purge) và Cấu hình hạn tự dọn chỉ dành cho Admin (`is_admin = true`)**.
+  5. **Thứ tự ưu tiên (`A5`):** Hoàn tất merge `CR-01` -> triển khai **`CR-02`** (Logo CLB & Avatar thành viên) -> **`CR-03`** (Giao task theo Ban & Thông báo) -> **`CR-04`** (Kho lưu trữ Archive, gộp/nâng cấp phần Thùng rác `S15` từ `E7A`).
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm cột `purged_at` (khi mở `CR-04`), cấu hình `app_settings('archive_retention')`, bổ sung đường dẫn `/archive` & API purge/retention mới; `HANDOFF Q39` cần ghi chú nâng cấp từ `CR-04` khi bắt đầu item.
+- **Trạng thái:** Đã duyệt phương án bởi chủ dự án (`A1`–`A5`, 2026-11-24); xếp lịch làm sau `CR-02` và `CR-03`.

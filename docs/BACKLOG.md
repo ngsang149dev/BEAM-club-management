@@ -10,12 +10,13 @@
 | **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Done |
 | **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Done |
 | **E5** | Board, cột, task, kéo thả `@dnd-kit`, UI Hồng–Trắng–Đen, "Task của tôi" | FR-06, FR-20–23 | Done |
-| **CR-01** | Mật khẩu đăng nhập cho toàn bộ tài khoản (`A4`, `[RỦI RO CAO]`) | Nâng cấp `FR-04` | Done (chờ duyệt merge PR) |
-| **CR-02** | Logo CLB & Ảnh đại diện thành viên (lưu PostgreSQL <= 256 KB, chữ cái đầu đa sắc, `A1`) | Nâng cấp `S02`/`S08`/`S09` | Draft (sau CR-01) |
+| **CR-01** | Mật khẩu đăng nhập cho toàn bộ tài khoản (`A4`, `[RỦI RO CAO]`) | Nâng cấp `FR-04` | Done |
+| **CR-02** | Logo CLB & Ảnh đại diện thành viên (PostgreSQL <= 256 KB, chữ cái đầu đa sắc, `A1`) | Nâng cấp `S02`/`S08`/`S09` | Ready (chờ duyệt danh sách item) |
 | **CR-03** | Giao task cho Ban (`task_departments`) + Email & Thông báo chuông (`A2`, `A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-20`–`23` | Draft (sau CR-02) |
+| **CR-04** | Kho lưu trữ tập trung (Archive): Task, User & Board + tự dọn 7/30/90 ngày, xóa vĩnh viễn, khôi phục (`A1`–`A5`, `[RỦI RO CAO]`) | Nâng cấp `Q39`, `S15` | Draft (sau CR-03) |
 | **E6** | Lọc & tìm kiếm board/task nâng cao (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Backlog |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
-| **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s, xóa mềm & Thùng rác | FR-60, FR-61, FR-62 | Backlog |
+| **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Backlog |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Backlog |
 
@@ -289,15 +290,32 @@
 
 ---
 
-## Đợt yêu cầu thay đổi sau E5 *(Thực hiện theo thứ tự trên `main` theo quyết định `A1`–`A5`)*
+## Đợt yêu cầu thay đổi sau E5 *(Theo thứ tự quyết định của chủ dự án: `CR-01` -> `CR-02` -> `CR-03` -> `CR-04`)*
 
-### CR-01 (`[RỦI RO CAO]`): Đăng nhập bằng mật khẩu cho toàn bộ tài khoản (`A4`, `A5`) *(Done — chờ duyệt merge vào `main`)*
+### CR-01 (`[RỦI RO CAO]`): Đăng nhập bằng mật khẩu cho toàn bộ tài khoản (`A4`, `A5`) *(Done — đã duyệt & merge vào `main`)*
 - **`CR-01-01` (`backend-db`, `[RỦI RO CAO]` — `Done`):** Cập nhật `docs/DECISIONS.md`, `docs/openapi.yaml`, `docs/ERD.md`, migration `0002_passwords.sql` (cột `password_hash`, `must_change_password` trên `profiles`), `src/server/shared/password.ts` (`crypto.scrypt` + `timingSafeEqual` + `DUMMY_PASSWORD_HASH`), `POST /auth/login` kiểm tra mật khẩu + giữ rate limit, `POST /members` cấp `initialPassword` (hoặc `Config.defaultInitialPassword` ở non-prod), thêm `POST /me/password` (`400 INVALID_CURRENT_PASSWORD`, giữ session hiện tại và thu hồi session khác), thêm `POST /members/{id}/reset-password` (Admin hoặc `member.update` trên tài khoản thường; chặn `403` nếu không phải admin đặt lại cho admin, thu hồi toàn bộ session & ghi `audit_logs` `'member.password_reset'`), cập nhật `db/seed.sql` (`BeamDev@2026`).
 - **`CR-01-02` (`frontend` — `Done`):** Thêm ô nhập mật khẩu kèm nút ẩn/hiện tại `S01` (`LoginForm` & `PasswordInput`, tự chuyển tới `/profile?changePassword=1` khi `mustChangePassword=true` và không có `returnTo` hợp lệ), nhập/sinh `initialPassword` khi tạo thành viên mới & modal Đặt lại mật khẩu có che theo quyền tại `S09`, và `ChangePasswordCard` + banner nhắc đổi mật khẩu ổn định vị trí DOM tại `S08` (`/profile`), đủ chuỗi `vi`/`en`.
 - **`CR-01-03` (`qa-engineer`, `[RỦI RO CAO]` — `Done`):** `typecheck`, `lint`, `arch:check` (`200` module / `856` phụ thuộc), `openapi:check`, `184` unit test / `37` tệp, `16` integration PostgreSQL / `10` tệp, `next build` (`26/26` page/route), **`15/15` Chrome E2E**, và audit `6A.8` đạt **`VERDICT: PASS`**.
 
-### CR-02: Logo CLB & Ảnh đại diện thành viên (`A1`, `A5`)
-- Nén & lưu ảnh nhị phân/data URL trong PostgreSQL (tối đa `256 KB`); admin sửa logo CLB (`app_settings` + header/login); admin hoặc quyền `member.update` sửa ảnh thành viên (`S09`) và thành viên tự đổi ảnh ở `S08`; chưa có ảnh hiển thị chữ cái đầu tên với bảng màu đa dạng đồng bộ.
+### CR-02: Logo CLB & Ảnh đại diện thành viên (`A1`, `A5`) *(Ready — chờ chủ dự án duyệt danh sách item)*
 
-### CR-03 (`[RỦI RO CAO]`): Giao task cho Ban (`task_departments`) & Thông báo (`A2`, `A3`, `A5`)
+- **`CR-02-01` (`backend-db`):** Lưu trữ & API nhị phân Logo CLB + Ảnh đại diện thành viên trong PostgreSQL (`<= 256 KB`)
+  - **ID:** `CR-02-01` · **Phụ thuộc:** `CR-01` đã merge `main` · **Mức rủi ro:** Trung bình (`asset validation / XSS upload prevention`)
+  - **Phạm vi file:** `db/migrations/0003_branding_and_avatars.sql`, `db/schema/identity.ts`, `docs/ERD.md`, `docs/openapi.yaml`, `docs/DECISIONS.md`, `src/lib/media.ts`, `src/server/modules/branding/*`, `src/server/modules/auth/*` (mapper `avatarUrl`), `src/server/modules/members/*`, `src/server/shared/composition.ts`, `src/app/api/v1/branding/**`, `src/app/api/v1/me/avatar/route.ts`, `src/app/api/v1/members/[id]/avatar/route.ts`, `tests/unit/{branding,members,shared}/*`, `tests/integration/{branding,members}/*`
+  - **Tiêu chí chấp nhận:** Migration cộng thêm `0003_branding_and_avatars.sql` tạo bảng `club_assets` (`key`, `mime_type`, `data bytea <= 262144`, `updated_by`, `updated_at`) và thêm cột `avatar_data bytea <= 262144`, `avatar_mime`, `avatar_updated_at` trên `profiles`. Máy chủ kiểm tra magic bytes chỉ cho phép `image/png`, `image/jpeg`, `image/webp` (cấm SVG tránh Stored XSS) và kích thước `<= 256 KB` (`400`/`413`). Thêm endpoint cộng thêm: `GET /branding`, `GET/PUT/DELETE /branding/logo` (chỉ Admin sửa/xóa, ai cũng đọc logo), `GET /members/{id}/avatar` (đã đăng nhập, trả binary + `Cache-Control`), `PUT/DELETE /me/avatar` (chính chủ), `PUT/DELETE /members/{id}/avatar` (cần `member.update` hoặc Admin). `MemberPublicSummary` và `MemberDetail` có thêm `avatarUrl: string | null` (chứa URL phiên bản `?v=...`, không nhúng byte ảnh vào JSON danh sách), ghi `audit_logs` (`branding.logo_updated`, `branding.logo_removed`, `member.avatar_updated`, `member.avatar_removed`) không chứa PII/nhị phân.
+
+- **`CR-02-02` (`frontend`):** Component Avatar chữ cái đầu đa sắc, Logo CLB ở `AppShell`/`S01`, tải/cắt nén ảnh ở `S08`/`S09`/Admin
+  - **ID:** `CR-02-02` · **Phụ thuộc:** `CR-02-01` khóa hợp đồng `openapi.yaml` & `schema.d.ts` · **Mức rủi ro:** Trung bình
+  - **Phạm vi file:** `src/components/MemberAvatar.tsx`, `src/components/ClubLogo.tsx`, `src/components/AppShell.tsx`, `src/features/shared/image-compress.ts`, `src/features/auth/*` (`LoginShowcase.tsx`, `ProfileView.tsx`, upload avatar `S08`), `src/features/members/*` (`MembersDirectoryView.tsx`, `MemberAdminTable.tsx`, `MemberFormDrawer.tsx`, quản lý Logo CLB cho Admin), `src/features/boards/*` & `src/features/tasks/*` (hiển thị `<MemberAvatar>` ở assignee nếu phù hợp), `src/features/audit/formatters.ts`, `messages/{vi,en}.json`, `tests/unit/frontend/*`
+  - **Tiêu chí chấp nhận:** Khi chưa có ảnh, `<MemberAvatar>` tự động hiển thị chữ cái đầu của tên với bảng màu đa dạng đồng nhất theo ID/tên; khi có `avatarUrl`, hiển thị ảnh gọn sắc nét (fallback về chữ cái đầu nếu lỗi tải). `<ClubLogo>` hiển thị logo CLB đã cấu hình (hoặc badge BEAM mặc định) trên thanh điều hướng & màn hình đăng nhập `S01`. Tiện ích client tự resize/nén ảnh PNG/JPEG/WEBP về `<= 256 KB` trước khi gọi `PUT` avatar/logo; thành viên tự đổi/xóa ảnh đại diện ở `S08` (`/profile`); Admin hoặc `member.update` đổi/xóa ảnh thành viên ở `S09` (`/admin/members`); Admin đổi/khôi phục mặc định Logo CLB ngay trong giao diện quản trị; đủ `vi`/`en` 100%.
+
+- **`CR-02-03` (`qa-engineer`):** Kiểm thử tích hợp, Chrome E2E & review `6A.8` cho `CR-02`
+  - **ID:** `CR-02-03` · **Phụ thuộc:** `CR-02-01`, `CR-02-02` · **Mức rủi ro:** Trung bình
+  - **Phạm vi file:** `tests/e2e/members-departments.spec.ts`, `tests/e2e/auth.spec.ts`, `tests/unit/**`, `tests/integration/**`
+  - **Tiêu chí chấp nhận:** Test chặn SVG/`> 256 KB`/magic byte giả, allow/deny quyền Admin Logo (`403` cho non-admin) & `member.update` Avatar (`403` cho user thường sửa người khác, `200` tự sửa `/me/avatar`), E2E Chrome upload logo hiện trên header/login, upload & xóa avatar ở `S08`/`S09`, hiển thị avatar chữ cái đầu đa sắc khi trống, audit log sạch không lộ PII, đủ 8 cổng & `qa-engineer VERDICT: PASS`.
+
+### CR-03 (`[RỦI RO CAO]`): Giao task cho Ban (`task_departments`) & Thông báo (`A2`, `A3`, `A5`) *(Draft — sau `CR-02`)*
 - Lưu bảng `task_departments`, hiển thị badge Ban trên thẻ, thành viên Ban thấy ở `Task của tôi`, được sửa/kéo thả nếu có `task.update_assigned`, xem task ẩn giao cho Ban và nhận nhắc deadline; thu gọn picker chọn từng thành viên; tự động gửi Email (SMTP CLB) + Thông báo trong web (chuông topbar, đánh dấu đã đọc) khi giao task cho Ban kèm checkbox bật/tắt.
+
+### CR-04 (`[RỦI RO CAO]`): Kho lưu trữ tập trung (Archive) cho Task, User & Board (`A1`–`A5`) *(Draft — sau `CR-03`)*
+- Trung tâm **Kho lưu trữ (`/archive`)** với 3 tab (**Task đã xóa**, **Thành viên đã khóa**, **Board đã lưu trữ**), cấu hình hạn tự dọn mặc định do Admin thiết lập (`never` / `7 ngày` / `30 ngày` / `90 ngày` trong `app_settings` + Cron hằng ngày), nút **Khôi phục** (theo quyền từng loại `task.delete`, `member.deactivate`, `board.delete`, giữ lọc `404` với task ẩn) và nút **Xóa vĩnh viễn** (chỉ Admin: đánh dấu `purged_at` bảo toàn lịch sử `task_events`/`audit_logs`, ẩn danh PII user đã có lịch sử thành `"Thành viên đã xóa"` hoặc xóa hẳn user chưa từng có lịch sử).

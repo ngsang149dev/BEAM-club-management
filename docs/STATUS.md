@@ -1,7 +1,7 @@
 # STATUS
 
 Cập nhật: 2026-11-24 · Phiên: 3
-Epic hiện tại: CR-01 · Item đang làm: CR-01-01, CR-01-02, CR-01-03 (`[RỦI RO CAO]`) · Trạng thái: Done trên nhánh `feat/CR01-all-account-passwords` (chờ chủ dự án duyệt merge PR)
+Epic hiện tại: CR-02 · Item: CR-02-01, CR-02-02, CR-02-03 · Trạng thái: Ready (chờ chủ dự án duyệt danh sách item)
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -13,16 +13,14 @@ Epic hiện tại: CR-01 · Item đang làm: CR-01-01, CR-01-02, CR-01-03 (`[R�
   - Backend: Boards, columns, tasks, `POST /tasks/{id}/move` (rebalance tự động & `409`), assignees (chặn gán mới thành viên đã rời `400 INVALID_ASSIGNEE_IDS`), `/me/tasks` (`WQ-03`), `taskVisibilityPolicy` (`404` task ẩn), `task_events` append-only, sửa seed UTF-8 `db/seed.sql` cho `departments`.
   - Frontend: `S03` `/boards`, `S04` `/boards/[id]` (kéo thả `@dnd-kit` task & cột, menu `⋯` `ActionMenu`, full-width Kanban), `S05` chi tiết task (hạn `00:00 UTC+7` `WQ-12`, bỏ gán thành viên đã rời, sửa xóa task không treo `404`), `S06` `/my-tasks`, bộ màu Hồng–Trắng–Đen (`Crisp Editorial Pop`) + phóng to desktop + nhấn mạnh Priority/Deadline + nhãn audit `board.*`.
   - Kiểm thử & QA (`qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`190/796`), `openapi:check`, `167 unit test / 36 tệp`, `15 integration test PostgreSQL / 10 tệp`, `next build` (`37 route`), **`13/13` Chrome E2E** (gồm `tests/e2e/boards-tasks.spec.ts`) đều đạt -> **`VERDICT: PASS`**.
-- **CR-01 (`[RỦI RO CAO]` — Done trên `feat/CR01-all-account-passwords`, chờ chủ dự án duyệt merge PR):**
+- **CR-01 (`[RỦI RO CAO]` — Done, đã merge `main` sau khi chủ dự án duyệt):**
   - Hợp đồng & CSDL: `docs/DECISIONS.md`, `docs/ERD.md`, `docs/openapi.yaml` (sinh lại `schema.d.ts`), migration `0002_passwords.sql` (`password_hash`, `must_change_password`), `db/seed.sql` (hash `scrypt` cho mật khẩu dev/test `BeamDev@2026`), `DEFAULT_INITIAL_PASSWORD`.
   - Backend: `src/server/shared/password.ts` (`scrypt` + `timingSafeEqual` + `DUMMY_PASSWORD_HASH`), che `passwordhash` trong `Logger`, `POST /api/v1/auth/login` kiểm tra mật khẩu + redirect `/profile?changePassword=1` khi `mustChangePassword=true` (và không có `returnTo` hợp lệ), `POST /api/v1/me/password` (`400 INVALID_CURRENT_PASSWORD`, giữ session hiện tại & thu hồi session khác), `POST /api/v1/members` (`initialPassword` hoặc config fallback non-prod), `POST /api/v1/members/{id}/reset-password` (chặn `403` khi tài khoản không phải admin đặt lại cho admin, thu hồi toàn bộ session & ghi `audit_logs` `'member.password_reset'` không chứa bí mật).
   - Frontend: `PasswordInput`, `S01` `LoginForm` + `LoginPage` (`resolveExplicitReturnTo`), `S08` `ProfileView` + `ChangePasswordCard` (giữ mount ổn định khi đổi `mustChangePassword`), `S09` `MemberFormDrawer` (`initialPassword` + nút tạo ngẫu nhiên) + `ResetPasswordModal` (ẩn nút đặt lại trên dòng Admin với người không phải Admin), nhãn audit `memberPasswordReset`, `messages/{vi,en}.json`.
   - Kiểm thử & QA (`qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`200/856`), `openapi:check`, `184 unit test / 37 tệp`, `16 integration test PostgreSQL / 10 tệp`, `next build` (`26/26` trang/route), **`15/15` Chrome E2E** đều đạt -> **`VERDICT: PASS`**.
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Chờ Sang xác nhận:
-  1. **Duyệt merge nhánh `feat/CR01-all-account-passwords` vào `main`.**
-  2. **Duyệt khởi chạy `CR-02`** (Logo CLB & Ảnh đại diện thành viên trong PostgreSQL tối đa `256 KB` + chữ cái đầu đa sắc khi chưa có ảnh).
+- Chờ Sang **duyệt danh sách item của `CR-02`** (`CR-02-01`, `CR-02-02`, `CR-02-03`, migration `0003_branding_and_avatars.sql` & OpenAPI cộng thêm) trong `docs/BACKLOG.md` để bắt đầu triển khai ngay.
 
 ## Việc tiếp theo
-- Sau khi Sang duyệt merge `CR-01`: merge `--no-ff` vào `main`, rồi triển khai **`CR-02`** (Logo CLB & Avatar thành viên) -> **`CR-03`** (Giao task theo Ban & Thông báo) -> **`E6–E9`**.
+- Sau khi Sang duyệt danh sách item `CR-02`: tạo nhánh `feat/CR02-branding-and-avatars` triển khai **`CR-02`** (Logo CLB & Avatar thành viên <= 256 KB + chữ cái đầu đa sắc) -> **`CR-03`** (Giao task theo Ban & Thông báo) -> **`CR-04`** (Kho lưu trữ tập trung Archive cho Task/User/Board, `A1`–`A5`) -> **`E6–E9`**.
