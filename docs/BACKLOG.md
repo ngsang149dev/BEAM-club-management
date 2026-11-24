@@ -8,8 +8,8 @@
 | **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | Done |
 | **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Done |
 | **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Done |
-| **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Chờ duyệt |
-| **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | Backlog |
+| **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Done |
+| **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | In progress |
 | **E6** | Kanban kéo thả (`@dnd-kit`), priority 1–4, lọc/tìm kiếm | FR-22, FR-25, FR-27 | Backlog |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s, xóa mềm & Thùng rác | FR-60, FR-61, FR-62 | Backlog |
@@ -199,7 +199,7 @@
 
 ---
 
-## Epic E4 — Phân quyền, 3 mẫu quyền, chống gỡ admin cuối & Nhật ký quản trị *(Chờ duyệt merge)*
+## Epic E4 — Phân quyền, 3 mẫu quyền, chống gỡ admin cuối & Nhật ký quản trị *(Done — đã duyệt & merge vào main)*
 
 ### E4-01
 - **ID:** `E4-01`
@@ -213,7 +213,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Allow/deny quyền admin & `audit.view`, `AC-07` thu hồi quyền có hiệu lực ngay, `AC-08` `member.update` bị chặn `403`, `AC-09` gỡ admin cuối `409`, `AC-10` ghi đủ diff cấp/thu hồi trong `audit_logs`, `WQ-06` thay thế toàn bộ khi áp mẫu.
 - **Ngoài phạm vi:** Board & task (`E5`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (đã đạt 138 unit test / 28 tệp, 12 integration test PostgreSQL / 7 tệp, `arch:check` 138/501)
+- **Trạng thái:** `Done` (đã đạt 138 unit test / 28 tệp, 12 integration test PostgreSQL / 7 tệp, `arch:check` 138/501)
 
 ### E4-02
 - **ID:** `E4-02`
@@ -227,7 +227,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test `S10` (chọn quyền, xác nhận đếm thêm/bỏ khi áp mẫu, lỗi `409` admin cuối, màn hình `403` cho non-admin) & `S13` (`audit.view` allow/403), parity `vi`/`en` + ICU placeholder.
 - **Ngoài phạm vi:** Màn hình board/task (`E5`).
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Chờ duyệt` (đã đạt unit test UI + parity key/ICU `vi`/`en`, `build` 26 route, Chrome E2E `10/10`)
+- **Trạng thái:** `Done` (đã đạt unit test UI + parity key/ICU `vi`/`en`, `build` 26 route, Chrome E2E `10/10`)
 
 ### E4-03
 - **ID:** `E4-03`
@@ -241,11 +241,11 @@
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (`qa-reviewer` `PASS`, 138 unit / 28 tệp + 12 integration PostgreSQL / 7 tệp + 10 Chrome E2E xanh)
+- **Trạng thái:** `Done` (`qa-reviewer` `PASS`, 138 unit / 28 tệp + 12 integration PostgreSQL / 7 tệp + 10 Chrome E2E xanh)
 
 ---
 
-## Dự thảo Epic E5 — Board, Cột & Task cơ bản *(Chờ chủ dự án duyệt)*
+## Epic E5 — Board, Cột & Task cơ bản *(Đã duyệt bởi chủ dự án)*
 
 ### E5-01
 - **ID:** `E5-01`
@@ -259,7 +259,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Allow/deny từng mã quyền `board.*`, `task.create`, `task.assign`, `task.update_any`, `task.update_assigned`, `task.delete`; `409` xóa cột còn task (`WQ-05`); `taskVisibilityPolicy` & lọc `deleted_at IS NULL`; `task_events` append-only & trả `eventId`.
 - **Ngoài phạm vi:** Kéo thả Kanban (`E6`), bình luận & luồng UI bật/tắt task ẩn (`E7`), hoàn tác toast/Thùng rác UI (`E7A`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Ready`
 
 ### E5-02
 - **ID:** `E5-02`
@@ -273,7 +273,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test `S03`/`S04`/`S05`/`S06` (ẩn/khóa nút theo quyền `<Can>`, xử lý `409` xóa cột, hiển thị priority 1–4 và ngày giờ VN, không lộ MSSV/email), parity `vi`/`en` + ICU placeholder.
 - **Ngoài phạm vi:** Kéo thả `@dnd-kit` (`E6`), bình luận (`E7`), toast hoàn tác & Thùng rác (`E7A`).
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Ready`
 
 ### E5-03
 - **ID:** `E5-03`
@@ -287,4 +287,4 @@
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Ready`
