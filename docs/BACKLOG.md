@@ -7,8 +7,8 @@
 | **E0** | Thiết kế: Wireframe (0A), CSDL (0B), OpenAPI & truy vết (0C) | HANDOFF 11.2–11.5 | Done |
 | **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | Done |
 | **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Done |
-| **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Chờ duyệt |
-| **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Backlog |
+| **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Done |
+| **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | In progress |
 | **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | Backlog |
 | **E6** | Kanban kéo thả (`@dnd-kit`), priority 1–4, lọc/tìm kiếm | FR-22, FR-25, FR-27 | Backlog |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
@@ -153,7 +153,7 @@
 
 ---
 
-## Epic E3 — Thành viên & 20 ban *(Chờ duyệt merge)*
+## Epic E3 — Thành viên & 20 ban *(Done — đã duyệt & merge vào main)*
 
 ### E3-01
 - **ID:** `E3-01`
@@ -167,7 +167,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Allow/deny 6 mã quyền (`member.view`, `member.view_detail`, `member.create`, `member.update`, `member.deactivate`, `department.manage`), che MSSV/email (`AC-11`), chặn email sai domain (`AC-14`), chặn gỡ/khóa admin cuối (`AC-09`), khóa ban đang dùng (`409`), không đổi `studentId`, thu hồi session khi khóa, kiểm tra `audit_logs` & không lộ PII trong log.
 - **Ngoài phạm vi:** Màn hình phân quyền & áp mẫu quyền (`E4`), board/task (`E5`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (đã đạt 116 unit test / 24 tệp, 10 integration test PostgreSQL / 5 tệp, `arch:check` 108/354)
+- **Trạng thái:** `Done` (đã đạt 116 unit test / 24 tệp, 10 integration test PostgreSQL / 5 tệp, `arch:check` 108/354)
 
 ### E3-02
 - **ID:** `E3-02`
@@ -181,7 +181,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test `S07` ẩn MSSV/email & nhãn `"(đã rời)"`, `S09` khóa trường `studentId` khi sửa & validate email, `S11` xử lý `409`, kiểm tra parity `vi`/`en`.
 - **Ngoài phạm vi:** Màn hình phân quyền `S10` & nhật ký `S13` (`E4`).
 - **Mức rủi ro:** Thường
-- **Trạng thái:** `Chờ duyệt` (đã đạt unit test UI + parity key/ICU `vi`/`en`, `build` 18 route, Chrome E2E `7/7`)
+- **Trạng thái:** `Done` (đã đạt unit test UI + parity key/ICU `vi`/`en`, `build` 18 route, Chrome E2E `7/7`)
 
 ### E3-03
 - **ID:** `E3-03`
@@ -195,11 +195,11 @@
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Chờ duyệt` (`qa-reviewer` `PASS`, 116 unit / 24 tệp + 10 integration PostgreSQL / 5 tệp + 7 Chrome E2E xanh)
+- **Trạng thái:** `Done` (`qa-reviewer` `PASS`, 116 unit / 24 tệp + 10 integration PostgreSQL / 5 tệp + 7 Chrome E2E xanh)
 
 ---
 
-## Dự thảo Epic E4 — Phân quyền, 3 mẫu quyền, chống gỡ admin cuối & Nhật ký quản trị *(Chờ chủ dự án duyệt)*
+## Epic E4 — Phân quyền, 3 mẫu quyền, chống gỡ admin cuối & Nhật ký quản trị *(Đã duyệt bởi chủ dự án)*
 
 ### E4-01
 - **ID:** `E4-01`
@@ -213,7 +213,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Allow/deny quyền admin & `audit.view`, `AC-07` thu hồi quyền có hiệu lực ngay, `AC-08` `member.update` bị chặn `403`, `AC-09` gỡ admin cuối `409`, `AC-10` ghi đủ diff cấp/thu hồi trong `audit_logs`, `WQ-06` thay thế toàn bộ khi áp mẫu.
 - **Ngoài phạm vi:** Board & task (`E5`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Ready`
 
 ### E4-02
 - **ID:** `E4-02`
@@ -221,13 +221,13 @@
 - **Sub-agent phụ trách:** `frontend` (chạy song song với `E4-01` sau khi khóa `src/lib/permissions.ts` & `docs/openapi.yaml`)
 - **Liên quan:** `FR-14`, `FR-16`, `FR-17`, `FR-18`, `FR-19`, `WQ-06`, `WQ-07`, `S10`, `S13`
 - **Phụ thuộc:** Epic E3 merged vào `main` (`docs/openapi.yaml` đã khóa)
-- **Mục tài liệu cần đọc:** `HANDOFF` mục 3.3, 11.3 (`S10`, `S13`), `wireframes/s10-permissions.html`, `wireframes/s13-audit-logs.html`
-- **Phạm vi file được sửa:** `src/features/permissions/*`, `src/features/audit/*`, `src/app/admin/permissions/page.tsx`, `src/app/admin/audit-logs/page.tsx`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
+- **Mục tài liệu cần đọc:** `HANDOFF` mục 3.3, 11.3 (`S10`, `S13`), `wireframes/s10-permissions.html`, `wireframes/s13-audit.html`
+- **Phạm vi file được sửa:** `src/features/permissions/*`, `src/features/audit/*`, `src/app/admin/permissions/page.tsx`, `src/app/admin/audit/page.tsx`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
 - **Tiêu chí chấp nhận:** `S10` hiển thị danh mục 18 quyền theo nhóm, chọn áp 3 mẫu (`basic_member`, `department_lead`, `hr_manager`) kèm hộp thoại xác nhận nêu rõ số quyền thêm/bỏ khi thay thế toàn bộ (`WQ-06`), bật/tắt cờ admin kèm thông báo `409` nếu là admin cuối (`WQ-07`), bảng tóm tắt "quyền hiệu lực"; `S13` hiển thị nhật ký phân trang cursor cho `audit.view` (lọc theo hành động/đối tượng); 100% chuỗi UI qua `messages/{vi,en}.json`.
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test `S10` (chọn quyền, xác nhận đếm thêm/bỏ khi áp mẫu, lỗi `409` admin cuối, màn hình `403` cho non-admin) & `S13` (`audit.view` allow/403), parity `vi`/`en` + ICU placeholder.
 - **Ngoài phạm vi:** Màn hình board/task (`E5`).
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Ready`
 
 ### E4-03
 - **ID:** `E4-03`
@@ -241,4 +241,4 @@
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Ready`
