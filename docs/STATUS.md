@@ -1,7 +1,7 @@
 # STATUS
 
-Cập nhật: 2026-11-24 · Phiên: 5
-Epic hiện tại: CR-02B · Item: CR-02B-01, CR-02B-02, CR-02B-03 · Trạng thái: Done trên nhánh `feat/CR02B-ux-layout-and-admin-guard` (chờ chủ dự án duyệt merge PR)
+Cập nhật: 2026-11-24 · Phiên: 6
+Epic hiện tại: CR-04 (`[RỦI RO CAO]`) · Item: CR-04-01, CR-04-02, CR-04-03 · Trạng thái: In progress trên nhánh `feat/CR04-archive-center` (đã merge `CR-02B` vào `main`)
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -23,15 +23,13 @@ Epic hiện tại: CR-02B · Item: CR-02B-01, CR-02B-02, CR-02B-03 · Trạng th
   - Backend: Module `branding` (`GET /branding`, `GET/PUT/DELETE /branding/logo` Admin-only), `PUT/DELETE /me/avatar`, `GET/PUT/DELETE /members/{id}/avatar` (`member.update`/Admin, kiểm tra magic bytes & gắn `X-Content-Type-Options: nosniff` + `CSP: default-src 'none'; sandbox`), `avatarUrl` trên `auth`/`members`/`boards`/`tasks`/`audit` (không SELECT `bytea` ở danh sách), audit `branding.logo_*` & `member.avatar_*`, và siết `POST /members/{id}/reset-password` **chỉ Admin (`403` với non-admin kể cả có `member.update`)**.
   - Frontend: `ClubLogo` (`AppShell`, `LoginForm`, `LoginShowcase`, `ErrorState`), `MemberAvatar` (ảnh thật hoặc chữ cái đầu tên + 8 màu `AVATAR_PALETTE` đồng bộ toàn site kể cả chip assignee Kanban), `image-compress.ts` (nén `<= 256 KB`), `AvatarUploadControl` tại `S08` (`/profile`) & `S09` (`MemberFormDrawer`), `ClubLogoModal` (Admin-only tại `/admin/members`), ẩn nút đặt lại mật khẩu trên UI với mọi user không phải Admin, `vi`/`en` 100%.
   - Kiểm thử & QA (`qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`220/959`), `openapi:check`, **`206` unit test / `41` tệp**, **`18` integration PostgreSQL / `11` tệp**, `next build` (`29/29` trang/route), **`18/18` Chrome E2E** -> **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor nhỏ không chặn).
-- **CR-02B (Done trên `feat/CR02B-ux-layout-and-admin-guard`, chờ chủ dự án duyệt merge PR):**
-  - Hợp đồng & Backend (`CR-02B-01`): Cập nhật [DECISIONS.md](file:///g:/Code/Project/BEAM-club-management/docs/DECISIONS.md) và [openapi.yaml](file:///g:/Code/Project/BEAM-club-management/docs/openapi.yaml); `src/server/modules/permissions/{policy,repository,service}.ts` chặn Admin tự gỡ quyền Admin của chính mình (`409 CANNOT_REVOKE_OWN_ADMIN`), giữ nguyên `LAST_ACTIVE_ADMIN` (`AC-09`) cho mọi trường hợp khác.
-  - Frontend & Bố cục (`CR-02B-02`): `src/app/page.tsx` chuyển hướng ngay sang `/login` (chưa đăng nhập) hoặc `/boards` / `/profile?changePassword=1` (đã đăng nhập); khóa nút tự gỡ Admin ở `AdminFlagPanel`; gộp nút hàng `S09` vào menu `⋯` (`src/components/ActionMenu.tsx`), bỏ banner thừa & căn lưới 2 cột `S10`, cân cột `S08` & `S03`–`S06`, invalidate cache avatar trên board/task/myTasks & render metadata `branding`/`avatar` ở `AuditDetailPane`, `vi`/`en` 100%.
+- **CR-02B (Done, đã duyệt & merge `main`):**
+  - Hợp đồng & Backend (`CR-02B-01`): Cập nhật [DECISIONS.md](file:///g:/Code/Project/BEAM-club-management/docs/DECISIONS.md) và [openapi.yaml](file:///g:/Code/Project/BEAM-club-management/docs/openapi.yaml); `src/server/modules/permissions/{policy,repository,service}.ts` chặn Admin tự gỡ cờ `is_admin` của chính mình (`409 CANNOT_REVOKE_OWN_ADMIN`), giữ nguyên bảo vệ `LAST_ACTIVE_ADMIN` (`AC-09`) cho mọi trường hợp khác.
+  - Frontend & Bố cục (`CR-02B-02`): `src/app/page.tsx` chuyển hướng ngay sang `/login` (chưa đăng nhập) hoặc `/boards` / `/profile?changePassword=1` (đã đăng nhập), link logo về `/boards`; khóa nút tự gỡ Admin ở `AdminFlagPanel`; gộp nút hàng `S09` vào menu `⋯` (`src/components/ActionMenu.tsx`), bỏ banner thừa & căn lưới 2 cột `S10`, cân cột `S08` & `S03`–`S06`, invalidate cache avatar trên board/task/myTasks & render metadata `branding`/`avatar` ở `AuditDetailPane`, `vi`/`en` 100%.
   - Kiểm thử & QA (`CR-02B-03`, `qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`221/963`), `openapi:check`, **`212` unit test / `42` tệp**, **`18` integration PostgreSQL / `11` tệp**, `next build` (`28/28` trang/route), **`19/19` Chrome E2E** -> **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor không chặn).
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Chờ Sang xác nhận:
-  1. **Duyệt merge nhánh `feat/CR02B-ux-layout-and-admin-guard` vào `main`.**
-  2. **Duyệt danh sách item `CR-04` (`[RỦI RO CAO]` Kho lưu trữ tập trung Archive `/archive`: `CR-04-01..03`)** trong `docs/BACKLOG.md` để triển khai ngay sau khi merge.
+- Không có mục bị chặn; đang triển khai **`CR-04`** trên nhánh `feat/CR04-archive-center` theo duyệt của chủ dự án (`A1`–`A5`).
 
 ## Việc tiếp theo
-- Sau khi Sang duyệt merge `CR-02B`: merge `--no-ff` vào `main`, rồi triển khai **`CR-04`** (Kho lưu trữ tập trung Archive `/archive` cho Task/User/Board, `A1`–`A5`) -> **`CR-03`** (Giao task theo Ban & Thông báo) -> **`E6–E9`**.
+- Hoàn tất **`CR-04`** (Kho lưu trữ tập trung Archive `/archive` cho Task/User/Board, `CR-04-01..03`) kèm kiểm thử & review độc lập `qa-engineer` -> trình PR xin chủ dự án duyệt merge -> chuyển sang **`CR-03`** (Giao task theo Ban & Thông báo) -> **`E6–E9`**.
