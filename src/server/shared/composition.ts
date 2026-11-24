@@ -1,5 +1,7 @@
 import {
   type AuditLogWriter,
+  type AuditRepository,
+  AuditService,
   DrizzleAuditRepository,
 } from '@/server/modules/audit';
 import {
@@ -17,6 +19,11 @@ import {
   type MembersRepository,
   MembersService,
 } from '@/server/modules/members';
+import {
+  DrizzlePermissionsRepository,
+  type PermissionsRepository,
+  PermissionsService,
+} from '@/server/modules/permissions';
 import { type Clock, SystemClock } from './clock';
 import { type Config, loadConfig } from './config';
 import { createDatabaseClient, type Database } from './db';
@@ -35,6 +42,8 @@ export interface ServerContainer {
   readonly authService: AuthService;
   readonly departmentsService: DepartmentsService;
   readonly membersService: MembersService;
+  readonly permissionsService: PermissionsService;
+  readonly auditService: AuditService;
   dispose(): Promise<void>;
 }
 
@@ -46,12 +55,16 @@ export interface ContainerOverrides {
   readonly db?: Database;
   readonly transactionRunner?: TransactionRunner;
   readonly auditWriter?: AuditLogWriter;
+  readonly auditRepo?: AuditRepository;
+  readonly auditService?: AuditService;
   readonly authRepo?: AuthRepository;
   readonly authService?: AuthService;
   readonly departmentsRepo?: DepartmentsRepository;
   readonly departmentsService?: DepartmentsService;
   readonly membersRepo?: MembersRepository;
   readonly membersService?: MembersService;
+  readonly permissionsRepo?: PermissionsRepository;
+  readonly permissionsService?: PermissionsService;
 }
 
 const globalForContainer = globalThis as typeof globalThis & {
@@ -83,7 +96,8 @@ function buildSharedInfra(overrides: ContainerOverrides) {
   const { db, dispose } = resolveDatabase(config, overrides.db);
   const transactionRunner =
     overrides.transactionRunner ?? new DrizzleTransactionRunner(db);
-  const auditWriter = overrides.auditWriter ?? new DrizzleAuditRepository(db);
+  const auditRepo = overrides.auditRepo ?? new DrizzleAuditRepository(db);
+  const auditWriter = overrides.auditWriter ?? auditRepo;
   return {
     config,
     clock,
@@ -92,12 +106,14 @@ function buildSharedInfra(overrides: ContainerOverrides) {
     db,
     dispose,
     transactionRunner,
+    auditRepo,
     auditWriter,
   };
 }
 
-export function createContainer(overrides: ContainerOverrides = {}): ServerContainer {
-  const infra = buildSharedInfra(overrides);
+type SharedInfra = ReturnType<typeof buildSharedInfra>;
+
+function buildDirectoryServices(infra: SharedInfra, overrides: ContainerOverrides) {
   const authService =
     overrides.authService ??
     new AuthService({
@@ -125,8 +141,45 @@ export function createContainer(overrides: ContainerOverrides = {}): ServerConta
       config: infra.config,
       logger: infra.logger,
     });
+  return { authService, departmentsService, membersService };
+}
 
-  return { ...infra, authService, departmentsService, membersService };
+function buildGovernanceServices(infra: SharedInfra, overrides: ContainerOverrides) {
+  const permissionsService =
+    overrides.permissionsService ??
+    new PermissionsService({
+      permissionsRepo: overrides.permissionsRepo ?? new DrizzlePermissionsRepository(infra.db),
+      auditWriter: infra.auditWriter,
+      transactionRunner: infra.transactionRunner,
+      clock: infra.clock,
+      logger: infra.logger,
+    });
+  const auditService =
+    overrides.auditService ??
+    new AuditService({
+      auditRepo: infra.auditRepo,
+      logger: infra.logger,
+    });
+  return { permissionsService, auditService };
+}
+
+export function createContainer(overrides: ContainerOverrides = {}): ServerContainer {
+  const infra = buildSharedInfra(overrides);
+  const directory = buildDirectoryServices(infra, overrides);
+  const governance = buildGovernanceServices(infra, overrides);
+
+  return {
+    config: infra.config,
+    clock: infra.clock,
+    logger: infra.logger,
+    mailer: infra.mailer,
+    db: infra.db,
+    dispose: infra.dispose,
+    transactionRunner: infra.transactionRunner,
+    auditWriter: infra.auditWriter,
+    ...directory,
+    ...governance,
+  };
 }
 
 export function getContainer(): ServerContainer {

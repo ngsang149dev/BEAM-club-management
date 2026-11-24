@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export interface PermissionDefinition {
   readonly code: PermissionCode;
   readonly group: PermissionGroup;
@@ -107,9 +109,12 @@ export const PERMISSIONS = [
 
 export type PermissionCode = (typeof PERMISSIONS)[number]['code'];
 
-const PERMISSION_CODE_SET: ReadonlySet<string> = new Set(
-  PERMISSIONS.map((permission) => permission.code),
-);
+export const PERMISSION_CODES: readonly [PermissionCode, ...PermissionCode[]] = [
+  PERMISSIONS[0].code,
+  ...PERMISSIONS.slice(1).map((permission) => permission.code),
+];
+
+const PERMISSION_CODE_SET: ReadonlySet<string> = new Set(PERMISSION_CODES);
 
 export function isPermissionCode(value: string): value is PermissionCode {
   return PERMISSION_CODE_SET.has(value);
@@ -126,6 +131,12 @@ export interface PermissionPresetDefinition {
   readonly nameKey: string;
   readonly permissions: readonly PermissionCode[];
 }
+
+export const PERMISSION_PRESET_CODES = [
+  'basic_member',
+  'department_lead',
+  'hr_manager',
+] as const;
 
 export const PERMISSION_PRESETS = [
   {
@@ -160,3 +171,113 @@ export const PERMISSION_PRESETS = [
 ] as const;
 
 export type PermissionPresetCode = (typeof PERMISSION_PRESETS)[number]['code'];
+
+export const permissionCodeSchema = z.enum(PERMISSION_CODES);
+export const permissionPresetCodeSchema = z.enum(PERMISSION_PRESET_CODES);
+
+export const replaceMemberPermissionsRequestSchema = z
+  .object({
+    permissionCodes: z.array(permissionCodeSchema),
+  })
+  .strict();
+
+export type ReplaceMemberPermissionsRequestInput = z.infer<
+  typeof replaceMemberPermissionsRequestSchema
+>;
+
+export const applyPresetRequestSchema = z
+  .object({
+    presetCode: permissionPresetCodeSchema,
+  })
+  .strict();
+
+export type ApplyPresetRequestInput = z.infer<typeof applyPresetRequestSchema>;
+
+export const updateAdminFlagRequestSchema = z
+  .object({
+    isAdmin: z.boolean(),
+  })
+  .strict();
+
+export type UpdateAdminFlagRequestInput = z.infer<
+  typeof updateAdminFlagRequestSchema
+>;
+
+function emptyToUndefined(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === 'string' && value.trim() === '') {
+    return undefined;
+  }
+  return value;
+}
+
+function parseLimitInput(raw: unknown): unknown {
+  const value = emptyToUndefined(raw);
+  if (value === undefined || typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return Number(value.trim());
+  }
+  return Number.NaN;
+}
+
+const optionalUuidQuerySchema = z.preprocess(
+  emptyToUndefined,
+  z.uuid().optional(),
+);
+
+const optionalIsoDateQuerySchema = z.preprocess(
+  emptyToUndefined,
+  z.iso
+    .datetime({ offset: true })
+    .transform((iso) => new Date(iso))
+    .optional(),
+);
+
+export const listAuditLogsQuerySchema = z
+  .object({
+    actorId: optionalUuidQuerySchema,
+    targetUserId: optionalUuidQuerySchema,
+    action: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().min(1).max(100).optional(),
+    ),
+    from: optionalIsoDateQuerySchema,
+    to: optionalIsoDateQuerySchema,
+    cursor: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().min(1).max(512).optional(),
+    ),
+    limit: z.preprocess(
+      parseLimitInput,
+      z.number().int().min(1).max(100).default(20),
+    ),
+  })
+  .refine(
+    (data) => !data.from || !data.to || data.from.getTime() <= data.to.getTime(),
+    { message: 'errors.invalidDateRange', path: ['from'] },
+  );
+
+export type ListAuditLogsQueryInput = z.infer<typeof listAuditLogsQuerySchema>;
+
+export function dedupeCanonicalPermissions(
+  codes: readonly PermissionCode[],
+): PermissionCode[] {
+  const seen = new Set<PermissionCode>(codes);
+  return PERMISSION_CODES.filter((code) => seen.has(code));
+}
+
+export function computePermissionDiff(
+  current: readonly PermissionCode[],
+  next: readonly PermissionCode[],
+): { readonly added: PermissionCode[]; readonly removed: PermissionCode[] } {
+  const currentSet = new Set<PermissionCode>(current);
+  const nextSet = new Set<PermissionCode>(next);
+  return {
+    added: PERMISSION_CODES.filter((code) => nextSet.has(code) && !currentSet.has(code)),
+    removed: PERMISSION_CODES.filter((code) => currentSet.has(code) && !nextSet.has(code)),
+  };
+}

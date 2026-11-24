@@ -8,8 +8,8 @@
 | **E1** | Nền tảng: Next.js, kiến trúc phân lớp + composition root, Drizzle, CI, i18n | NFR-02, NFR-10, 6A | Done |
 | **E2** | Xác thực bằng MSSV, session (`24h`/`30d`), rate limit, `returnTo` | FR-04, FR-11, FR-40, FR-41 | Done |
 | **E3** | Thành viên & 20 ban (nhập tay, nhiều ban, khóa tài khoản) | FR-10, FR-13, FR-42, FR-43 | Done |
-| **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | In progress |
-| **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | Backlog |
+| **E4** | Phân quyền, `authorize`, 3 mẫu quyền, chống gỡ admin cuối, `audit_logs` | FR-12, FR-14–19 | Done |
+| **E5** | Board, cột, task cơ bản, "Task của tôi" | FR-06, FR-20, FR-21, FR-23 | In progress |
 | **E6** | Kanban kéo thả (`@dnd-kit`), priority 1–4, lọc/tìm kiếm | FR-22, FR-25, FR-27 | Backlog |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s, xóa mềm & Thùng rác | FR-60, FR-61, FR-62 | Backlog |
@@ -199,7 +199,7 @@
 
 ---
 
-## Epic E4 — Phân quyền, 3 mẫu quyền, chống gỡ admin cuối & Nhật ký quản trị *(Đã duyệt bởi chủ dự án)*
+## Epic E4 — Phân quyền, 3 mẫu quyền, chống gỡ admin cuối & Nhật ký quản trị *(Done — đã duyệt & merge vào main)*
 
 ### E4-01
 - **ID:** `E4-01`
@@ -213,7 +213,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Allow/deny quyền admin & `audit.view`, `AC-07` thu hồi quyền có hiệu lực ngay, `AC-08` `member.update` bị chặn `403`, `AC-09` gỡ admin cuối `409`, `AC-10` ghi đủ diff cấp/thu hồi trong `audit_logs`, `WQ-06` thay thế toàn bộ khi áp mẫu.
 - **Ngoài phạm vi:** Board & task (`E5`).
 - **Mức rủi ro:** Cao
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done` (đã đạt 138 unit test / 28 tệp, 12 integration test PostgreSQL / 7 tệp, `arch:check` 138/501)
 
 ### E4-02
 - **ID:** `E4-02`
@@ -227,7 +227,7 @@
 - **Kiểm thử bắt buộc (viết trước):** Unit/component test `S10` (chọn quyền, xác nhận đếm thêm/bỏ khi áp mẫu, lỗi `409` admin cuối, màn hình `403` cho non-admin) & `S13` (`audit.view` allow/403), parity `vi`/`en` + ICU placeholder.
 - **Ngoài phạm vi:** Màn hình board/task (`E5`).
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done` (đã đạt unit test UI + parity key/ICU `vi`/`en`, `build` 26 route, Chrome E2E `10/10`)
 
 ### E4-03
 - **ID:** `E4-03`
@@ -238,6 +238,52 @@
 - **Mục tài liệu cần đọc:** `HANDOFF` mục 8.1, 9; `docs/openapi.yaml` (`/permissions`, `/permission-presets`, `/members/{id}/permissions*`, `/members/{id}/admin`, `/audit-logs`)
 - **Phạm vi file được sửa:** `tests/unit/permissions/*`, `tests/unit/audit/*`, `tests/integration/permissions/*`, `tests/integration/audit/*`, `tests/e2e/permissions-audit.spec.ts`
 - **Tiêu chí chấp nhận:** Đủ test allow/deny, `AC-07` (thu hồi `board.create` có hiệu lực ngay không cần đăng nhập lại), `AC-08` (chặn `member.update` tự cấp quyền), `AC-09` (chặn gỡ admin cuối `409`), `AC-10` (`audit_logs`), `WQ-06` (thay thế toàn bộ), Playwright Chrome E2E `S10`/`S13`, và review ngữ cảnh sạch toàn bộ Epic E4 theo checklist `6A.8` đạt `PASS`.
+- **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
+- **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
+- **Mức rủi ro:** Cao
+- **Trạng thái:** `Done` (`qa-reviewer` `PASS`, 138 unit / 28 tệp + 12 integration PostgreSQL / 7 tệp + 10 Chrome E2E xanh)
+
+---
+
+## Epic E5 — Board, Cột & Task cơ bản *(Đã duyệt bởi chủ dự án)*
+
+### E5-01
+- **ID:** `E5-01`
+- **Tiêu đề:** Backend Boards, Columns, Tasks, Assignees & "Task của tôi" (`task_events` + `taskVisibilityPolicy`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-06`, `FR-20`, `FR-21`, `FR-23`, `AC-06`, `WQ-05`, `WQ-18`
+- **Phụ thuộc:** Epic E4 merged vào `main` (`docs/openapi.yaml` đã khóa)
+- **Mục tài liệu cần đọc:** `HANDOFF` mục 3.4, 4.1 (`FR-06`, `FR-20`, `FR-21`, `FR-23`), 8.3, 11.5 (`GET/POST /boards`, `GET/PATCH/DELETE /boards/{id}`, `POST /boards/{id}/columns`, `PATCH/DELETE /columns/{id}`, `PUT /boards/{id}/columns/order`, `GET/POST /tasks`, `GET/PATCH/DELETE /tasks/{id}`, `PUT /tasks/{id}/assignees`, `GET /me/tasks`); `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `src/lib/boards.ts`, `src/lib/tasks.ts`, `src/server/modules/boards/*`, `src/server/modules/tasks/*`, `src/server/shared/composition.ts`, `src/app/api/v1/boards/**`, `src/app/api/v1/columns/**`, `src/app/api/v1/tasks/**`, `src/app/api/v1/me/tasks/**`, `tests/unit/boards/*`, `tests/unit/tasks/*`, `tests/integration/boards/*`, `tests/integration/tasks/*`
+- **Tiêu chí chấp nhận:** Nguồn sự thật `taskVisibilityPolicy` lọc `deleted_at IS NULL` & `is_hidden` ở mọi truy vấn list/detail/count/`/me/tasks`; tạo board tự tạo 4 cột mặc định (`Todo`, `Doing`, `Review`, `Done`); xóa cột đang còn task trả `409` (`WQ-05`); mọi thao tác ghi task qua `authorize` (`AC-06`: người không có `task.create` gọi API bị `403`, `task.update_assigned` chỉ sửa được task được giao cho mình) + ghi `task_events` append-only và trả `eventId` trong cùng transaction; DTO `assignee`/tạo bởi không lộ MSSV/email.
+- **Kiểm thử bắt buộc (viết trước):** Allow/deny từng mã quyền `board.*`, `task.create`, `task.assign`, `task.update_any`, `task.update_assigned`, `task.delete`; `409` xóa cột còn task (`WQ-05`); `taskVisibilityPolicy` & lọc `deleted_at IS NULL`; `task_events` append-only & trả `eventId`.
+- **Ngoài phạm vi:** Kéo thả Kanban (`E6`), bình luận & luồng UI bật/tắt task ẩn (`E7`), hoàn tác toast/Thùng rác UI (`E7A`).
+- **Mức rủi ro:** Cao
+- **Trạng thái:** `Ready`
+
+### E5-02
+- **ID:** `E5-02`
+- **Tiêu đề:** Giao diện Boards `S03`, Board cơ bản `S04`, Chi tiết Task `S05` & "Task của tôi" `S06`
+- **Sub-agent phụ trách:** `frontend` (chạy song song với `E5-01` sau khi khóa `src/lib/boards.ts`, `src/lib/tasks.ts` & `docs/openapi.yaml`)
+- **Liên quan:** `FR-06`, `FR-20`, `FR-21`, `FR-23`, `S03`, `S04`, `S05`, `S06`, `WQ-05`
+- **Phụ thuộc:** Epic E4 merged vào `main` (`docs/openapi.yaml` đã khóa)
+- **Mục tài liệu cần đọc:** `HANDOFF` mục 11.3 (`S03`, `S04`, `S05`, `S06`), `wireframes/s03-boards.html`, `wireframes/s04-board.html`, `wireframes/s05-task.html`, `wireframes/s06-my-tasks.html`
+- **Phạm vi file được sửa:** `src/features/boards/*`, `src/features/tasks/*`, `src/app/boards/**`, `src/app/my-tasks/page.tsx`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:** `S03` danh sách board + hộp thoại tạo/sửa/lưu trữ theo quyền `board.*`; `S04` hiển thị cột & thẻ task + hộp thoại quản lý cột (báo `409` khi xóa cột còn task) + nút tạo task theo quyền; `S05` khung/hộp thoại chi tiết task (mô tả, hạn chót `Asia/Ho_Chi_Minh`, priority 1–4, gán nhiều người nhận); `S06` (`/my-tasks`) liệt kê task được giao cho bản thân; 100% chuỗi UI qua `messages/{vi,en}.json`.
+- **Kiểm thử bắt buộc (viết trước):** Unit/component test `S03`/`S04`/`S05`/`S06` (ẩn/khóa nút theo quyền `<Can>`, xử lý `409` xóa cột, hiển thị priority 1–4 và ngày giờ VN, không lộ MSSV/email), parity `vi`/`en` + ICU placeholder.
+- **Ngoài phạm vi:** Kéo thả `@dnd-kit` (`E6`), bình luận (`E7`), toast hoàn tác & Thùng rác (`E7A`).
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Ready`
+
+### E5-03
+- **ID:** `E5-03`
+- **Tiêu đề:** Kiểm thử tích hợp, E2E & review độc lập Epic E5 `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `AC-06`, `FR-06`, `FR-20`, `FR-21`, `FR-23`, `WQ-05`, `AGENTS.md` mục 8
+- **Phụ thuộc:** `E5-01`, `E5-02`
+- **Mục tài liệu cần đọc:** `HANDOFF` mục 8.3, 9; `docs/openapi.yaml` (`/boards*`, `/columns*`, `/tasks*`, `/me/tasks`)
+- **Phạm vi file được sửa:** `tests/unit/boards/*`, `tests/unit/tasks/*`, `tests/integration/boards/*`, `tests/integration/tasks/*`, `tests/e2e/boards-tasks.spec.ts`
+- **Tiêu chí chấp nhận:** Đủ test allow/deny mọi mã quyền board/task, `AC-06` (từ chối API tạo task khi không có quyền `task.create`), `WQ-05` (xóa cột còn task `409`), `task_events` append-only, Playwright Chrome E2E `S03`/`S04`/`S05`/`S06`, và review ngữ cảnh sạch toàn bộ Epic E5 theo checklist `6A.8` đạt `PASS`.
 - **Kiểm thử bắt buộc:** Vitest unit/integration trên `beam_test` + Playwright E2E Chrome.
 - **Ngoài phạm vi:** Sửa mã nghiệp vụ trực tiếp.
 - **Mức rủi ro:** Cao
