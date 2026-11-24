@@ -6,7 +6,9 @@ import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { usePermissions, type PermissionCode } from '@/features/shared/permissions/can';
 import type { AppLocale } from '@/i18n/locale';
+import { ClubLogo } from './ClubLogo';
 import { LanguageSwitch } from './LanguageSwitch';
+import { MemberAvatar } from './MemberAvatar';
 
 export type AppNavKey =
   | 'boards'
@@ -20,7 +22,9 @@ export type AppNavKey =
   | 'auditLog';
 
 export interface AppShellUser {
+  id?: string;
   fullName: string;
+  avatarUrl?: string | null;
   roleLabel?: string;
   isActive?: boolean;
 }
@@ -86,11 +90,6 @@ function NavIcon({ name, size = 16 }: { name: AppNavKey; size?: number }) {
   );
 }
 
-function getUserInitial(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/);
-  return (parts[parts.length - 1] ?? '?').slice(0, 1).toUpperCase();
-}
-
 function isNavItemActive(item: NavItemConfig, activeNav?: AppNavKey, pathname?: string): boolean {
   if (activeNav) {
     return item.key === activeNav;
@@ -133,7 +132,12 @@ function SidebarUserRow({ user, onSignOut }: { user: AppShellUser; onSignOut?: (
   const tMember = useTranslations('member');
   return (
     <div className="app-user">
-      <span className={`ui-avatar${user.isActive === false ? ' is-out' : ''}`} aria-hidden="true">{getUserInitial(user.fullName)}</span>
+      <MemberAvatar
+        memberId={user.id}
+        fullName={user.fullName}
+        avatarUrl={user.avatarUrl}
+        isActive={user.isActive}
+      />
       <span className="app-user-text">
         <span className="app-user-name">
           {user.fullName}
@@ -180,7 +184,7 @@ function SidebarContent({
   return (
     <>
       <Link href="/" className="app-brand" onClick={onNavigate}>
-        <span className="ui-logo" aria-hidden="true"><i /><i /><i /><i /></span>
+        <ClubLogo alt="" />
         <span className="app-brand-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
       </Link>
       <div className="app-side-label">{tNav('groups.workspace')}</div>

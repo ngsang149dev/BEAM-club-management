@@ -17,6 +17,18 @@ const hooksMock = vi.hoisted(() => ({
     isPending: false,
     error: null as ApiClientError | null,
   })),
+  useUpdateMyAvatarMutation: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    error: null as ApiClientError | null,
+  })),
+  useRemoveMyAvatarMutation: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    error: null as ApiClientError | null,
+  })),
 }));
 
 const navMock = vi.hoisted(() => ({
@@ -65,6 +77,18 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     hooksMock.useLogoutMutation.mockReturnValue({ mutate: vi.fn(), isPending: false });
     hooksMock.useUpdateLocaleMutation.mockReturnValue({ mutateAsync: vi.fn(), isError: false });
     hooksMock.useChangeMyPasswordMutation.mockReturnValue({
+      mutateAsync: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: null,
+    });
+    hooksMock.useUpdateMyAvatarMutation.mockReturnValue({
+      mutateAsync: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: null,
+    });
+    hooksMock.useRemoveMyAvatarMutation.mockReturnValue({
       mutateAsync: vi.fn(),
       reset: vi.fn(),
       isPending: false,
@@ -325,5 +349,43 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     );
     expect(html500).toContain('Không tải được hồ sơ');
     expect(html500).toContain('REQ-PROF-500');
+  });
+
+  it('renders avatar upload/remove controls and image error alerts on S08 Profile', () => {
+    const noAvatarHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileContent
+          profile={{ ...BASE_PROFILE, avatarUrl: null }}
+          permissions={['member.view']}
+          onSignOut={vi.fn()}
+          onLocaleChange={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+    expect(noAvatarHtml).toContain('Tải ảnh lên');
+    expect(noAvatarHtml).toContain('accept="image/png,image/jpeg,image/webp"');
+    expect(noAvatarHtml).not.toContain('Xóa ảnh');
+    expect(noAvatarHtml).toContain('NA');
+
+    const withAvatarHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileContent
+          profile={{ ...BASE_PROFILE, avatarUrl: '/api/v1/members/u-1/avatar?v=99' }}
+          permissions={['member.view']}
+          avatarError={new ApiClientError({
+            status: 400,
+            code: 'INVALID_IMAGE_FORMAT',
+            messageKey: 'errors.invalidImageFormat',
+            details: {},
+          })}
+          onSignOut={vi.fn()}
+          onLocaleChange={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+    expect(withAvatarHtml).toContain('src="/api/v1/members/u-1/avatar?v=99"');
+    expect(withAvatarHtml).toContain('Change photo');
+    expect(withAvatarHtml).toContain('Remove photo');
+    expect(withAvatarHtml).toContain('Only PNG, JPEG, or WEBP images are allowed');
   });
 });

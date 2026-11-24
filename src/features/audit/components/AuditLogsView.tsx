@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
-import { getMemberInitials } from '@/features/members/components/MembersToolbar';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { describeAuditError } from '../error-mapping';
 import {
@@ -39,9 +39,12 @@ function AuditMemberCell({
   return (
     <span className={showAvatar ? 'audit-actor' : undefined}>
       {showAvatar ? (
-        <span className={member.isActive ? 'ui-avatar' : 'ui-avatar is-out'} aria-hidden="true">
-          {getMemberInitials(member.fullName)}
-        </span>
+        <MemberAvatar
+          memberId={member.id}
+          fullName={member.fullName}
+          avatarUrl={member.avatarUrl}
+          isActive={member.isActive}
+        />
       ) : null}
       <span>
         {member.fullName}

@@ -328,6 +328,7 @@ describe('Audit Logs Route Handler integration', () => {
 
       // Verify zero PII & strict MemberPublicSummary keys
       expect(Object.keys(page1Body.items[0]!.actor).sort()).toEqual([
+        'avatarUrl',
         'departments',
         'fullName',
         'id',

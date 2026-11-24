@@ -15,6 +15,11 @@ import {
 import { POST as loginPost } from '@/app/api/v1/auth/login/route';
 import { GET as sessionGet } from '@/app/api/v1/auth/session/route';
 import { POST as memberActivatePost } from '@/app/api/v1/members/[id]/activate/route';
+import {
+  DELETE as memberAvatarDelete,
+  GET as memberAvatarGet,
+  PUT as memberAvatarPut,
+} from '@/app/api/v1/members/[id]/avatar/route';
 import { POST as memberDeactivatePost } from '@/app/api/v1/members/[id]/deactivate/route';
 import { POST as memberResetPasswordPost } from '@/app/api/v1/members/[id]/reset-password/route';
 import {
@@ -26,6 +31,7 @@ import {
   POST as membersPost,
 } from '@/app/api/v1/members/route';
 import { SESSION_COOKIE_NAME } from '@/lib/auth';
+import { MAX_IMAGE_BYTES } from '@/lib/media';
 import { DEFAULT_MEMBER_PERMISSIONS } from '@/lib/permissions';
 import { DrizzleAuditRepository } from '@/server/modules/audit';
 import { DrizzleAuthRepository } from '@/server/modules/auth';
@@ -783,12 +789,12 @@ describe('Members Route Handlers integration', () => {
         ((await activeFilterRestoredRes.json()) as { items: Array<{ id: string }> }).items,
       ).toHaveLength(4);
 
-      // 7. Verify reset-password route (401/403/400/404, non-admin admin-target 403 guard, session revocation, audit_logs)
+      // 7. Verify admin-only reset-password route (401/403 for non-admin even with member.update, 400/404, session revocation, audit_logs)
       const resetUnauth = await memberResetPasswordPost(
         new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+          body: JSON.stringify({ newPassword: 'ResetByAdmin#2026' }),
         }),
         { params: Promise.resolve({ id: createdId }) },
       );
@@ -798,7 +804,7 @@ describe('Members Route Handlers integration', () => {
         new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', cookie: basicCookie },
-          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+          body: JSON.stringify({ newPassword: 'ResetByAdmin#2026' }),
         }),
         { params: Promise.resolve({ id: createdId }) },
       );
@@ -807,7 +813,7 @@ describe('Members Route Handlers integration', () => {
       const resetBadBody = await memberResetPasswordPost(
         new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', cookie: hrCookie },
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
           body: JSON.stringify({ newPassword: 'short' }),
         }),
         { params: Promise.resolve({ id: createdId }) },
@@ -817,14 +823,14 @@ describe('Members Route Handlers integration', () => {
       const resetMissing = await memberResetPasswordPost(
         new Request(`http://localhost:3000/api/v1/members/${missingId}/reset-password`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', cookie: hrCookie },
-          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ newPassword: 'ResetByAdmin#2026' }),
         }),
         { params: Promise.resolve({ id: missingId }) },
       );
       expect(resetMissing.status).toBe(404);
 
-      // Non-admin with member.update CANNOT reset an Admin's password -> 403
+      // Non-admin with member.update CANNOT reset an Admin's OR a regular member's password -> 403
       const hrResetAdmin = await memberResetPasswordPost(
         new Request(`http://localhost:3000/api/v1/members/${adminId}/reset-password`, {
           method: 'POST',
@@ -855,23 +861,35 @@ describe('Members Route Handlers integration', () => {
       );
       const createdLiveCookie = cookiePairFromLogin(initialLoginRes);
 
-      // HR resets regular member password -> 200 MemberPublicSummary, revokes member session, sets mustChangePassword=true
       const hrResetMember = await memberResetPasswordPost(
         new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', cookie: hrCookie },
-          body: JSON.stringify({ newPassword: 'ResetByHr#2026' }),
+          body: JSON.stringify({ newPassword: 'AttemptHrMemberReset#2026' }),
         }),
         { params: Promise.resolve({ id: createdId }) },
       );
-      expect(hrResetMember.status).toBe(200);
-      expect(hrResetMember.headers.get('cache-control')).toBe('no-store');
-      const hrResetBody = (await hrResetMember.json()) as {
-        member: Record<string, unknown>;
+      expect(hrResetMember.status).toBe(403);
+      expect(
+        (await sessionGet(new Request('http://localhost:3000/api/v1/auth/session', { headers: { cookie: createdLiveCookie } }))).status,
+      ).toBe(200);
+
+      // Admin resets regular member password -> 200 MemberDetail, revokes member session, sets mustChangePassword=true
+      const adminResetMember = await memberResetPasswordPost(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/reset-password`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ newPassword: 'ResetMemberByAdmin#2026' }),
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(adminResetMember.status).toBe(200);
+      expect(adminResetMember.headers.get('cache-control')).toBe('no-store');
+      const adminResetMemberBody = (await adminResetMember.json()) as {
+        member: Record<string, unknown> & { mustChangePassword: boolean };
       };
-      expect('studentId' in hrResetBody.member).toBe(false);
-      expect('mustChangePassword' in hrResetBody.member).toBe(false);
-      expect('passwordHash' in hrResetBody.member).toBe(false);
+      expect(adminResetMemberBody.member.mustChangePassword).toBe(true);
+      expect('passwordHash' in adminResetMemberBody.member).toBe(false);
 
       expect(
         (await sessionGet(new Request('http://localhost:3000/api/v1/auth/session', { headers: { cookie: createdLiveCookie } }))).status,
@@ -884,13 +902,119 @@ describe('Members Route Handlers integration', () => {
             'content-type': 'application/json',
             'x-forwarded-for': `198.51.100.${baseHost + 7}`,
           },
-          body: JSON.stringify({ studentId: createdSid, password: 'ResetByHr#2026' }),
+          body: JSON.stringify({ studentId: createdSid, password: 'ResetMemberByAdmin#2026' }),
         }),
       );
       expect(postResetLoginRes.status).toBe(200);
       expect(((await postResetLoginRes.json()) as { user: { mustChangePassword: boolean } }).user.mustChangePassword).toBe(
         true,
       );
+
+      // 7b. Member avatars (/api/v1/members/{id}/avatar GET/PUT/DELETE)
+      const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+      const jpegDataUrl = `data:image/jpeg;base64,${jpegBytes.toString('base64')}`;
+      const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`;
+
+      expect(
+        (await memberAvatarGet(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(401);
+      expect(
+        (await memberAvatarPut(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataUrl: jpegDataUrl }) }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(401);
+      expect(
+        (await memberAvatarDelete(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { method: 'DELETE' }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(401);
+
+      expect(
+        (await memberAvatarPut(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { method: 'PUT', headers: { 'content-type': 'application/json', cookie: basicCookie }, body: JSON.stringify({ dataUrl: jpegDataUrl }) }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(403);
+      expect(
+        (await memberAvatarDelete(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { method: 'DELETE', headers: { cookie: basicCookie } }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(403);
+
+      expect(
+        (await memberAvatarGet(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { headers: { cookie: noPermCookie } }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(404);
+      expect(
+        (await memberAvatarGet(new Request('http://localhost:3000/api/v1/members/not-a-uuid/avatar', { headers: { cookie: noPermCookie } }), { params: Promise.resolve({ id: 'not-a-uuid' }) })).status,
+      ).toBe(400);
+
+      expect(
+        (await memberAvatarPut(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { method: 'PUT', headers: { 'content-type': 'application/json', cookie: hrCookie }, body: JSON.stringify({ dataUrl: svgDataUrl }) }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(400);
+      const bigPayload = Buffer.concat([jpegBytes, Buffer.alloc(MAX_IMAGE_BYTES + 1 - jpegBytes.length, 0x01)]);
+      expect(
+        (await memberAvatarPut(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { method: 'PUT', headers: { 'content-type': 'application/json', cookie: hrCookie }, body: JSON.stringify({ dataUrl: `data:image/jpeg;base64,${bigPayload.toString('base64')}` }) }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(400);
+
+      const avatarPutRes = await memberAvatarPut(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', cookie: hrCookie },
+          body: JSON.stringify({ dataUrl: jpegDataUrl }),
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(avatarPutRes.status).toBe(200);
+      const avatarPutBody = (await avatarPutRes.json()) as {
+        member: Record<string, unknown> & { avatarUrl: string | null };
+      };
+      expect(avatarPutBody.member.avatarUrl).toMatch(
+        new RegExp(`^/api/v1/members/${createdId}/avatar\\?v=\\d+$`),
+      );
+      expect('studentId' in avatarPutBody.member).toBe(false);
+      expect('email' in avatarPutBody.member).toBe(false);
+
+      const avatarBinRes = await memberAvatarGet(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, {
+          headers: { cookie: noPermCookie },
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(avatarBinRes.status).toBe(200);
+      expect(avatarBinRes.headers.get('content-type')).toBe('image/jpeg');
+      expect(avatarBinRes.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(avatarBinRes.headers.get('cache-control')).toBe('no-store');
+      expect(Buffer.from(await avatarBinRes.arrayBuffer()).equals(jpegBytes)).toBe(true);
+
+      const getWithAvatar = await memberGet(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}`, {
+          headers: { cookie: basicCookie },
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(
+        ((await getWithAvatar.json()) as { member: { avatarUrl: string | null } }).member
+          .avatarUrl,
+      ).toBe(avatarPutBody.member.avatarUrl);
+
+      const listWithAvatar = await membersGet(
+        new Request(`http://localhost:3000/api/v1/members?q=${encodeURIComponent(suffix)}`, {
+          headers: { cookie: basicCookie },
+        }),
+      );
+      expect(
+        ((await listWithAvatar.json()) as {
+          items: Array<{ id: string; avatarUrl: string | null }>;
+        }).items.find((i) => i.id === createdId)?.avatarUrl,
+      ).toBe(avatarPutBody.member.avatarUrl);
+
+      const avatarDelRes = await memberAvatarDelete(
+        new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, {
+          method: 'DELETE',
+          headers: { cookie: hrCookie },
+        }),
+        { params: Promise.resolve({ id: createdId }) },
+      );
+      expect(avatarDelRes.status).toBe(200);
+      const avatarDelBody = (await avatarDelRes.json()) as {
+        member: Record<string, unknown> & { avatarUrl: string | null };
+      };
+      expect(avatarDelBody.member.avatarUrl).toBeNull();
+      expect('studentId' in avatarDelBody.member).toBe(false);
+      expect(
+        (await memberAvatarGet(new Request(`http://localhost:3000/api/v1/members/${createdId}/avatar`, { headers: { cookie: noPermCookie } }), { params: Promise.resolve({ id: createdId }) })).status,
+      ).toBe(404);
 
       // Admin resets Admin password -> 200 MemberDetail with mustChangePassword=true & revokes admin session
       const adminResetSelf = await memberResetPasswordPost(
@@ -950,7 +1074,7 @@ describe('Members Route Handlers integration', () => {
         user: { mustChangePassword: true },
       });
 
-      // 8. Verify audit_logs and logs contain ZERO studentId, email, password, or hash
+      // 8. Verify audit_logs and logs contain ZERO studentId, email, password, hash, or binary/dataUrl
       const auditRows = await tx
         .select()
         .from(auditLogs)
@@ -962,6 +1086,8 @@ describe('Members Route Handlers integration', () => {
           .sort(),
       ).toEqual([
         'member.activated',
+        'member.avatar_removed',
+        'member.avatar_updated',
         'member.created',
         'member.deactivated',
         'member.password_reset',
@@ -989,10 +1115,12 @@ describe('Members Route Handlers integration', () => {
         basicEmail,
         DEV_SEED_PASSWORD,
         seedPasswordHash,
-        'ResetByHr#2026',
+        'ResetMemberByAdmin#2026',
         'ResetByAdmin#2026',
         'AttemptAdminReset#2026',
+        'AttemptHrMemberReset#2026',
         'InitialCustom#2026',
+        jpegDataUrl,
       ]) {
         expect(serializedAudits).not.toContain(secretPii);
         expect(serializedLogs).not.toContain(secretPii);

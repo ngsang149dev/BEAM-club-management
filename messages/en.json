@@ -164,7 +164,32 @@
     "passwordChangedBanner": "Your password has been updated and other active sessions have been signed out.",
     "validationCurrentPassword": "Please enter your current password.",
     "validationNewPassword": "New password must be 8 to 128 characters and not whitespace only.",
-    "validationConfirmMismatch": "Password confirmation does not match the new password."
+    "validationConfirmMismatch": "Password confirmation does not match the new password.",
+    "avatarUpdatedToast": "Profile avatar updated.",
+    "avatarRemovedToast": "Profile avatar removed."
+  },
+  "media": {
+    "uploadPhoto": "Upload photo",
+    "changePhoto": "Change photo",
+    "uploadingPhoto": "Uploading...",
+    "removePhoto": "Remove photo",
+    "removingPhoto": "Removing...",
+    "avatarHint": "Supports PNG, JPEG, or WEBP up to 256 KB. Images larger than 512px are resized automatically before upload."
+  },
+  "branding": {
+    "modalTitle": "BEAM Club logo",
+    "modalSubtitle": "Shown in the navigation bar, sign-in showcase, and error pages. Only admins can update it.",
+    "logoAlt": "BEAM Club logo",
+    "customLogoActive": "Custom club logo active",
+    "defaultBadgeActive": "Default BEAM badge active",
+    "uploadHint": "Accepts PNG, JPEG, or WEBP up to 256 KB (auto-resized if needed). SVG is not allowed.",
+    "uploadButton": "Upload logo",
+    "replaceButton": "Replace logo",
+    "uploading": "Updating...",
+    "restoreDefaultButton": "Restore default",
+    "restoring": "Restoring...",
+    "updatedToast": "Club logo updated.",
+    "removedToast": "Restored default club logo."
   },
   "permissions": {
     "catalog": {
@@ -232,6 +257,8 @@
     "invalidColumnOrder": "Column order list is invalid. Please reload the board.",
     "invalidAssigneeIds": "One or more selected assignees do not exist or have left the club.",
     "boardColumnMismatch": "The selected column does not belong to this board.",
+    "invalidImageFormat": "Unsupported image format. Only PNG, JPEG, or WEBP images are allowed (SVG is not supported).",
+    "imageTooLarge": "Image still exceeds 256 KB after compression. Please choose a smaller image.",
     "401": {
       "code": "401",
       "title": "Sign in required",
@@ -372,7 +399,11 @@
     "validationPasswordMismatch": "Password confirmation does not match the new password.",
     "resetPasswordSubmit": "Reset password",
     "resettingPassword": "Resetting...",
-    "passwordResetToast": "Reset password for {name}."
+    "passwordResetToast": "Reset password for {name}.",
+    "clubLogoButton": "Club logo",
+    "memberAvatarTitle": "Member avatar",
+    "avatarUpdatedToast": "Updated avatar for {name}.",
+    "avatarRemovedToast": "Removed avatar for {name}."
   },
   "departmentsAdmin": {
     "kicker": "Admin",
@@ -509,6 +540,8 @@
       "memberPasswordReset": "Reset member password",
       "memberDeactivated": "Deactivated account",
       "memberActivated": "Reactivated account",
+      "memberAvatarUpdated": "Updated member avatar",
+      "memberAvatarRemoved": "Removed member avatar",
       "departmentCreated": "Created department",
       "departmentUpdated": "Renamed department",
       "departmentDeleted": "Deleted department",
@@ -520,7 +553,9 @@
       "remindersUpdated": "Updated reminders",
       "boardCreated": "Created board",
       "boardUpdated": "Updated board",
-      "boardArchived": "Archived board"
+      "boardArchived": "Archived board",
+      "brandingLogoUpdated": "Updated club logo",
+      "brandingLogoRemoved": "Restored default club logo"
     }
   },
   "boards": {

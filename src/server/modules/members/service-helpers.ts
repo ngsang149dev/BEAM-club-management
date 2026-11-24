@@ -8,7 +8,7 @@ import type { AuditLogWriter } from '@/server/modules/audit';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { assertCanResetMemberPassword } from './policy';
-import type { MemberProfileRecord, MembersRepository } from './repository';
+import type { MemberProfileRecord, MembersRepository } from './types';
 
 export function collectUpdatedFields(input: UpdateMemberRequestInput): string[] {
   const fields: string[] = [];
@@ -184,7 +184,7 @@ export async function persistPasswordReset(params: {
     params.tx,
   );
   if (!target) throw notFound('errors.notFound', {}, 'NOT_FOUND');
-  assertCanResetMemberPassword(params.actor, target);
+  assertCanResetMemberPassword(params.actor);
   const updated = await params.membersRepo.resetPasswordAndRevokeAllSessions(
     {
       userId: target.id,
@@ -201,6 +201,78 @@ export async function persistPasswordReset(params: {
       action: 'member.password_reset',
       targetUserId: updated.id,
       detail: { forceChangeOnLogin: true, sessionsRevoked: true },
+      createdAt: params.now,
+    },
+    params.tx,
+  );
+  return updated;
+}
+
+export async function persistMemberAvatarUpdate(params: {
+  readonly membersRepo: MembersRepository;
+  readonly auditWriter: AuditLogWriter;
+  readonly actor: AuthActor;
+  readonly memberId: string;
+  readonly avatarData: Buffer;
+  readonly avatarMime: string;
+  readonly now: Date;
+  readonly tx: TransactionContext;
+}): Promise<MemberProfileRecord> {
+  const existing = await params.membersRepo.lockAndFindById(
+    params.memberId,
+    params.tx,
+  );
+  if (!existing) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+  const updated = await params.membersRepo.updateAvatar(
+    {
+      id: params.memberId,
+      avatarData: params.avatarData,
+      avatarMime: params.avatarMime,
+      now: params.now,
+    },
+    params.tx,
+  );
+  if (!updated) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+  await params.auditWriter.record(
+    {
+      actorId: params.actor.id,
+      action: 'member.avatar_updated',
+      targetUserId: updated.id,
+      detail: {
+        mimeType: params.avatarMime,
+        byteLength: params.avatarData.byteLength,
+      },
+      createdAt: params.now,
+    },
+    params.tx,
+  );
+  return updated;
+}
+
+export async function persistMemberAvatarRemoval(params: {
+  readonly membersRepo: MembersRepository;
+  readonly auditWriter: AuditLogWriter;
+  readonly actor: AuthActor;
+  readonly memberId: string;
+  readonly now: Date;
+  readonly tx: TransactionContext;
+}): Promise<MemberProfileRecord> {
+  const existing = await params.membersRepo.lockAndFindById(
+    params.memberId,
+    params.tx,
+  );
+  if (!existing) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+  const updated = await params.membersRepo.clearAvatar(
+    { id: params.memberId, now: params.now },
+    params.tx,
+  );
+  if (!updated) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+  await params.auditWriter.record(
+    {
+      actorId: params.actor.id,
+      action: 'member.avatar_removed',
+      targetUserId: updated.id,
+      detail: { removed: true },
       createdAt: params.now,
     },
     params.tx,

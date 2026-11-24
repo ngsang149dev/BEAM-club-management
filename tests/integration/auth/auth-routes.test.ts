@@ -5,6 +5,7 @@ import { and, count, eq, inArray } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  auditLogs,
   loginAttempts,
   permissions,
   profiles,
@@ -14,9 +15,18 @@ import {
 import { POST as loginPost } from '@/app/api/v1/auth/login/route';
 import { POST as logoutPost } from '@/app/api/v1/auth/logout/route';
 import { GET as sessionGet } from '@/app/api/v1/auth/session/route';
+import {
+  DELETE as meAvatarDelete,
+  PUT as meAvatarPut,
+} from '@/app/api/v1/me/avatar/route';
 import { POST as mePasswordPost } from '@/app/api/v1/me/password/route';
 import { GET as meGet, PATCH as mePatch } from '@/app/api/v1/me/route';
+import { GET as memberAvatarGet } from '@/app/api/v1/members/[id]/avatar/route';
 import { SESSION_COOKIE_NAME } from '@/lib/auth';
+import { MAX_IMAGE_BYTES } from '@/lib/media';
+import { DrizzleAuditRepository } from '@/server/modules/audit';
+import { DrizzleAuthRepository } from '@/server/modules/auth';
+import { DrizzleMembersRepository } from '@/server/modules/members';
 import {
   createContainer,
   type ServerContainer,
@@ -26,6 +36,9 @@ import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
 import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
+import type { TransactionContext } from '@/server/shared/transaction';
+
+class TestRollbackSentinel extends Error {}
 
 function loadEnvLocalIfMissing(): void {
   if (process.env.TEST_DATABASE_URL) return;
@@ -896,5 +909,176 @@ describe('Auth & /me Route Handlers integration', () => {
     expect(serializedLogs).not.toContain('WrongCurrent#2026');
     expect(serializedLogs).not.toContain(DEV_SEED_PASSWORD);
     expect(serializedLogs).not.toContain(seedPasswordHash);
+  });
+
+  it('supports PUT and DELETE /api/v1/me/avatar, validates magic bytes/size, serves binary /members/[id]/avatar, writes clean audit_logs, and leaks zero binary/PII', async () => {
+    const pngBytes = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    ]);
+    const pngDataUrl = `data:image/png;base64,${pngBytes.toString('base64')}`;
+    const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`;
+    const txLogs: string[] = [];
+
+    try {
+      await db.transaction(async (tx: TransactionContext) => {
+        const txContainer = createContainer({
+          config: container.config,
+          db,
+          transactionRunner: { runInTransaction: (fn) => tx.transaction(fn) },
+          auditWriter: new DrizzleAuditRepository(tx),
+          authRepo: new DrizzleAuthRepository(tx),
+          membersRepo: new DrizzleMembersRepository(tx),
+          logger: new StructuredLogger({
+            writeOut: (line) => txLogs.push(line),
+            writeErr: (line) => txLogs.push(line),
+          }),
+        });
+        setContainerForTesting(txContainer);
+
+        const loginRes = await loginPost(
+          new Request('http://localhost:3000/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
+            body: JSON.stringify({
+              studentId: activeStudentId,
+              password: DEV_SEED_PASSWORD,
+            }),
+          }),
+        );
+        expect(loginRes.status).toBe(200);
+        const cookie = extractCookiePair(
+          findSetCookie(loginRes.headers.getSetCookie(), SESSION_COOKIE_NAME),
+        );
+
+        expect(
+          (
+            await meAvatarPut(
+              new Request('http://localhost:3000/api/v1/me/avatar', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ dataUrl: pngDataUrl }),
+              }),
+            )
+          ).status,
+        ).toBe(401);
+        expect(
+          (
+            await meAvatarDelete(
+              new Request('http://localhost:3000/api/v1/me/avatar', { method: 'DELETE' }),
+            )
+          ).status,
+        ).toBe(401);
+
+        expect(
+          (
+            await meAvatarPut(
+              new Request('http://localhost:3000/api/v1/me/avatar', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json', cookie },
+                body: JSON.stringify({ dataUrl: svgDataUrl }),
+              }),
+            )
+          ).status,
+        ).toBe(400);
+
+        const oversized = Buffer.concat([
+          pngBytes,
+          Buffer.alloc(MAX_IMAGE_BYTES + 1 - pngBytes.length, 0x01),
+        ]);
+        expect(
+          (
+            await meAvatarPut(
+              new Request('http://localhost:3000/api/v1/me/avatar', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json', cookie },
+                body: JSON.stringify({
+                  dataUrl: `data:image/png;base64,${oversized.toString('base64')}`,
+                }),
+              }),
+            )
+          ).status,
+        ).toBe(400);
+
+        const putRes = await meAvatarPut(
+          new Request('http://localhost:3000/api/v1/me/avatar', {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json', cookie },
+            body: JSON.stringify({ dataUrl: pngDataUrl }),
+          }),
+        );
+        expect(putRes.status).toBe(200);
+        const putBody = (await putRes.json()) as {
+          profile: { id: string; avatarUrl: string | null };
+        };
+        expect(putBody.profile.avatarUrl).toMatch(
+          new RegExp(`^/api/v1/members/${activeUserId}/avatar\\?v=\\d+$`),
+        );
+
+        const meAfterPut = await meGet(
+          new Request('http://localhost:3000/api/v1/me', { headers: { cookie } }),
+        );
+        expect(
+          ((await meAfterPut.json()) as { profile: { avatarUrl: string | null } }).profile
+            .avatarUrl,
+        ).toBe(putBody.profile.avatarUrl);
+
+        const binRes = await memberAvatarGet(
+          new Request(`http://localhost:3000/api/v1/members/${activeUserId}/avatar`, {
+            headers: { cookie },
+          }),
+          { params: Promise.resolve({ id: activeUserId }) },
+        );
+        expect(binRes.status).toBe(200);
+        expect(binRes.headers.get('content-type')).toBe('image/png');
+        expect(binRes.headers.get('x-content-type-options')).toBe('nosniff');
+        expect(Buffer.from(await binRes.arrayBuffer()).equals(pngBytes)).toBe(true);
+
+        const delRes = await meAvatarDelete(
+          new Request('http://localhost:3000/api/v1/me/avatar', {
+            method: 'DELETE',
+            headers: { cookie },
+          }),
+        );
+        expect(delRes.status).toBe(200);
+        expect(
+          ((await delRes.json()) as { profile: { avatarUrl: string | null } }).profile
+            .avatarUrl,
+        ).toBeNull();
+
+        expect(
+          (
+            await memberAvatarGet(
+              new Request(`http://localhost:3000/api/v1/members/${activeUserId}/avatar`, {
+                headers: { cookie },
+              }),
+              { params: Promise.resolve({ id: activeUserId }) },
+            )
+          ).status,
+        ).toBe(404);
+
+        const auditRows = await tx
+          .select()
+          .from(auditLogs)
+          .where(eq(auditLogs.actorId, activeUserId));
+        expect(auditRows.map((r) => r.action)).toEqual([
+          'member.avatar_updated',
+          'member.avatar_removed',
+        ]);
+        const serializedAudits = JSON.stringify(auditRows);
+        const serializedLogs = txLogs.join('\n');
+        for (const secret of [pngDataUrl, activeStudentId, activeEmail]) {
+          expect(serializedAudits).not.toContain(secret);
+          expect(serializedLogs).not.toContain(secret);
+        }
+
+        throw new TestRollbackSentinel();
+      });
+    } catch (error) {
+      if (!(error instanceof TestRollbackSentinel)) {
+        throw error;
+      }
+    } finally {
+      setContainerForTesting(container);
+    }
   });
 });

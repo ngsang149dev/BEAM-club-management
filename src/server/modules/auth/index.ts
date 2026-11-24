@@ -46,4 +46,6 @@ export {
   type LoginCommand,
   type LoginResult,
   type MeResult,
+  type RemoveMyAvatarCommand,
+  type UpdateMyAvatarCommand,
 } from './service';

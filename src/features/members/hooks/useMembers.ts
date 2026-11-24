@@ -18,6 +18,7 @@ export type MemberItemResponse = components['schemas']['MemberItemResponse'];
 export type CreateMemberRequest = components['schemas']['CreateMemberRequest'];
 export type UpdateMemberRequest = components['schemas']['UpdateMemberRequest'];
 export type ResetMemberPasswordRequest = components['schemas']['ResetMemberPasswordRequest'];
+export type ImageUploadRequest = components['schemas']['ImageUploadRequest'];
 
 export type MemberStatusFilter = 'active' | 'inactive' | 'all';
 
@@ -146,6 +147,42 @@ export function useResetMemberPasswordMutation() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
+        queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
+      ]);
+    },
+  });
+}
+
+export function useUpdateMemberAvatarMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, dataUrl }: { id: string; dataUrl: string }) =>
+      apiFetch('/members/{id}/avatar', {
+        method: 'put',
+        params: { id },
+        body: { dataUrl },
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
+        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
+        queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
+      ]);
+    },
+  });
+}
+
+export function useRemoveMemberAvatarMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch('/members/{id}/avatar', { method: 'delete', params: { id } }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
+        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
         queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
       ]);
     },

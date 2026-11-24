@@ -1,5 +1,11 @@
 import { boards, columns } from './boards';
-import { appSettings, loginAttempts, profiles, sessions } from './identity';
+import {
+  appSettings,
+  clubAssets,
+  loginAttempts,
+  profiles,
+  sessions,
+} from './identity';
 import {
   auditLogs,
   departments,
@@ -15,6 +21,7 @@ export {
   appSettings,
   auditLogs,
   boards,
+  clubAssets,
   columns,
   comments,
   departments,
@@ -36,6 +43,7 @@ export const schema = {
   appSettings,
   auditLogs,
   boards,
+  clubAssets,
   columns,
   comments,
   departments,

@@ -1,6 +1,7 @@
+import { toMemberAvatarUrl } from '@/lib/media';
 import type { PermissionCode } from '@/lib/permissions';
 import type { AuthActor } from '@/server/shared/authorize';
-import type { ProfileWithDepartmentsRecord, SessionRecord } from './repository';
+import type { ProfileWithDepartmentsRecord, SessionRecord } from './types';
 
 export interface DepartmentSummaryDto {
   readonly id: string;
@@ -13,6 +14,7 @@ export interface MemberDetailDto {
   readonly isActive: boolean;
   readonly leftAt: string | null;
   readonly departments: DepartmentSummaryDto[];
+  readonly avatarUrl: string | null;
   readonly studentId: string;
   readonly email: string;
   readonly locale: 'vi' | 'en';
@@ -52,6 +54,7 @@ export function toMemberDetailDto(
       id: dept.id,
       name: dept.name,
     })),
+    avatarUrl: toMemberAvatarUrl(profile.id, profile.avatarUpdatedAt),
     studentId: profile.studentId,
     email: profile.email,
     locale: profile.locale,

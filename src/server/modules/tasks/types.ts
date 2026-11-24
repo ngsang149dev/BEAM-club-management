@@ -11,6 +11,7 @@ export interface TaskDepartmentSummaryRecord {
 export interface TaskMemberSummaryRecord {
   readonly id: string;
   readonly fullName: string;
+  readonly avatarUpdatedAt: Date | null;
   readonly isActive: boolean;
   readonly leftAt: Date | null;
   readonly departments: readonly TaskDepartmentSummaryRecord[];

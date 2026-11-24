@@ -35,6 +35,8 @@ tags:
     description: Task comments
   - name: Settings & Audit
     description: Deadline reminder configuration and append-only administrative audit logs
+  - name: Branding
+    description: Club logo and member profile avatar assets (max 256 KB PNG/JPEG/WEBP)
   - name: Internal Cron
     description: Scheduled deadline reminder trigger protected by CRON_SECRET
 
@@ -42,6 +44,88 @@ security:
   - sessionCookie: []
 
 paths:
+  # ---------------------------------------------------------------------------
+  # Branding
+  # ---------------------------------------------------------------------------
+  /branding:
+    get:
+      tags: [Branding]
+      summary: Get current club branding metadata
+      description: Public endpoint used by top bar and login showcase to discover the custom club logo URL (`null` when default badge should render).
+      security: []
+      responses:
+        "200":
+          description: Current club branding metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandingResponse"
+
+  /branding/logo:
+    get:
+      tags: [Branding]
+      summary: Fetch the custom club logo binary asset
+      description: "Returns raw PNG/JPEG/WEBP image bytes (`X-Content-Type-Options: nosniff`) or `404` when using the default badge."
+      security: []
+      responses:
+        "200":
+          description: Binary logo image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [Branding]
+      summary: Upload or replace the custom club logo (Admin-only)
+      description: Requires `is_admin=true`. Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`), rejects SVG/unsupported formats and payloads over `262144` bytes, stores in PostgreSQL, and writes `audit_logs` (`branding.logo_updated`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageUploadRequest"
+      responses:
+        "200":
+          description: Updated club branding metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    delete:
+      tags: [Branding]
+      summary: Remove custom club logo and restore default badge (Admin-only)
+      description: Requires `is_admin=true`. Removes `'club_logo'` from `club_assets` and records `audit_logs` (`branding.logo_removed`).
+      responses:
+        "200":
+          description: Reset club branding metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandingResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   # ---------------------------------------------------------------------------
   # Auth
   # ---------------------------------------------------------------------------
@@ -178,6 +262,43 @@ paths:
                 $ref: "#/components/schemas/MeResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me/avatar:
+    put:
+      tags: [Me]
+      summary: Upload or replace the authenticated user's own avatar
+      description: Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`) and max `256 KB`, persists into PostgreSQL, records `audit_logs` (`member.avatar_updated`), and returns updated `MeResponse`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageUploadRequest"
+      responses:
+        "200":
+          description: Updated current member profile with new `avatarUrl`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    delete:
+      tags: [Me]
+      summary: Remove the authenticated user's own avatar
+      description: Clears avatar columns for caller, records `audit_logs` (`member.avatar_removed`), and returns updated `MeResponse`.
+      responses:
+        "200":
+          description: "Updated current member profile (`avatarUrl: null`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -414,12 +535,11 @@ paths:
   /members/{id}/reset-password:
     post:
       tags: [Members]
-      summary: Reset a member's password (admin or permitted manager)
+      summary: Reset a member's password (Admin-only)
       description: |
-        Requires `member.update` (or admin).
-        Security guard: if the target profile has `is_admin=true`, ONLY an admin (`is_admin=true`) may reset their password (`403 FORBIDDEN` otherwise).
+        Requires `is_admin=true` (all non-admin accounts, including holders of `member.update`, receive `403 FORBIDDEN`).
         Sets a new `scrypt` password hash, sets `must_change_password=true`, revokes ALL active sessions for the target member, and writes `audit_logs` (`member.password_reset`) with zero plaintext password or hash.
-        Projection rule (FR-42): returns `MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`.
+        Projection rule (FR-42): returns `MemberDetail` only if caller is admin or holds `member.view_detail`, otherwise `MemberPublicSummary`.
       parameters:
         - $ref: "#/components/parameters/ResourceIdParam"
       requestBody:
@@ -430,7 +550,87 @@ paths:
               $ref: "#/components/schemas/ResetMemberPasswordRequest"
       responses:
         "200":
-          description: Member password reset (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`)
+          description: Member password reset (`MemberDetail` when admin / `member.view_detail`, otherwise `MemberPublicSummary`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /members/{id}/avatar:
+    get:
+      tags: [Members]
+      summary: Fetch a member's avatar image binary
+      description: "Accessible to any active authenticated user. Returns raw PNG/JPEG/WEBP bytes (`X-Content-Type-Options: nosniff`) or `404` when member or avatar does not exist."
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Binary avatar image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [Members]
+      summary: Upload or replace a member's avatar
+      description: Requires `member.update` (or admin). Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`) and max `256 KB`, records `audit_logs` (`member.avatar_updated`), and obeys `member.view_detail` PII masking in response.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageUploadRequest"
+      responses:
+        "200":
+          description: Member avatar updated (`MemberDetail` when caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Members]
+      summary: Remove a member's avatar
+      description: Requires `member.update` (or admin). Clears avatar columns for the member, records `audit_logs` (`member.avatar_removed`), and obeys `member.view_detail` PII masking in response.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Member avatar removed (`MemberDetail` when caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`)
           content:
             application/json:
               schema:
@@ -1780,6 +1980,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DepartmentSummary"
+        avatarUrl:
+          type: ["string", "null"]
 
     MemberDetail:
       type: object
@@ -1811,6 +2013,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DepartmentSummary"
+        avatarUrl:
+          type: ["string", "null"]
         studentId:
           type: string
         email:
@@ -1996,6 +2200,27 @@ components:
           type: string
           minLength: 8
           maxLength: 128
+
+    ImageUploadRequest:
+      type: object
+      required: [dataUrl]
+      additionalProperties: false
+      properties:
+        dataUrl:
+          type: string
+          minLength: 1
+          maxLength: 400000
+
+    BrandingResponse:
+      type: object
+      required: [logoUrl, updatedAt]
+      additionalProperties: false
+      properties:
+        logoUrl:
+          type: ["string", "null"]
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
 
     # -------------------------------------------------------------------------
     # Permissions & Presets

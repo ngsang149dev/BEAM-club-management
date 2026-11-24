@@ -1,3 +1,4 @@
+import { toMemberAvatarUrl } from '@/lib/media';
 import type { TaskPriority } from '@/lib/tasks';
 import type { TaskMemberSummaryRecord, TaskRecord } from './types';
 
@@ -12,6 +13,7 @@ export interface TaskMemberPublicSummaryDto {
   readonly isActive: boolean;
   readonly leftAt: string | null;
   readonly departments: TaskDepartmentSummaryDto[];
+  readonly avatarUrl: string | null;
 }
 
 export interface TaskDto {
@@ -61,6 +63,7 @@ export function toTaskMemberPublicSummaryDto(
     isActive: record.isActive,
     leftAt: record.leftAt ? record.leftAt.toISOString() : null,
     departments: record.departments.map((dept) => ({ id: dept.id, name: dept.name })),
+    avatarUrl: toMemberAvatarUrl(record.id, record.avatarUpdatedAt),
   };
 }
 

@@ -25,6 +25,7 @@ export interface AuditDepartmentSummaryRecord {
 export interface AuditUserSummaryRecord {
   readonly id: string;
   readonly fullName: string;
+  readonly avatarUpdatedAt: Date | null;
   readonly isActive: boolean;
   readonly leftAt: Date | null;
   readonly departments: readonly AuditDepartmentSummaryRecord[];
@@ -142,6 +143,7 @@ export class DrizzleAuditRepository implements AuditRepository {
         .select({
           id: profiles.id,
           fullName: profiles.fullName,
+          avatarUpdatedAt: profiles.avatarUpdatedAt,
           isActive: profiles.isActive,
           leftAt: profiles.leftAt,
         })

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '@/lib/errors';
+import { MAX_IMAGE_BYTES } from '@/lib/media';
 import { DEFAULT_MEMBER_PERMISSIONS, type PermissionCode } from '@/lib/permissions';
 import type { AuditLogEntry, AuditLogWriter } from '@/server/modules/audit';
 import {
   type CreateMemberParams,
   type ListMembersParams,
+  type MemberAvatarRecord,
   type MemberProfileRecord,
   type MembersRepository,
   MembersService,
@@ -22,6 +24,7 @@ import type {
 
 class InMemoryMembersRepository implements MembersRepository {
   readonly profiles = new Map<string, MemberProfileRecord>();
+  readonly avatars = new Map<string, { data: Buffer; mimeType: string }>();
   readonly passwordHashes = new Map<string, string | null>();
   readonly permissions = new Map<string, PermissionCode[]>();
   readonly activeSessions = new Set<string>();
@@ -77,6 +80,17 @@ class InMemoryMembersRepository implements MembersRepository {
     return this.profiles.get(id) ?? null;
   }
 
+  async findAvatarById(id: string): Promise<MemberAvatarRecord | null> {
+    const profile = this.profiles.get(id);
+    if (!profile) return null;
+    const avatar = this.avatars.get(id);
+    return {
+      id,
+      avatarData: avatar ? avatar.data : null,
+      avatarMime: avatar ? avatar.mimeType : null,
+    };
+  }
+
   async findExistingDepartmentIds(ids: readonly string[]): Promise<string[]> {
     return ids.filter((id) => this.validDepartments.has(id));
   }
@@ -100,6 +114,7 @@ class InMemoryMembersRepository implements MembersRepository {
       isAdmin: false,
       isActive: true,
       leftAt: null,
+      avatarUpdatedAt: null,
       locale: input.locale,
       mustChangePassword: input.mustChangePassword,
       departments: input.departmentIds.map((deptId) => ({
@@ -192,6 +207,41 @@ class InMemoryMembersRepository implements MembersRepository {
     this.activeSessions.delete(input.userId);
     return updated;
   }
+
+  async updateAvatar(input: {
+    readonly id: string;
+    readonly avatarData: Buffer;
+    readonly avatarMime: string;
+    readonly now: Date;
+  }): Promise<MemberProfileRecord | null> {
+    const existing = this.profiles.get(input.id);
+    if (!existing) return null;
+    const updated: MemberProfileRecord = {
+      ...existing,
+      avatarUpdatedAt: input.now,
+    };
+    this.profiles.set(input.id, updated);
+    this.avatars.set(input.id, {
+      data: Buffer.from(input.avatarData),
+      mimeType: input.avatarMime,
+    });
+    return updated;
+  }
+
+  async clearAvatar(input: {
+    readonly id: string;
+    readonly now: Date;
+  }): Promise<MemberProfileRecord | null> {
+    const existing = this.profiles.get(input.id);
+    if (!existing) return null;
+    const updated: MemberProfileRecord = {
+      ...existing,
+      avatarUpdatedAt: null,
+    };
+    this.profiles.set(input.id, updated);
+    this.avatars.delete(input.id);
+    return updated;
+  }
 }
 
 class SpyAuditWriter implements AuditLogWriter {
@@ -235,6 +285,7 @@ function createHarness(configOverrides: Partial<Config> = {}) {
     studentId: 'MSSV-ADMIN-01',
     email: 'admin01@eiu.edu.vn',
     fullName: 'Alpha Admin',
+    avatarUpdatedAt: null,
     isAdmin: true,
     isActive: true,
     leftAt: null,
@@ -248,6 +299,7 @@ function createHarness(configOverrides: Partial<Config> = {}) {
     studentId: 'MSSV-SECRET-02',
     email: 'beta@eiu.edu.vn',
     fullName: 'Beta Member',
+    avatarUpdatedAt: null,
     isAdmin: false,
     isActive: true,
     leftAt: null,
@@ -650,7 +702,7 @@ describe('MembersService permissions, PII masking & rules', () => {
     expect(prodWithExplicit.member).toMatchObject({ mustChangePassword: true });
   });
 
-  it('enforces resetMemberPassword authorization, non-admin admin-target 403 guard, session revocation, and zero secret leaks', async () => {
+  it('enforces admin-only resetMemberPassword (403 for non-admin with member.update on both member and admin), session revocation, and zero secret leaks', async () => {
     const { repo, auditWriter, rawLogs, service } = createHarness();
 
     // Non-admin with member.update CANNOT reset an admin's password -> 403
@@ -662,16 +714,28 @@ describe('MembersService permissions, PII masking & rules', () => {
       }),
     ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
     expect(repo.activeSessions.has('10000000-0000-4000-8000-000000000001')).toBe(true);
+
+    // Non-admin with member.update ALSO CANNOT reset a regular member's password -> 403
+    await expect(
+      service.resetMemberPassword({
+        actor: CREATE_NO_DETAIL_ACTOR,
+        memberId: '10000000-0000-4000-8000-000000000002',
+        input: { newPassword: 'AttemptMemberReset#2026' },
+      }),
+    ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+    expect(repo.activeSessions.has('10000000-0000-4000-8000-000000000002')).toBe(true);
     expect(auditWriter.entries).toHaveLength(0);
 
-    // Non-admin with member.update CAN reset a regular member -> 200 PublicSummary (no mustChangePassword/PII)
+    // Admin CAN reset a regular member -> 200 MemberDetail with mustChangePassword=true
     const memberReset = await service.resetMemberPassword({
-      actor: CREATE_NO_DETAIL_ACTOR,
+      actor: DETAIL_ADMIN_ACTOR,
       memberId: '10000000-0000-4000-8000-000000000002',
       input: { newPassword: 'MemberReset#2026' },
     });
-    expect('studentId' in memberReset.member).toBe(false);
-    expect('mustChangePassword' in memberReset.member).toBe(false);
+    expect(memberReset.member).toMatchObject({
+      id: '10000000-0000-4000-8000-000000000002',
+      mustChangePassword: true,
+    });
     expect('passwordHash' in memberReset.member).toBe(false);
     expect(repo.activeSessions.has('10000000-0000-4000-8000-000000000002')).toBe(false);
     const memberHash = repo.passwordHashes.get('10000000-0000-4000-8000-000000000002');
@@ -713,6 +777,7 @@ describe('MembersService permissions, PII masking & rules', () => {
     const serializedLogs = JSON.stringify(rawLogs);
     for (const secret of [
       'AttemptTakeover#2026',
+      'AttemptMemberReset#2026',
       'MemberReset#2026',
       'AdminReset#2026',
       memberHash ?? '',
@@ -720,5 +785,89 @@ describe('MembersService permissions, PII masking & rules', () => {
       expect(serializedAudit).not.toContain(secret);
       expect(serializedLogs).not.toContain(secret);
     }
+  });
+
+  it('enforces member avatar permissions, magic-byte/size validation, PII masking, 404 semantics, and clean audit_logs', async () => {
+    const { auditWriter, clock, rawLogs, service } = createHarness();
+    const targetId = '10000000-0000-4000-8000-000000000002';
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+    const pngDataUrl = `data:image/png;base64,${pngBytes.toString('base64')}`;
+
+    await expect(service.getMemberAvatar(NO_PERM_ACTOR, targetId)).rejects.toMatchObject({
+      httpStatus: 404,
+      code: 'NOT_FOUND',
+    });
+
+    await expect(
+      service.updateMemberAvatar({ actor: VIEW_ONLY_ACTOR, memberId: targetId, dataUrl: pngDataUrl }),
+    ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+
+    await expect(
+      service.removeMemberAvatar({ actor: VIEW_ONLY_ACTOR, memberId: targetId }),
+    ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+
+    await expect(
+      service.updateMemberAvatar({
+        actor: CREATE_NO_DETAIL_ACTOR,
+        memberId: targetId,
+        dataUrl: `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_IMAGE_FORMAT' });
+
+    const oversized = Buffer.concat([pngBytes, Buffer.alloc(MAX_IMAGE_BYTES + 1 - pngBytes.length, 0x01)]);
+    await expect(
+      service.updateMemberAvatar({
+        actor: CREATE_NO_DETAIL_ACTOR,
+        memberId: targetId,
+        dataUrl: `data:image/png;base64,${oversized.toString('base64')}`,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'IMAGE_TOO_LARGE' });
+
+    clock.advanceByMs(2_000);
+    const updated = await service.updateMemberAvatar({
+      actor: CREATE_NO_DETAIL_ACTOR,
+      memberId: targetId,
+      dataUrl: pngDataUrl,
+    });
+    expect(updated.member.avatarUrl).toBe(
+      `/api/v1/members/${targetId}/avatar?v=${clock.now().getTime()}`,
+    );
+    expect('studentId' in updated.member).toBe(false);
+    expect('email' in updated.member).toBe(false);
+
+    const binary = await service.getMemberAvatar(NO_PERM_ACTOR, targetId);
+    expect(binary.mimeType).toBe('image/png');
+    expect(binary.data.equals(pngBytes)).toBe(true);
+
+    const listed = await service.listMembers(VIEW_ONLY_ACTOR, { limit: 20 });
+    expect(listed.items.find((m) => m.id === targetId)?.avatarUrl).toBe(updated.member.avatarUrl);
+
+    const removed = await service.removeMemberAvatar({
+      actor: CREATE_NO_DETAIL_ACTOR,
+      memberId: targetId,
+    });
+    expect(removed.member.avatarUrl).toBeNull();
+    expect('studentId' in removed.member).toBe(false);
+    await expect(service.getMemberAvatar(NO_PERM_ACTOR, targetId)).rejects.toMatchObject({
+      httpStatus: 404,
+      code: 'NOT_FOUND',
+    });
+
+    expect(auditWriter.entries.map((e) => e.action)).toEqual([
+      'member.avatar_updated',
+      'member.avatar_removed',
+    ]);
+    expect(auditWriter.entries[0]?.detail).toEqual({
+      mimeType: 'image/png',
+      byteLength: pngBytes.byteLength,
+    });
+    expect(auditWriter.entries[1]?.detail).toEqual({ removed: true });
+
+    const serializedAudit = JSON.stringify(auditWriter.entries);
+    const serializedLogs = JSON.stringify(rawLogs);
+    expect(serializedAudit).not.toContain(pngDataUrl);
+    expect(serializedAudit).not.toContain('MSSV-SECRET-02');
+    expect(serializedAudit).not.toContain('beta@eiu.edu.vn');
+    expect(serializedLogs).not.toContain(pngDataUrl);
   });
 });

@@ -7,6 +7,7 @@ import {
   appSettings,
   auditLogs,
   boards,
+  clubAssets,
   columns,
   comments,
   departments,
@@ -108,13 +109,14 @@ describe('PostgreSQL schema & trigger invariants', () => {
     await pool?.end();
   });
 
-  it('has all 18 Drizzle domain tables synced with PostgreSQL', async () => {
+  it('has all 19 Drizzle domain tables synced with PostgreSQL', async () => {
     const db = createDb(pool);
     const tables = [
       profiles,
       sessions,
       loginAttempts,
       appSettings,
+      clubAssets,
       departments,
       memberDepartments,
       permissions,
@@ -138,8 +140,8 @@ describe('PostgreSQL schema & trigger invariants', () => {
       }),
     );
 
-    expect(tableNames).toHaveLength(18);
-    expect(new Set(tableNames).size).toBe(18);
+    expect(tableNames).toHaveLength(19);
+    expect(new Set(tableNames).size).toBe(19);
   });
 
   it('enforces APPEND_ONLY_TABLE, STUDENT_ID_IMMUTABLE, LAST_ACTIVE_ADMIN, and unique/check constraints', async () => {
@@ -319,6 +321,81 @@ describe('PostgreSQL schema & trigger invariants', () => {
         'sp_dept_dup',
         () => client.query(`INSERT INTO departments (name) VALUES ('  ban invariant test  ')`),
         { code: '23505' },
+      );
+
+      // 7. club_assets & profiles.avatar_* CHECK constraints (> 256 KB, SVG disallowed, pair invariant)
+      const validPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const oversizedBytes = Buffer.alloc(262_145, 0x01);
+
+      await expectPgError(
+        client,
+        'sp_asset_svg',
+        () =>
+          client.query(
+            `INSERT INTO club_assets (key, mime_type, data, updated_by) VALUES ('club_logo', 'image/svg+xml', $1, $2)`,
+            [validPng, admin1],
+          ),
+        { code: '23514' },
+      );
+      await expectPgError(
+        client,
+        'sp_asset_empty',
+        () =>
+          client.query(
+            `INSERT INTO club_assets (key, mime_type, data, updated_by) VALUES ('club_logo', 'image/png', $1, $2)`,
+            [Buffer.alloc(0), admin1],
+          ),
+        { code: '23514' },
+      );
+      await expectPgError(
+        client,
+        'sp_asset_big',
+        () =>
+          client.query(
+            `INSERT INTO club_assets (key, mime_type, data, updated_by) VALUES ('club_logo', 'image/png', $1, $2)`,
+            [oversizedBytes, admin1],
+          ),
+        { code: '23514' },
+      );
+      await client.query(
+        `INSERT INTO club_assets (key, mime_type, data, updated_by) VALUES ('club_logo', 'image/png', $1, $2)
+         ON CONFLICT (key) DO UPDATE SET mime_type = EXCLUDED.mime_type, data = EXCLUDED.data`,
+        [validPng, admin1],
+      );
+
+      await expectPgError(
+        client,
+        'sp_avatar_svg',
+        () =>
+          client.query(
+            `UPDATE profiles SET avatar_data = $1, avatar_mime = 'image/svg+xml' WHERE id = $2`,
+            [validPng, member1],
+          ),
+        { code: '23514' },
+      );
+      await expectPgError(
+        client,
+        'sp_avatar_big',
+        () =>
+          client.query(
+            `UPDATE profiles SET avatar_data = $1, avatar_mime = 'image/png' WHERE id = $2`,
+            [oversizedBytes, member1],
+          ),
+        { code: '23514' },
+      );
+      await expectPgError(
+        client,
+        'sp_avatar_pair',
+        () =>
+          client.query(
+            `UPDATE profiles SET avatar_data = $1, avatar_mime = NULL WHERE id = $2`,
+            [validPng, member1],
+          ),
+        { code: '23514' },
+      );
+      await client.query(
+        `UPDATE profiles SET avatar_data = $1, avatar_mime = 'image/webp', avatar_updated_at = now() WHERE id = $2`,
+        [validPng, member1],
       );
     });
   });

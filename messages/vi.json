@@ -164,7 +164,32 @@
     "passwordChangedBanner": "Mật khẩu của bạn đã được cập nhật và các phiên đăng nhập khác đã bị thu hồi.",
     "validationCurrentPassword": "Vui lòng nhập mật khẩu hiện tại.",
     "validationNewPassword": "Mật khẩu mới cần từ 8 đến 128 ký tự và không chỉ gồm khoảng trắng.",
-    "validationConfirmMismatch": "Mật khẩu xác nhận không khớp với mật khẩu mới."
+    "validationConfirmMismatch": "Mật khẩu xác nhận không khớp với mật khẩu mới.",
+    "avatarUpdatedToast": "Đã cập nhật ảnh đại diện.",
+    "avatarRemovedToast": "Đã xóa ảnh đại diện."
+  },
+  "media": {
+    "uploadPhoto": "Tải ảnh lên",
+    "changePhoto": "Đổi ảnh",
+    "uploadingPhoto": "Đang xử lý ảnh...",
+    "removePhoto": "Xóa ảnh",
+    "removingPhoto": "Đang xóa...",
+    "avatarHint": "Chấp nhận PNG, JPEG hoặc WEBP tối đa 256 KB. Ảnh lớn hơn 512px sẽ tự động thu nhỏ trước khi tải lên."
+  },
+  "branding": {
+    "modalTitle": "Logo CLB BEAM",
+    "modalSubtitle": "Logo hiển thị trên thanh điều hướng, trang đăng nhập và trang lỗi. Chỉ admin có quyền thay đổi.",
+    "logoAlt": "Logo CLB BEAM",
+    "customLogoActive": "Đang dùng logo tùy chỉnh",
+    "defaultBadgeActive": "Đang dùng huy hiệu BEAM mặc định",
+    "uploadHint": "Chấp nhận PNG, JPEG hoặc WEBP tối đa 256 KB (tự động nén & thu nhỏ nếu cần). Không hỗ trợ SVG.",
+    "uploadButton": "Tải logo mới",
+    "replaceButton": "Thay logo khác",
+    "uploading": "Đang cập nhật...",
+    "restoreDefaultButton": "Khôi phục mặc định",
+    "restoring": "Đang khôi phục...",
+    "updatedToast": "Đã cập nhật logo CLB.",
+    "removedToast": "Đã khôi phục logo mặc định của CLB."
   },
   "permissions": {
     "catalog": {
@@ -232,6 +257,8 @@
     "invalidColumnOrder": "Danh sách thứ tự cột không hợp lệ. Vui lòng tải lại board.",
     "invalidAssigneeIds": "Một hoặc nhiều người được giao không hợp lệ hoặc đã rời CLB.",
     "boardColumnMismatch": "Cột được chọn không thuộc board này.",
+    "invalidImageFormat": "Định dạng ảnh không được hỗ trợ. Chỉ chấp nhận PNG, JPEG hoặc WEBP (không nhận SVG).",
+    "imageTooLarge": "Ảnh vẫn vượt quá 256 KB sau khi nén. Vui lòng chọn ảnh nhỏ hơn.",
     "401": {
       "code": "401",
       "title": "Chưa đăng nhập",
@@ -372,7 +399,11 @@
     "validationPasswordMismatch": "Mật khẩu xác nhận không khớp với mật khẩu mới.",
     "resetPasswordSubmit": "Đặt lại mật khẩu",
     "resettingPassword": "Đang đặt lại...",
-    "passwordResetToast": "Đã đặt lại mật khẩu cho {name}."
+    "passwordResetToast": "Đã đặt lại mật khẩu cho {name}.",
+    "clubLogoButton": "Logo CLB",
+    "memberAvatarTitle": "Ảnh đại diện thành viên",
+    "avatarUpdatedToast": "Đã cập nhật ảnh đại diện của {name}.",
+    "avatarRemovedToast": "Đã xóa ảnh đại diện của {name}."
   },
   "departmentsAdmin": {
     "kicker": "Quản trị",
@@ -509,6 +540,8 @@
       "memberPasswordReset": "Đặt lại mật khẩu",
       "memberDeactivated": "Khóa tài khoản",
       "memberActivated": "Mở lại tài khoản",
+      "memberAvatarUpdated": "Cập nhật ảnh đại diện",
+      "memberAvatarRemoved": "Xóa ảnh đại diện",
       "departmentCreated": "Tạo ban",
       "departmentUpdated": "Đổi tên ban",
       "departmentDeleted": "Xóa ban",
@@ -520,7 +553,9 @@
       "remindersUpdated": "Cập nhật nhắc deadline",
       "boardCreated": "Tạo board",
       "boardUpdated": "Cập nhật board",
-      "boardArchived": "Lưu trữ board"
+      "boardArchived": "Lưu trữ board",
+      "brandingLogoUpdated": "Cập nhật logo CLB",
+      "brandingLogoRemoved": "Khôi phục logo CLB mặc định"
     }
   },
   "boards": {

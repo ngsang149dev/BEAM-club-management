@@ -165,6 +165,10 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(resolveAuditActionKey('board.updated')).toBe('boardUpdated');
     expect(resolveAuditActionKey('board.archived')).toBe('boardArchived');
     expect(resolveAuditActionKey('member.password_reset')).toBe('memberPasswordReset');
+    expect(resolveAuditActionKey('member.avatar_updated')).toBe('memberAvatarUpdated');
+    expect(resolveAuditActionKey('member.avatar_removed')).toBe('memberAvatarRemoved');
+    expect(resolveAuditActionKey('branding.logo_updated')).toBe('brandingLogoUpdated');
+    expect(resolveAuditActionKey('branding.logo_removed')).toBe('brandingLogoRemoved');
 
     const pwResetEntry: AuditLogDto = {
       ...ENTRY_PERM,
@@ -200,6 +204,37 @@ describe('AuditLogsView & S13 helpers', () => {
       data: { pages: [{ items: [boardEntry], meta: { nextCursor: null, limit: 20 } }] },
     });
     expect(renderAudit({ permissions: ['audit.view'], locale: 'en' })).toContain('Archived board');
+
+    const brandingEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      actor: { ...ENTRY_PERM.actor, avatarUrl: '/api/v1/members/u-actor/avatar?v=5' },
+      targetUser: null,
+      action: 'branding.logo_updated',
+      detail: {},
+    };
+    const avatarEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      action: 'member.avatar_removed',
+      detail: {},
+    };
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [brandingEntry, avatarEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const mediaAuditVi = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(mediaAuditVi).toContain('Cập nhật logo CLB');
+    expect(mediaAuditVi).toContain('Xóa ảnh đại diện');
+    expect(mediaAuditVi).toContain('src="/api/v1/members/u-actor/avatar?v=5"');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [brandingEntry, avatarEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const mediaAuditEn = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(mediaAuditEn).toContain('Updated club logo');
+    expect(mediaAuditEn).toContain('Removed member avatar');
   });
 
   it('renders ErrorState with requestId and maps INVALID_DATE_RANGE / 403 / INVALID_CURSOR cleanly', () => {

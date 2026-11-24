@@ -86,7 +86,9 @@ function resolveShellUser(
     return null;
   }
   return {
+    id: meData.profile.id,
     fullName: meData.profile.fullName,
+    avatarUrl: meData.profile.avatarUrl,
     roleLabel: isAdmin ? roleLabels.admin : roleLabels.member,
     isActive: meData.profile.isActive,
   };

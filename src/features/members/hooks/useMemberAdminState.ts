@@ -10,7 +10,9 @@ import {
   useCreateMemberMutation,
   useDeactivateMemberMutation,
   useMembersInfiniteQuery,
+  useRemoveMemberAvatarMutation,
   useResetMemberPasswordMutation,
+  useUpdateMemberAvatarMutation,
   useUpdateMemberMutation,
   type MemberListItem,
   type MembersFilterState,
@@ -39,6 +41,8 @@ function useMemberAdminMutations() {
     deactivateMutation: useDeactivateMemberMutation(),
     activateMutation: useActivateMemberMutation(),
     resetPasswordMutation: useResetMemberPasswordMutation(),
+    updateAvatarMutation: useUpdateMemberAvatarMutation(),
+    removeAvatarMutation: useRemoveMemberAvatarMutation(),
   };
 }
 
@@ -89,6 +93,41 @@ function buildAdminActionHandlers(params: {
   };
 }
 
+function buildAvatarActionHandlers(params: {
+  modalState: AdminModalState;
+  mutations: ReturnType<typeof useMemberAdminMutations>;
+  t: ReturnType<typeof useTranslations<'memberAdmin'>>;
+  setModalState: React.Dispatch<React.SetStateAction<AdminModalState>>;
+}) {
+  const { modalState, mutations, t, setModalState } = params;
+  const syncMember = (updated: MemberListItem) => {
+    setModalState((prev) =>
+      prev.kind === 'edit' && prev.member.id === updated.id
+        ? { ...prev, member: updated }
+        : prev
+    );
+  };
+
+  return {
+    clearAvatarErrors: () => {
+      mutations.updateAvatarMutation.reset();
+      mutations.removeAvatarMutation.reset();
+    },
+    submitUploadAvatar: async (dataUrl: string) => {
+      if (modalState.kind !== 'edit') return;
+      const res = await mutations.updateAvatarMutation.mutateAsync({ id: modalState.member.id, dataUrl });
+      syncMember(res.member);
+      toast.success(t('avatarUpdatedToast', { name: res.member.fullName }));
+    },
+    submitRemoveAvatar: async () => {
+      if (modalState.kind !== 'edit') return;
+      const res = await mutations.removeAvatarMutation.mutateAsync(modalState.member.id);
+      syncMember(res.member);
+      toast.success(t('avatarRemovedToast', { name: res.member.fullName }));
+    },
+  };
+}
+
 export function useMemberAdminState(allowed: boolean, canViewList: boolean) {
   const t = useTranslations('memberAdmin');
   const tErr = useTranslations('errors');
@@ -106,6 +145,8 @@ export function useMemberAdminState(allowed: boolean, canViewList: boolean) {
     mutations.deactivateMutation.reset();
     mutations.activateMutation.reset();
     mutations.resetPasswordMutation.reset();
+    mutations.updateAvatarMutation.reset();
+    mutations.removeAvatarMutation.reset();
     setModalState({ kind: 'closed' });
   };
 
@@ -115,6 +156,7 @@ export function useMemberAdminState(allowed: boolean, canViewList: boolean) {
   };
 
   const handlers = buildAdminActionHandlers({ modalState, mutations, t, tErr, onSuccess: handleSuccess });
+  const avatarHandlers = buildAvatarActionHandlers({ modalState, mutations, t, setModalState });
 
   return {
     filters,
@@ -127,5 +169,6 @@ export function useMemberAdminState(allowed: boolean, canViewList: boolean) {
     ...mutations,
     closeModal,
     ...handlers,
+    ...avatarHandlers,
   };
 }

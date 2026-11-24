@@ -1,89 +1,45 @@
 import { and, asc, count, eq, exists, gt, ilike, inArray, isNull, or, type SQL, sql } from 'drizzle-orm';
 import { departments, memberDepartments, profiles, sessions, userPermissions } from '@db/schema';
 import { badRequest, conflict } from '@/lib/errors';
-import type { PermissionCode } from '@/lib/permissions';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
-import { escapeLikePattern, type MemberCursor } from './policy';
+import { escapeLikePattern } from './policy';
+import type { CreateMemberParams, ListMembersParams, MemberAvatarRecord, MemberDepartmentRecord, MemberProfileRecord, MembersRepository, UpdateMemberParams } from './types';
 
-export interface MemberDepartmentRecord {
-  readonly id: string;
-  readonly name: string;
-}
+export type { CreateMemberParams, ListMembersParams, MemberAvatarRecord, MemberDepartmentRecord, MemberProfileRecord, MembersRepository, UpdateMemberParams };
 
-export interface MemberProfileRecord {
+const MEMBER_PROFILE_COLUMNS = {
+  id: profiles.id,
+  studentId: profiles.studentId,
+  email: profiles.email,
+  fullName: profiles.fullName,
+  avatarUpdatedAt: profiles.avatarUpdatedAt,
+  isAdmin: profiles.isAdmin,
+  isActive: profiles.isActive,
+  leftAt: profiles.leftAt,
+  locale: profiles.locale,
+  mustChangePassword: profiles.mustChangePassword,
+};
+
+interface SelectedMemberProfileRow {
   readonly id: string;
   readonly studentId: string;
   readonly email: string;
   readonly fullName: string;
+  readonly avatarUpdatedAt: Date | null;
   readonly isAdmin: boolean;
   readonly isActive: boolean;
   readonly leftAt: Date | null;
-  readonly locale: 'vi' | 'en';
+  readonly locale: string;
   readonly mustChangePassword: boolean;
-  readonly departments: readonly MemberDepartmentRecord[];
 }
-
-export interface ListMembersParams {
-  readonly q?: string;
-  readonly includeStudentIdSearch: boolean;
-  readonly departmentId?: string;
-  readonly isActive?: boolean;
-  readonly cursor?: MemberCursor;
-  readonly limit: number;
-}
-
-export interface CreateMemberParams {
-  readonly studentId: string;
-  readonly email: string;
-  readonly fullName: string;
-  readonly passwordHash: string;
-  readonly mustChangePassword: boolean;
-  readonly locale: 'vi' | 'en';
-  readonly departmentIds: readonly string[];
-  readonly defaultPermissions: readonly PermissionCode[];
-  readonly grantedBy: string;
-  readonly now: Date;
-}
-
-export interface UpdateMemberParams {
-  readonly id: string;
-  readonly email?: string;
-  readonly fullName?: string;
-  readonly locale?: 'vi' | 'en';
-  readonly departmentIds?: readonly string[];
-  readonly now: Date;
-}
-
-export interface MembersRepository {
-  listMembers(params: ListMembersParams): Promise<{ readonly rows: MemberProfileRecord[]; readonly hasMore: boolean }>;
-  findById(id: string, tx?: TransactionContext): Promise<MemberProfileRecord | null>;
-  lockAndFindById(id: string, tx: TransactionContext): Promise<MemberProfileRecord | null>;
-  findExistingDepartmentIds(ids: readonly string[], tx: TransactionContext): Promise<string[]>;
-  createMember(input: CreateMemberParams, tx: TransactionContext): Promise<MemberProfileRecord>;
-  updateMember(input: UpdateMemberParams, tx: TransactionContext): Promise<MemberProfileRecord | null>;
-  countActiveAdmins(tx: TransactionContext): Promise<number>;
-  deactivateMember(input: { readonly id: string; readonly leftAt: Date; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null>;
-  revokeAllActiveSessions(userId: string, now: Date, tx: TransactionContext): Promise<void>;
-  activateMember(input: { readonly id: string; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null>;
-  resetPasswordAndRevokeAllSessions(
-    input: { readonly userId: string; readonly passwordHash: string; readonly mustChangePassword: boolean; readonly now: Date },
-    tx: TransactionContext,
-  ): Promise<MemberProfileRecord | null>;
-}
-
-type ProfileRow = typeof profiles.$inferSelect;
 
 function extractPgErrorInfo(error: unknown): { code?: string; constraint?: string; hint?: string } {
   let cur: unknown = error;
   for (let i = 0; i < 3 && typeof cur === 'object' && cur !== null; i += 1) {
     const rec = cur as { code?: unknown; constraint?: unknown; hint?: unknown; cause?: unknown };
     if (typeof rec.code === 'string') {
-      return {
-        code: rec.code,
-        constraint: typeof rec.constraint === 'string' ? rec.constraint : undefined,
-        hint: typeof rec.hint === 'string' ? rec.hint : undefined,
-      };
+      return { code: rec.code, constraint: typeof rec.constraint === 'string' ? rec.constraint : undefined, hint: typeof rec.hint === 'string' ? rec.hint : undefined };
     }
     cur = rec.cause;
   }
@@ -102,27 +58,16 @@ function rethrowMemberWriteError(error: unknown): never {
   if (pgErr.code === '23503' && pgErr.constraint === 'member_departments_department_id_fkey') {
     throw badRequest('errors.invalidDepartmentIds', {}, 'INVALID_DEPARTMENT_IDS');
   }
-  if (pgErr.code === 'P0001' && pgErr.hint === 'LAST_ACTIVE_ADMIN') {
-    throw conflict('errors.lastActiveAdmin', {}, 'LAST_ACTIVE_ADMIN');
-  }
-  if (pgErr.code === 'P0001' && pgErr.hint === 'STUDENT_ID_IMMUTABLE') {
-    throw badRequest('errors.badRequest', {}, 'STUDENT_ID_IMMUTABLE');
-  }
+  if (pgErr.code === 'P0001' && pgErr.hint === 'LAST_ACTIVE_ADMIN') throw conflict('errors.lastActiveAdmin', {}, 'LAST_ACTIVE_ADMIN');
+  if (pgErr.code === 'P0001' && pgErr.hint === 'STUDENT_ID_IMMUTABLE') throw badRequest('errors.badRequest', {}, 'STUDENT_ID_IMMUTABLE');
   throw error;
 }
 
-function toMemberRecord(row: ProfileRow, deptList: readonly MemberDepartmentRecord[]): MemberProfileRecord {
+function toMemberRecord(row: SelectedMemberProfileRow, deptList: readonly MemberDepartmentRecord[]): MemberProfileRecord {
   return {
-    id: row.id,
-    studentId: row.studentId,
-    email: row.email,
-    fullName: row.fullName,
-    isAdmin: row.isAdmin,
-    isActive: row.isActive,
-    leftAt: row.leftAt,
-    locale: row.locale === 'en' ? 'en' : 'vi',
-    mustChangePassword: row.mustChangePassword,
-    departments: deptList,
+    id: row.id, studentId: row.studentId, email: row.email, fullName: row.fullName,
+    avatarUpdatedAt: row.avatarUpdatedAt, isAdmin: row.isAdmin, isActive: row.isActive,
+    leftAt: row.leftAt, locale: row.locale === 'en' ? 'en' : 'vi', mustChangePassword: row.mustChangePassword, departments: deptList,
   };
 }
 
@@ -137,11 +82,7 @@ function buildListConditions(db: DbExecutor, params: ListMembersParams): SQL | u
   const searchCond = buildSearchCondition(params.q, params.includeStudentIdSearch);
   if (searchCond) filters.push(searchCond);
   if (params.departmentId) {
-    filters.push(
-      exists(
-        db.select({ one: sql`1` }).from(memberDepartments).where(and(eq(memberDepartments.userId, profiles.id), eq(memberDepartments.departmentId, params.departmentId))),
-      ),
-    );
+    filters.push(exists(db.select({ one: sql`1` }).from(memberDepartments).where(and(eq(memberDepartments.userId, profiles.id), eq(memberDepartments.departmentId, params.departmentId)))));
   }
   if (params.isActive !== undefined) filters.push(eq(profiles.isActive, params.isActive));
   if (params.cursor) {
@@ -156,12 +97,7 @@ export class DrizzleMembersRepository implements MembersRepository {
   constructor(private readonly db: DbExecutor) {}
 
   async listMembers(params: ListMembersParams): Promise<{ readonly rows: MemberProfileRecord[]; readonly hasMore: boolean }> {
-    const fetched = await this.db
-      .select()
-      .from(profiles)
-      .where(buildListConditions(this.db, params))
-      .orderBy(asc(profiles.fullName), asc(profiles.id))
-      .limit(params.limit + 1);
+    const fetched = await this.db.select(MEMBER_PROFILE_COLUMNS).from(profiles).where(buildListConditions(this.db, params)).orderBy(asc(profiles.fullName), asc(profiles.id)).limit(params.limit + 1);
     const hasMore = fetched.length > params.limit;
     const pageRows = hasMore ? fetched.slice(0, params.limit) : fetched;
     const deptMap = await this.loadDepartmentsMap(pageRows.map((r) => r.id), this.db);
@@ -170,13 +106,22 @@ export class DrizzleMembersRepository implements MembersRepository {
 
   async findById(id: string, tx?: TransactionContext): Promise<MemberProfileRecord | null> {
     const executor = tx ?? this.db;
-    const rows = await executor.select().from(profiles).where(eq(profiles.id, id)).limit(1);
+    const rows = await executor.select(MEMBER_PROFILE_COLUMNS).from(profiles).where(eq(profiles.id, id)).limit(1);
     return rows[0] ? this.hydrateSingle(rows[0], executor) : null;
   }
 
   async lockAndFindById(id: string, tx: TransactionContext): Promise<MemberProfileRecord | null> {
-    const rows = await tx.select().from(profiles).where(eq(profiles.id, id)).for('update').limit(1);
+    const rows = await tx.select(MEMBER_PROFILE_COLUMNS).from(profiles).where(eq(profiles.id, id)).for('update').limit(1);
     return rows[0] ? this.hydrateSingle(rows[0], tx) : null;
+  }
+
+  async findAvatarById(id: string): Promise<MemberAvatarRecord | null> {
+    const rows = await this.db
+      .select({ id: profiles.id, avatarData: profiles.avatarData, avatarMime: profiles.avatarMime })
+      .from(profiles)
+      .where(eq(profiles.id, id))
+      .limit(1);
+    return rows[0] ?? null;
   }
 
   async findExistingDepartmentIds(ids: readonly string[], tx: TransactionContext): Promise<string[]> {
@@ -187,33 +132,17 @@ export class DrizzleMembersRepository implements MembersRepository {
 
   async createMember(input: CreateMemberParams, tx: TransactionContext): Promise<MemberProfileRecord> {
     try {
-      const [created] = await tx
-        .insert(profiles)
-        .values({
-          studentId: input.studentId,
-          email: input.email,
-          fullName: input.fullName,
-          passwordHash: input.passwordHash,
-          mustChangePassword: input.mustChangePassword,
-          locale: input.locale,
-          isAdmin: false,
-          isActive: true,
-          createdAt: input.now,
-          updatedAt: input.now,
-        })
-        .returning();
+      const [created] = await tx.insert(profiles).values({
+        studentId: input.studentId, email: input.email, fullName: input.fullName,
+        passwordHash: input.passwordHash, mustChangePassword: input.mustChangePassword,
+        locale: input.locale, isAdmin: false, isActive: true, createdAt: input.now, updatedAt: input.now,
+      }).returning(MEMBER_PROFILE_COLUMNS);
       if (!created) throw new Error('Failed to create member profile');
       await this.insertDepartments(created.id, input.departmentIds, input.now, tx);
       if (input.defaultPermissions.length > 0) {
-        await tx.insert(userPermissions).values(
-          input.defaultPermissions.map((permissionCode) => ({
-            userId: created.id,
-            permissionCode,
-            grantedBy: input.grantedBy,
-            grantedAt: input.now,
-            createdAt: input.now,
-          })),
-        );
+        await tx.insert(userPermissions).values(input.defaultPermissions.map((permissionCode) => ({
+          userId: created.id, permissionCode, grantedBy: input.grantedBy, grantedAt: input.now, createdAt: input.now,
+        })));
       }
       return this.hydrateSingle(created, tx);
     } catch (error) {
@@ -227,7 +156,7 @@ export class DrizzleMembersRepository implements MembersRepository {
       if (input.email !== undefined) patch.email = input.email;
       if (input.fullName !== undefined) patch.fullName = input.fullName;
       if (input.locale !== undefined) patch.locale = input.locale;
-      const [updated] = await tx.update(profiles).set(patch).where(eq(profiles.id, input.id)).returning();
+      const [updated] = await tx.update(profiles).set(patch).where(eq(profiles.id, input.id)).returning(MEMBER_PROFILE_COLUMNS);
       if (!updated) return null;
       if (input.departmentIds !== undefined) {
         await tx.delete(memberDepartments).where(eq(memberDepartments.userId, input.id));
@@ -261,11 +190,9 @@ export class DrizzleMembersRepository implements MembersRepository {
     tx: TransactionContext,
   ): Promise<MemberProfileRecord | null> {
     try {
-      const [updated] = await tx
-        .update(profiles)
+      const [updated] = await tx.update(profiles)
         .set({ passwordHash: input.passwordHash, mustChangePassword: input.mustChangePassword, updatedAt: input.now })
-        .where(eq(profiles.id, input.userId))
-        .returning();
+        .where(eq(profiles.id, input.userId)).returning(MEMBER_PROFILE_COLUMNS);
       if (!updated) return null;
       await this.revokeAllActiveSessions(input.userId, input.now, tx);
       return this.hydrateSingle(updated, tx);
@@ -274,16 +201,26 @@ export class DrizzleMembersRepository implements MembersRepository {
     }
   }
 
-  private async updateActiveState(
-    patch: { readonly id: string; readonly isActive: boolean; readonly leftAt: Date | null; readonly now: Date },
+  async updateAvatar(
+    input: { readonly id: string; readonly avatarData: Buffer; readonly avatarMime: string; readonly now: Date },
     tx: TransactionContext,
   ): Promise<MemberProfileRecord | null> {
+    const [updated] = await tx.update(profiles)
+      .set({ avatarData: input.avatarData, avatarMime: input.avatarMime, avatarUpdatedAt: input.now, updatedAt: input.now })
+      .where(eq(profiles.id, input.id)).returning(MEMBER_PROFILE_COLUMNS);
+    return updated ? this.hydrateSingle(updated, tx) : null;
+  }
+
+  async clearAvatar(input: { readonly id: string; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null> {
+    const [updated] = await tx.update(profiles)
+      .set({ avatarData: null, avatarMime: null, avatarUpdatedAt: null, updatedAt: input.now })
+      .where(eq(profiles.id, input.id)).returning(MEMBER_PROFILE_COLUMNS);
+    return updated ? this.hydrateSingle(updated, tx) : null;
+  }
+
+  private async updateActiveState(patch: { readonly id: string; readonly isActive: boolean; readonly leftAt: Date | null; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null> {
     try {
-      const [updated] = await tx
-        .update(profiles)
-        .set({ isActive: patch.isActive, leftAt: patch.leftAt, updatedAt: patch.now })
-        .where(eq(profiles.id, patch.id))
-        .returning();
+      const [updated] = await tx.update(profiles).set({ isActive: patch.isActive, leftAt: patch.leftAt, updatedAt: patch.now }).where(eq(profiles.id, patch.id)).returning(MEMBER_PROFILE_COLUMNS);
       return updated ? this.hydrateSingle(updated, tx) : null;
     } catch (error) {
       rethrowMemberWriteError(error);
@@ -295,7 +232,7 @@ export class DrizzleMembersRepository implements MembersRepository {
     await tx.insert(memberDepartments).values(departmentIds.map((departmentId) => ({ userId, departmentId, createdAt: now })));
   }
 
-  private async hydrateSingle(row: ProfileRow, executor: DbExecutor): Promise<MemberProfileRecord> {
+  private async hydrateSingle(row: SelectedMemberProfileRow, executor: DbExecutor): Promise<MemberProfileRecord> {
     const map = await this.loadDepartmentsMap([row.id], executor);
     return toMemberRecord(row, map.get(row.id) ?? []);
   }
@@ -303,12 +240,9 @@ export class DrizzleMembersRepository implements MembersRepository {
   private async loadDepartmentsMap(userIds: readonly string[], executor: DbExecutor): Promise<Map<string, MemberDepartmentRecord[]>> {
     const map = new Map<string, MemberDepartmentRecord[]>();
     if (userIds.length === 0) return map;
-    const rows = await executor
-      .select({ userId: memberDepartments.userId, id: departments.id, name: departments.name })
-      .from(memberDepartments)
-      .innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
-      .where(inArray(memberDepartments.userId, [...userIds]))
-      .orderBy(asc(departments.name), asc(departments.id));
+    const rows = await executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name })
+      .from(memberDepartments).innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
+      .where(inArray(memberDepartments.userId, [...userIds])).orderBy(asc(departments.name), asc(departments.id));
     for (const row of rows) {
       const list = map.get(row.userId);
       const dept = { id: row.id, name: row.name };

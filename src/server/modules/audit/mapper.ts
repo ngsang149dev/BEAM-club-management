@@ -1,3 +1,4 @@
+import { toMemberAvatarUrl } from '@/lib/media';
 import { redactLogMeta } from '@/server/shared/logger';
 import type { AuditLogRecord, AuditUserSummaryRecord } from './repository';
 
@@ -12,6 +13,7 @@ export interface AuditMemberPublicSummaryDto {
   readonly isActive: boolean;
   readonly leftAt: string | null;
   readonly departments: AuditDepartmentSummaryDto[];
+  readonly avatarUrl: string | null;
 }
 
 export interface AuditLogDto {
@@ -42,6 +44,7 @@ function toMemberPublicSummaryDto(
     isActive: record.isActive,
     leftAt: record.leftAt ? record.leftAt.toISOString() : null,
     departments: record.departments.map((dept) => ({ id: dept.id, name: dept.name })),
+    avatarUrl: toMemberAvatarUrl(record.id, record.avatarUpdatedAt),
   };
 }
 

@@ -81,7 +81,7 @@ describe('members policy & shared schemas', () => {
     expect(canViewMemberDetail(inactiveAdmin)).toBe(false);
   });
 
-  it('allows non-admin member.update only on non-admin targets when resetting passwords', () => {
+  it('allows only active admins to reset passwords (denies non-admin even with member.update)', () => {
     const manager: AuthActor = {
       id: 'u1',
       isActive: true,
@@ -94,22 +94,32 @@ describe('members policy & shared schemas', () => {
       isAdmin: true,
       permissions: [],
     };
+    const inactiveAdmin: AuthActor = {
+      id: 'u3',
+      isActive: false,
+      isAdmin: true,
+      permissions: [],
+    };
 
-    expect(() =>
-      assertCanResetMemberPassword(manager, { isAdmin: false }),
-    ).not.toThrow();
-    expect(() =>
-      assertCanResetMemberPassword(admin, { isAdmin: true }),
-    ).not.toThrow();
+    expect(() => assertCanResetMemberPassword(admin)).not.toThrow();
 
     try {
-      assertCanResetMemberPassword(manager, { isAdmin: true });
+      assertCanResetMemberPassword(manager);
       throw new Error('Expected AppError');
     } catch (error) {
       const appError = error as AppError;
       expect(appError.httpStatus).toBe(403);
       expect(appError.code).toBe('FORBIDDEN');
       expect(appError.details).toEqual({ requiresAdmin: true });
+    }
+
+    try {
+      assertCanResetMemberPassword(inactiveAdmin);
+      throw new Error('Expected AppError');
+    } catch (error) {
+      const appError = error as AppError;
+      expect(appError.httpStatus).toBe(401);
+      expect(appError.code).toBe('ACCOUNT_INACTIVE');
     }
   });
 

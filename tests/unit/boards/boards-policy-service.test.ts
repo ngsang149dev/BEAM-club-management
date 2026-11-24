@@ -53,7 +53,7 @@ class InMemoryBoardsRepository implements BoardsRepository {
       name: input.name,
       department: null,
       archivedAt: null,
-      createdBy: { id: input.createdBy, fullName: 'Creator', isActive: true, leftAt: null, departments: [] },
+      createdBy: { id: input.createdBy, fullName: 'Creator', avatarUpdatedAt: null, isActive: true, leftAt: null, departments: [] },
       createdAt: input.now,
       updatedAt: input.now,
     };
@@ -219,7 +219,7 @@ describe('boards policy & BoardsService', () => {
 
   it('enforces permissions, writes board audit_logs, and isolates hidden taskCount per viewer', async () => {
     const now = new Date('2026-11-24T05:00:00.000Z');
-    const creatorSummary = { id: ADMIN_ID, fullName: 'Admin', isActive: true, leftAt: null, departments: [] };
+    const creatorSummary = { id: ADMIN_ID, fullName: 'Admin', avatarUpdatedAt: null, isActive: true, leftAt: null, departments: [] };
     const hiddenTask: TaskRecord = {
       id: '60000000-0000-4000-8000-000000000001',
       boardId: BOARD_1,

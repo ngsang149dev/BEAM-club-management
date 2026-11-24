@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AppError } from '@/lib/errors';
+import { MAX_IMAGE_BYTES } from '@/lib/media';
 import type { PermissionCode } from '@/lib/permissions';
+import type { AuditLogEntry, AuditLogWriter } from '@/server/modules/audit';
 import {
   type AuthRepository,
   AuthService,
@@ -12,9 +14,11 @@ import { FakeClock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
 import { type Logger, type LogMeta, StructuredLogger } from '@/server/shared/logger';
 import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
+import type { TransactionContext, TransactionRunner } from '@/server/shared/transaction';
 
 class InMemoryAuthRepository implements AuthRepository {
   readonly profiles = new Map<string, ProfileWithDepartmentsRecord>();
+  readonly avatars = new Map<string, { data: Buffer; mimeType: string }>();
   readonly permissions = new Map<string, PermissionCode[]>();
   readonly sessions = new Map<string, SessionRecord>();
   readonly loginAttempts: Array<{
@@ -161,7 +165,54 @@ class InMemoryAuthRepository implements AuthRepository {
     }
     return updated;
   }
+
+  async updateUserAvatar(input: {
+    userId: string;
+    avatarData: Buffer;
+    avatarMime: string;
+    now: Date;
+  }): Promise<ProfileWithDepartmentsRecord | null> {
+    const existing = this.profiles.get(input.userId);
+    if (!existing) return null;
+    const updated: ProfileWithDepartmentsRecord = {
+      ...existing,
+      avatarUpdatedAt: input.now,
+    };
+    this.profiles.set(input.userId, updated);
+    this.avatars.set(input.userId, {
+      data: Buffer.from(input.avatarData),
+      mimeType: input.avatarMime,
+    });
+    return updated;
+  }
+
+  async clearUserAvatar(input: {
+    userId: string;
+    now: Date;
+  }): Promise<ProfileWithDepartmentsRecord | null> {
+    const existing = this.profiles.get(input.userId);
+    if (!existing) return null;
+    const updated: ProfileWithDepartmentsRecord = {
+      ...existing,
+      avatarUpdatedAt: null,
+    };
+    this.profiles.set(input.userId, updated);
+    this.avatars.delete(input.userId);
+    return updated;
+  }
 }
+
+class SpyAuditWriter implements AuditLogWriter {
+  readonly entries: AuditLogEntry[] = [];
+  async record(entry: AuditLogEntry): Promise<void> {
+    this.entries.push(entry);
+  }
+}
+
+const MOCK_TX_RUNNER: TransactionRunner = {
+  runInTransaction: async <T>(fn: (tx: TransactionContext) => Promise<T>) =>
+    fn({} as TransactionContext),
+};
 
 const TEST_CONFIG: Config = {
   nodeEnv: 'test',
@@ -185,6 +236,7 @@ beforeAll(async () => {
 
 function createTestHarness() {
   const repo = new InMemoryAuthRepository();
+  const auditWriter = new SpyAuditWriter();
   const clock = new FakeClock('2026-11-24T00:00:00.000Z');
   const rawLogs: string[] = [];
   const metaCaptures: LogMeta[] = [];
@@ -214,6 +266,7 @@ function createTestHarness() {
     fullName: 'Unit Member One',
     passwordHash: seedPasswordHash,
     mustChangePassword: false,
+    avatarUpdatedAt: null,
     isAdmin: false,
     isActive: true,
     leftAt: null,
@@ -229,6 +282,7 @@ function createTestHarness() {
     fullName: 'First Login User',
     passwordHash: seedPasswordHash,
     mustChangePassword: true,
+    avatarUpdatedAt: null,
     isAdmin: false,
     isActive: true,
     leftAt: null,
@@ -243,6 +297,7 @@ function createTestHarness() {
     fullName: 'Unset Password User',
     passwordHash: null,
     mustChangePassword: false,
+    avatarUpdatedAt: null,
     isAdmin: false,
     isActive: true,
     leftAt: null,
@@ -257,6 +312,7 @@ function createTestHarness() {
     fullName: 'Inactive Member',
     passwordHash: seedPasswordHash,
     mustChangePassword: false,
+    avatarUpdatedAt: null,
     isAdmin: false,
     isActive: false,
     leftAt: new Date('2026-10-01T00:00:00.000Z'),
@@ -266,11 +322,13 @@ function createTestHarness() {
 
   const service = new AuthService({
     authRepo: repo,
+    auditWriter,
+    transactionRunner: MOCK_TX_RUNNER,
     clock,
     config: TEST_CONFIG,
     logger,
   });
-  return { repo, clock, rawLogs, metaCaptures, service };
+  return { repo, auditWriter, clock, rawLogs, metaCaptures, service };
 }
 
 async function captureAppError(fn: () => Promise<unknown>): Promise<AppError> {
@@ -580,6 +638,74 @@ describe('AuthService', () => {
     expect(afterLogout.httpStatus).toBe(401);
 
     const serializedLogs = JSON.stringify(rawLogs);
+    expect(serializedLogs).not.toContain('MSSV-UNIT-001');
+    expect(serializedLogs).not.toContain('unit001@eiu.edu.vn');
+  });
+
+  it('updates and removes own avatar via updateMyAvatar/removeMyAvatar, validates image bytes, records audit_logs, and leaks zero binary/PII', async () => {
+    const { repo, auditWriter, clock, rawLogs, service } = createTestHarness();
+    const { rawToken } = await service.login({
+      studentId: 'MSSV-UNIT-001',
+      password: DEV_SEED_PASSWORD,
+      ip: '10.0.0.15',
+    });
+    const session = await service.authenticateSession(rawToken);
+    expect(session.profile.avatarUpdatedAt).toBeNull();
+
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+    const pngDataUrl = `data:image/png;base64,${pngBytes.toString('base64')}`;
+    const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`;
+    const oversized = Buffer.concat([pngBytes, Buffer.alloc(MAX_IMAGE_BYTES + 1 - pngBytes.length, 0x01)]);
+
+    await expect(
+      service.updateMyAvatar({ actor: { ...session.actor, isActive: false }, dataUrl: pngDataUrl }),
+    ).rejects.toMatchObject({ httpStatus: 401, code: 'ACCOUNT_INACTIVE' });
+
+    await expect(
+      service.updateMyAvatar({ actor: session.actor, dataUrl: svgDataUrl }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_IMAGE_FORMAT' });
+
+    await expect(
+      service.updateMyAvatar({
+        actor: session.actor,
+        dataUrl: `data:image/png;base64,${oversized.toString('base64')}`,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'IMAGE_TOO_LARGE' });
+
+    clock.advanceByMs(10_000);
+    const updatedMe = await service.updateMyAvatar({
+      actor: session.actor,
+      dataUrl: pngDataUrl,
+    });
+    expect(updatedMe.profile.avatarUrl).toBe(
+      `/api/v1/members/user-1/avatar?v=${clock.now().getTime()}`,
+    );
+    expect(repo.avatars.get('user-1')?.mimeType).toBe('image/png');
+
+    const meAfterUpload = await service.getMe(rawToken);
+    expect(meAfterUpload.response.profile.avatarUrl).toBe(updatedMe.profile.avatarUrl);
+
+    clock.advanceByMs(5_000);
+    const removedMe = await service.removeMyAvatar({ actor: session.actor });
+    expect(removedMe.profile.avatarUrl).toBeNull();
+    expect(repo.avatars.has('user-1')).toBe(false);
+
+    expect(auditWriter.entries.map((e) => e.action)).toEqual([
+      'member.avatar_updated',
+      'member.avatar_removed',
+    ]);
+    expect(auditWriter.entries[0]?.detail).toEqual({
+      mimeType: 'image/png',
+      byteLength: pngBytes.byteLength,
+    });
+    expect(auditWriter.entries[1]?.detail).toEqual({ removed: true });
+
+    const serializedAudit = JSON.stringify(auditWriter.entries);
+    const serializedLogs = JSON.stringify(rawLogs);
+    expect(serializedAudit).not.toContain(pngDataUrl);
+    expect(serializedAudit).not.toContain('MSSV-UNIT-001');
+    expect(serializedAudit).not.toContain('unit001@eiu.edu.vn');
+    expect(serializedLogs).not.toContain(pngDataUrl);
     expect(serializedLogs).not.toContain('MSSV-UNIT-001');
     expect(serializedLogs).not.toContain('unit001@eiu.edu.vn');
   });

@@ -4,19 +4,6 @@ import { useTranslations } from 'next-intl';
 import type { DepartmentDto } from '@/features/departments/hooks/useDepartments';
 import type { MemberStatusFilter, MembersFilterState } from '../hooks/useMembers';
 
-export function getMemberInitials(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  const first = parts.at(0);
-  if (!first) {
-    return 'BM';
-  }
-  const last = parts.at(-1);
-  if (parts.length === 1 || !last) {
-    return first.slice(0, 2).toUpperCase();
-  }
-  return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
-}
-
 export interface MembersToolbarProps {
   filters: MembersFilterState;
   departments: DepartmentDto[];

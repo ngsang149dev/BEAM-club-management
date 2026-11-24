@@ -25,7 +25,7 @@ Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống qu�
 
 ---
 
-## 2. Sơ đồ ERD (18 bảng miền)
+## 2. Sơ đồ ERD (19 bảng miền)
 
 ```mermaid
 erDiagram
@@ -36,6 +36,9 @@ erDiagram
         text full_name
         text password_hash "NULL"
         boolean must_change_password
+        bytea avatar_data "NULL <= 256KB"
+        text avatar_mime "NULL"
+        timestamptz avatar_updated_at "NULL"
         boolean is_admin
         boolean is_active
         timestamptz left_at
@@ -67,6 +70,15 @@ erDiagram
     APP_SETTINGS {
         text key PK
         jsonb value
+        uuid updated_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    CLUB_ASSETS {
+        text key PK
+        text mime_type
+        bytea data "<= 256KB"
         uuid updated_by FK
         timestamptz created_at
         timestamptz updated_at
@@ -224,9 +236,10 @@ erDiagram
     TASK_EVENTS ||--o{ TASK_EVENTS : "reverts"
     TASKS ||--o{ REMINDERS : "triggers"
     PROFILES ||--o{ REMINDERS : "notified_by"
+    PROFILES ||--o{ CLUB_ASSETS : "updates_asset"
 ```
 
-> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong 18 bảng miền nghiệp vụ. `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
+> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong 19 bảng miền nghiệp vụ. `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
 
 ---
 
@@ -243,6 +256,9 @@ Lưu danh tính nội bộ, trạng thái hoạt động, cờ admin và tùy ch
 | `full_name` | `text` | NO | — | Hiển thị ở board/task/comment |
 | `password_hash` | `text` | YES | `NULL` | Hash `scrypt$N$r$p$salt$hash`; không bao giờ xuất ra API/log |
 | `must_change_password` | `boolean` | NO | `false` | Bật `true` khi mới tạo hoặc được Admin đặt lại mật khẩu |
+| `avatar_data` | `bytea` | YES | `NULL` | Ảnh đại diện nhị phân PNG/JPEG/WEBP (`<= 262.144 byte`) |
+| `avatar_mime` | `text` | YES | `NULL` | `'image/png' \| 'image/jpeg' \| 'image/webp'` (khớp cặp với `avatar_data`) |
+| `avatar_updated_at` | `timestamptz` | YES | `NULL` | Mốc cập nhật ảnh để sinh cache-bust `avatarUrl` |
 | `is_admin` | `boolean` | NO | `false` | Toàn quyền + quản trị quyền/admin |
 | `is_active` | `boolean` | NO | `true` | `false` = đã rời CLB (`"(đã rời)"`) |
 | `left_at` | `timestamptz` | YES | `NULL` | Mốc đánh dấu rời CLB |
@@ -283,6 +299,18 @@ Cấu hình toàn hệ thống (ví dụ mốc nhắc deadline `'reminders'`).
 |---|---|---|---|---|
 | `key` | `text` | NO | — | `PRIMARY KEY` |
 | `value` | `jsonb` | NO | — | Payload cấu hình JSON |
+| `updated_by` | `uuid` | YES | `NULL` | `FK -> profiles(id) ON DELETE RESTRICT` |
+| `created_at` | `timestamptz` | NO | `now()` | UTC |
+| `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
+
+### 3.4a `club_assets` (Mutable)
+Lưu tài sản nhận diện CLB dạng nhị phân an toàn (ví dụ key `'club_logo'`), tối đa `256 KB`.
+
+| Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
+|---|---|---|---|---|
+| `key` | `text` | NO | — | `PRIMARY KEY` (vd. `'club_logo'`) |
+| `mime_type` | `text` | NO | — | `CHECK (mime_type IN ('image/png', 'image/jpeg', 'image/webp'))` |
+| `data` | `bytea` | NO | — | `CHECK (octet_length(data) BETWEEN 1 AND 262144)` |
 | `updated_by` | `uuid` | YES | `NULL` | `FK -> profiles(id) ON DELETE RESTRICT` |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |

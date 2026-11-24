@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import { ErrorState } from '@/components/ErrorState';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { isApiClientError, type components } from '@/features/shared/api/client';
@@ -11,12 +12,19 @@ import type { AppLocale } from '@/i18n/locale';
 import {
   useLogoutMutation,
   useMeQuery,
+  useRemoveMyAvatarMutation,
   useSessionQuery,
   useUpdateLocaleMutation,
+  useUpdateMyAvatarMutation,
   type SessionInfoResponse,
 } from '../hooks/useAuth';
 import { ChangePasswordCard } from './ChangePasswordCard';
-import { ProfilePermissionsCard, ProfileSessionCard } from './ProfileSideCards';
+import {
+  ProfileContactAndDepartments,
+  ProfileHeroSection,
+  ProfilePermissionsCard,
+  ProfileSessionCard,
+} from './ProfileSideCards';
 
 type MemberDetail = components['schemas']['MemberDetail'];
 
@@ -28,86 +36,37 @@ export interface ProfileContentProps {
   localeError?: boolean;
   forceChangePasswordPrompt?: boolean;
   passwordChanged?: boolean;
+  avatarBusy?: boolean;
+  avatarError?: unknown;
+  onUploadAvatar?: (dataUrl: string) => Promise<unknown> | void;
+  onRemoveAvatar?: () => Promise<unknown> | void;
+  onClearAvatarError?: () => void;
   onPasswordChanged?: () => void;
   onClearPasswordChanged?: () => void;
   onSignOut: () => void;
   onLocaleChange: (locale: AppLocale) => unknown | Promise<unknown>;
 }
 
-function getInitial(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/);
-  return (parts[parts.length - 1] ?? '?').slice(0, 1).toUpperCase();
-}
-
-function ProfileHeroSection({ profile }: { profile: MemberDetail }) {
-  const tProfile = useTranslations('profile');
-  const tMember = useTranslations('member');
-  return (
-    <div className="profile-hero">
-      <span className={`ui-avatar profile-avatar${profile.isActive ? '' : ' is-out'}`} aria-hidden="true">
-        {getInitial(profile.fullName)}
-      </span>
-      <div>
-        <h2>
-          {profile.fullName}
-          {profile.isActive ? null : <span className="app-user-left"> {tMember('leftBadge')}</span>}
-        </h2>
-        <div className="profile-hero-meta">
-          <span className={`role-badge${profile.isAdmin ? ' is-admin' : ''}`}>
-            {profile.isAdmin ? tProfile('roleAdmin') : tProfile('roleMember')}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProfileContactAndDepartments({ profile }: { profile: MemberDetail }) {
-  const tProfile = useTranslations('profile');
-  return (
-    <>
-      <div className="profile-section">
-        <h3>{tProfile('contactTitle')}</h3>
-        <div className="profile-fields">
-          <div className="profile-field">
-            <span>{tProfile('studentIdLabel')}</span>
-            <b className="profile-mono">{profile.studentId}</b>
-            <span className="profile-lock">{tProfile('onlyYouAndAdmins')}</span>
-          </div>
-          <div className="profile-field">
-            <span>{tProfile('emailLabel')}</span>
-            <b>{profile.email}</b>
-            <span className="profile-lock">{tProfile('onlyYouAndAdmins')}</span>
-          </div>
-        </div>
-      </div>
-      <div className="profile-section">
-        <h3>{tProfile('departmentsTitle')}</h3>
-        {profile.departments.length > 0 ? (
-          <div className="profile-depts">
-            {profile.departments.map((dept) => (
-              <span key={dept.id} className="ui-chip">{dept.name}</span>
-            ))}
-          </div>
-        ) : (
-          <p className="profile-note">{tProfile('departmentsEmpty')}</p>
-        )}
-        <p className="profile-note">{tProfile('departmentsManagedByAdmin')}</p>
-      </div>
-    </>
-  );
-}
-
 function ProfileMainColumn({
   profile,
   forceChangePasswordPrompt = false,
   passwordChanged,
+  avatarBusy,
+  avatarError,
+  onUploadAvatar,
+  onRemoveAvatar,
+  onClearAvatarError,
   onPasswordChanged,
   onClearPasswordChanged,
 }: {
   profile: MemberDetail;
   forceChangePasswordPrompt?: boolean;
   passwordChanged?: boolean;
+  avatarBusy?: boolean;
+  avatarError?: unknown;
+  onUploadAvatar?: (dataUrl: string) => Promise<unknown> | void;
+  onRemoveAvatar?: () => Promise<unknown> | void;
+  onClearAvatarError?: () => void;
   onPasswordChanged?: () => void;
   onClearPasswordChanged?: () => void;
 }) {
@@ -116,7 +75,14 @@ function ProfileMainColumn({
 
   return (
     <section className={`profile-main${isPasswordPriority ? ' is-password-priority' : ''}`}>
-      <ProfileHeroSection profile={profile} />
+      <ProfileHeroSection
+        profile={profile}
+        avatarBusy={avatarBusy}
+        avatarError={avatarError}
+        onUploadAvatar={onUploadAvatar}
+        onRemoveAvatar={onRemoveAvatar}
+        onClearAvatarError={onClearAvatarError}
+      />
       <ProfileContactAndDepartments profile={profile} />
       <ChangePasswordCard
         mustChangePassword={profile.mustChangePassword}
@@ -137,6 +103,11 @@ export function ProfileContent({
   localeError = false,
   forceChangePasswordPrompt = false,
   passwordChanged,
+  avatarBusy,
+  avatarError,
+  onUploadAvatar,
+  onRemoveAvatar,
+  onClearAvatarError,
   onPasswordChanged,
   onClearPasswordChanged,
   onSignOut,
@@ -154,6 +125,11 @@ export function ProfileContent({
           profile={profile}
           forceChangePasswordPrompt={forceChangePasswordPrompt}
           passwordChanged={passwordChanged}
+          avatarBusy={avatarBusy}
+          avatarError={avatarError}
+          onUploadAvatar={onUploadAvatar}
+          onRemoveAvatar={onRemoveAvatar}
+          onClearAvatarError={onClearAvatarError}
           onPasswordChanged={onPasswordChanged}
           onClearPasswordChanged={onClearPasswordChanged}
         />
@@ -221,11 +197,14 @@ function ProfileContentWithSearchParams(props: ProfileContentProps) {
 
 export function ProfileView() {
   const tCommon = useTranslations('common');
+  const tProfile = useTranslations('profile');
   const [passwordChanged, setPasswordChanged] = useState(false);
   const meQuery = useMeQuery();
   const sessionQuery = useSessionQuery();
   const logoutMutation = useLogoutMutation();
   const updateLocaleMutation = useUpdateLocaleMutation();
+  const updateAvatarMutation = useUpdateMyAvatarMutation();
+  const removeAvatarMutation = useRemoveMyAvatarMutation();
 
   const isMeUnauthorized = isApiClientError(meQuery.error) && meQuery.error.status === 401;
   if (meQuery.isPending || isMeUnauthorized) {
@@ -243,6 +222,20 @@ export function ProfileView() {
     isSigningOut: logoutMutation.isPending,
     localeError: updateLocaleMutation.isError,
     passwordChanged,
+    avatarBusy: updateAvatarMutation.isPending || removeAvatarMutation.isPending,
+    avatarError: updateAvatarMutation.error ?? removeAvatarMutation.error,
+    onUploadAvatar: async (dataUrl) => {
+      await updateAvatarMutation.mutateAsync({ dataUrl });
+      toast.success(tProfile('avatarUpdatedToast'));
+    },
+    onRemoveAvatar: async () => {
+      await removeAvatarMutation.mutateAsync();
+      toast.success(tProfile('avatarRemovedToast'));
+    },
+    onClearAvatarError: () => {
+      updateAvatarMutation.reset();
+      removeAvatarMutation.reset();
+    },
     onPasswordChanged: () => setPasswordChanged(true),
     onClearPasswordChanged: () => setPasswordChanged(false),
     onSignOut: () => logoutMutation.mutate(),

@@ -140,6 +140,7 @@ describe('audit policy & AuditService', () => {
         actor: {
           id: ACTOR_ID,
           fullName: 'Audit Viewer',
+          avatarUpdatedAt: new Date('2026-11-24T09:00:00.000Z'),
           isActive: true,
           leftAt: null,
           departments: [{ id: '20000000-0000-4000-8000-000000000001', name: 'Tech' }],
@@ -147,6 +148,7 @@ describe('audit policy & AuditService', () => {
         targetUser: {
           id: TARGET_ID,
           fullName: 'Former Member',
+          avatarUpdatedAt: null,
           isActive: false,
           leftAt: new Date('2026-11-20T00:00:00.000Z'),
           departments: [],
@@ -192,15 +194,20 @@ describe('audit policy & AuditService', () => {
 
     const item = page.items[0]!;
     expect(Object.keys(item.actor).sort()).toEqual([
+      'avatarUrl',
       'departments',
       'fullName',
       'id',
       'isActive',
       'leftAt',
     ]);
+    expect(item.actor.avatarUrl).toBe(
+      `/api/v1/members/${ACTOR_ID}/avatar?v=${new Date('2026-11-24T09:00:00.000Z').getTime()}`,
+    );
     expect(item.targetUser).toMatchObject({
       id: TARGET_ID,
       fullName: 'Former Member',
+      avatarUrl: null,
       isActive: false,
       leftAt: '2026-11-20T00:00:00.000Z',
       departments: [],

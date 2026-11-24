@@ -58,7 +58,7 @@ Trạng thái: Đã duyệt bởi chủ dự án
   2. **Chính sách mật khẩu dùng chung (`src/lib/auth.ts`):** Mật khẩu mới tối thiểu `8`, tối đa `128` ký tự và không chấp nhận toàn khoảng trắng. Không ghi mật khẩu thô hay `password_hash` vào API DTO, URL, `audit_logs`, `task_events`, email nhắc hoặc `Logger` (`passwordhash` thêm vào `SENSITIVE_KEYS`).
   3. **Mật khẩu ban đầu khi tạo thành viên (`POST /api/v1/members`, `S09`):** Cho phép truyền `initialPassword` (`8..128`); nếu API bỏ trống sẽ dùng `Config.defaultInitialPassword` (`DEFAULT_INITIAL_PASSWORD` từ env; ở môi trường non-production mặc định `'BeamDev@2026'`, ở `production` bắt buộc cấu hình hoặc nhập tay), đồng thời đặt `must_change_password = true`. Seed dev (`db/seed.sql`) gán sẵn hash cho `'BeamDev@2026'`.
   4. **Tự đổi mật khẩu (`POST /api/v1/me/password`, `S08`):** Yêu cầu `currentPassword` và `newPassword`. Trả **`400 INVALID_CURRENT_PASSWORD`** nếu sai mật khẩu hiện tại (không dùng `401` để tránh cưỡng chế đăng xuất), thu hồi mọi `sessions` khác nhưng giữ nguyên session hiện tại, và tắt `must_change_password = false`. Khi đăng nhập lần đầu (`mustChangePassword = true`) mà không có `returnTo` tường minh, giao diện điều hướng tới `/profile?changePassword=1`.
-  5. **Đặt lại mật khẩu (`POST /api/v1/members/{id}/reset-password`, `S09`):** Yêu cầu `member.update` hoặc `is_admin`. **Nếu tài khoản đích là `is_admin = true` mà người thao tác không phải Admin (`!actor.isAdmin`), chặn `403 FORBIDDEN`.** Đặt lại `password_hash`, bật `must_change_password = true`, thu hồi toàn bộ `sessions` đang mở của mục tiêu và ghi `audit_logs` (`action = 'member.password_reset'`) không kèm mật khẩu/hash.
+  5. **Đặt lại mật khẩu (`POST /api/v1/members/{id}/reset-password`, `S09`):** **Chỉ Admin (`is_admin = true`) mới được đặt lại mật khẩu** cho tài khoản khác theo xác nhận bổ sung của chủ dự án (`2026-11-24`); mọi tài khoản không phải Admin (kể cả có `member.update`) bị chặn `403 FORBIDDEN`. Đặt lại `password_hash`, bật `must_change_password = true`, thu hồi toàn bộ `sessions` đang mở của mục tiêu và ghi `audit_logs` (`action = 'member.password_reset'`) không kèm mật khẩu/hash.
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm trên `docs/ERD.md`, `db/migrations/0002_passwords.sql`, `docs/openapi.yaml` (`MemberDetail.mustChangePassword`, `LoginRequest.password`, `CreateMemberRequest.initialPassword`, `POST /me/password`, `POST /members/{id}/reset-password`).
 - **Trạng thái:** Đã duyệt bởi chủ dự án (`1. Duyệt / 2. Duyệt`, 2026-11-24).
 
@@ -77,3 +77,19 @@ Trạng thái: Đã duyệt bởi chủ dự án
   5. **Thứ tự ưu tiên (`A5`):** Hoàn tất merge `CR-01` -> triển khai **`CR-02`** (Logo CLB & Avatar thành viên) -> **`CR-03`** (Giao task theo Ban & Thông báo) -> **`CR-04`** (Kho lưu trữ Archive, gộp/nâng cấp phần Thùng rác `S15` từ `E7A`).
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm cột `purged_at` (khi mở `CR-04`), cấu hình `app_settings('archive_retention')`, bổ sung đường dẫn `/archive` & API purge/retention mới; `HANDOFF Q39` cần ghi chú nâng cấp từ `CR-04` khi bắt đầu item.
 - **Trạng thái:** Đã duyệt phương án bởi chủ dự án (`A1`–`A5`, 2026-11-24); xếp lịch làm sau `CR-02` và `CR-03`.
+
+---
+
+## Quyết định `CR-02` — Logo CLB & Ảnh đại diện thành viên (`A1`, `A5`) — 2026-11-24
+
+- **Ngữ cảnh:** Bổ sung khả năng nhận diện thương hiệu (Admin đổi Logo CLB) và cá nhân hóa thành viên (ảnh đại diện ở `S08`, `S09`, danh bạ, thẻ task), tự động hiển thị chữ cái đầu với bảng màu đa sắc đồng nhất khi thành viên chưa tải ảnh.
+- **Quyết định kỹ thuật:**
+  1. **Lưu trữ trong PostgreSQL `bytea` (`0003_branding_and_avatars.sql`):**
+     - Tạo bảng `club_assets (key PK, mime_type, data bytea, updated_by, created_at, updated_at)` lưu tài nguyên `'club_logo'`.
+     - Thêm 3 cột cộng thêm trên `profiles`: `avatar_data bytea NULL`, `avatar_mime text NULL`, `avatar_updated_at timestamptz NULL`.
+     - Ràng buộc `CHECK` tại CSDL: kích thước mỗi ảnh `<= 262.144 byte` (`256 KB`), chỉ cho phép `image/png`, `image/jpeg`, `image/webp`.
+  2. **Chống XSS & kiểm tra định dạng phía máy chủ (`src/server/shared/media.ts`):** Cấm tuyệt đối SVG/XML/HTML; giải mã base64 từ JSON `{ dataUrl }` (`ImageUploadRequest`), kiểm tra kích thước `<= 256 KB` và đối chiếu **magic bytes** thực tế (PNG/JPEG/WEBP) khớp với MIME khai báo. Khi trả ảnh nhị phân (`GET /branding/logo`, `GET /members/{id}/avatar`), luôn gắn header `X-Content-Type-Options: nosniff` và `Content-Security-Policy: default-src 'none'; sandbox`.
+  3. **Hiệu năng danh sách (`avatarUrl`):** Các truy vấn danh sách thành viên/task/board/audit chỉ đọc `avatar_updated_at` (không đọc `avatar_data bytea`) để sinh `avatarUrl` có tham số phiên bản (`?v=<epoch_ms>`) hoặc `null`. Khi không có ảnh, UI dựng chữ cái đầu tên + màu nền trích xuất từ bảng `AVATAR_PALETTE` (`src/lib/media.ts`) theo hash ổn định.
+  4. **Phân quyền & dấu vết:** Đọc Logo công khai (để hiện ở `S01` trước đăng nhập), chỉ **Admin** được sửa/xóa Logo (`PUT/DELETE /branding/logo`); mọi tài khoản active tự đổi/xóa ảnh cá nhân (`PUT/DELETE /me/avatar`); `member.update` hoặc Admin đổi/xóa ảnh cho thành viên (`PUT/DELETE /members/{id}/avatar`). Mọi cập nhật/xóa ghi `audit_logs` (`branding.logo_updated`, `branding.logo_removed`, `member.avatar_updated`, `member.avatar_removed`) chỉ kèm `mimeType`/`byteLength`, tuyệt đối không ghi dữ liệu ảnh hoặc PII.
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm `docs/ERD.md` (19 bảng miền), `db/migrations/0003_branding_and_avatars.sql`, `docs/openapi.yaml`.
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`2026-11-24`).

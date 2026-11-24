@@ -23,6 +23,7 @@ export {
   DrizzleMembersRepository,
   type CreateMemberParams,
   type ListMembersParams,
+  type MemberAvatarRecord,
   type MemberDepartmentRecord,
   type MemberProfileRecord,
   type MembersRepository,
@@ -31,5 +32,7 @@ export {
 export {
   MembersService,
   type MembersServiceDeps,
+  type RemoveMemberAvatarCommand,
   type ResetMemberPasswordCommand,
+  type UpdateMemberAvatarCommand,
 } from './service';

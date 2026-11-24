@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { getMemberInitials } from '@/features/members/components/MembersToolbar';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { isMemberDetail, type MemberListItem } from '@/features/members/hooks/useMembers';
 
 export interface PermissionsMemberListProps {
@@ -60,9 +60,12 @@ function PermissionMemberButton({
 
   return (
     <button type="button" className={buttonClass} aria-pressed={isSelected} onClick={onSelect}>
-      <span className={member.isActive ? 'ui-avatar' : 'ui-avatar is-out'} aria-hidden="true">
-        {getMemberInitials(member.fullName)}
-      </span>
+      <MemberAvatar
+        memberId={member.id}
+        fullName={member.fullName}
+        avatarUrl={member.avatarUrl}
+        isActive={member.isActive}
+      />
       <span className="perm-person-text">
         <b>
           {member.fullName}

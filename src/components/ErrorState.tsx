@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ClubLogo } from './ClubLogo';
 
 export type ErrorVariant =
   | '401'
@@ -74,12 +75,7 @@ function FullPageErrorState({
     <div className="err-shell" data-component="ErrorState">
       {brandName ? (
         <header className="err-top">
-          <span className="ui-logo" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-            <i />
-          </span>
+          <ClubLogo alt="" />
           <b>{brandName}</b>
         </header>
       ) : null}
