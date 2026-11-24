@@ -1637,19 +1637,20 @@ svg {
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: 18px;
+  align-items: start;
 }
 
 @media (min-width: 960px) {
   .profile-grid {
-    grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
+    grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.9fr);
   }
 }
 
 .profile-main,
 .profile-side {
   display: grid;
-  gap: 14px;
+  gap: 18px;
   align-content: start;
 }
 
@@ -1664,7 +1665,7 @@ svg {
 .profile-hero,
 .profile-section,
 .profile-card {
-  padding: 18px;
+  padding: 20px;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
   background: var(--surface);
@@ -1924,7 +1925,30 @@ svg {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 10px 12px;
+}
+
+.directory-toolbar .ui-input,
+.directory-toolbar .ui-select,
+.directory-toolbar .ui-btn {
+  height: 40px;
+  min-height: 40px;
+}
+
+.directory-toolbar .ui-segmented {
+  height: 40px;
+  align-items: stretch;
+}
+
+.directory-toolbar .ui-seg-btn {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+}
+
+.directory-toolbar .ui-check-inline {
+  min-height: 40px;
+  padding: 0 4px;
 }
 
 .directory-search {
@@ -2004,7 +2028,20 @@ svg {
 
 .directory-list-card {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.directory-list-card .ui-table thead th:first-child {
+  border-top-left-radius: 8.5px;
+}
+
+.directory-list-card .ui-table thead th:last-child {
+  border-top-right-radius: 8.5px;
+}
+
+.directory-list-card .directory-load-more {
+  border-bottom-left-radius: 8.5px;
+  border-bottom-right-radius: 8.5px;
 }
 
 .directory-table-wrap {
@@ -2566,15 +2603,32 @@ svg {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+}
+
+.perm-self-guard-hint {
+  margin-top: 6px;
+  font-weight: 500;
+  color: var(--ink-3);
 }
 
 .perm-groups {
   display: grid;
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+
+@media (min-width: 760px) {
+  .perm-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .perm-group {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
   background: var(--surface);
@@ -2586,7 +2640,7 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 11px 16px;
   border-bottom: 1.5px solid var(--ink);
   background: var(--paper-2);
 }
@@ -2608,7 +2662,7 @@ svg {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 9px 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line-2);
   cursor: pointer;
 }
@@ -2623,7 +2677,7 @@ svg {
 
 .perm-row-text {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
 .perm-row-text b {
@@ -2645,7 +2699,7 @@ svg {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
   background: var(--surface);
@@ -2653,23 +2707,23 @@ svg {
 }
 
 .perm-effective {
-  flex: 1 1 240px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
   min-width: 0;
-  display: grid;
-  gap: 2px;
 }
 
-.perm-effective b {
-  font-size: 12.5px;
-}
-
-.perm-effective span {
+.perm-effective-badge {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 700;
+  background: var(--paper-2);
+}
+
+.perm-unsaved-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pink-deep);
 }
 
 .perm-save-actions {
@@ -2834,18 +2888,22 @@ svg {
   box-shadow: 0 0 0 3px var(--pink-glow);
 }
 
-.board-grid {
+.board-grid,
+.boards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+  align-items: stretch;
 }
 
 .board-tile,
 .board-card {
   display: grid;
-  gap: 10px;
-  align-content: space-between;
-  padding: 16px;
+  grid-template-rows: auto 1fr auto;
+  gap: 12px;
+  height: 100%;
+  align-content: stretch;
+  padding: 18px;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
   background: var(--surface);
@@ -2884,6 +2942,10 @@ svg {
 .ui-action-menu {
   position: relative;
   flex: none;
+}
+
+.ui-action-menu[open] {
+  z-index: 45;
 }
 
 .ui-action-menu-trigger {
@@ -3313,6 +3375,15 @@ svg {
   box-shadow: 0 0 0 2px var(--pink-glow);
 }
 
+.ui-drawer .ui-modal-header {
+  padding: 16px 20px;
+}
+
+.ui-drawer .ui-drawer-body {
+  gap: 16px;
+  padding: 20px;
+}
+
 .task-drawer-badges {
   display: flex;
   flex-wrap: wrap;
@@ -3323,8 +3394,8 @@ svg {
 .task-drawer-meta-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px 14px;
+  padding: 12px 14px;
   border: 1.5px solid var(--line-soft);
   border-radius: 8px;
   background: var(--paper);
@@ -3345,11 +3416,11 @@ svg {
 .task-drawer-section,
 .task-readonly-box {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .task-drawer-section {
-  padding-top: 12px;
+  padding-top: 16px;
   border-top: 1px solid var(--line-soft);
 }
 
@@ -3383,7 +3454,7 @@ svg {
 }
 
 .task-danger-zone {
-  padding-top: 14px;
+  padding-top: 16px;
 }
 
 .task-delete-confirm {
@@ -3403,9 +3474,9 @@ svg {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 14px;
+  gap: 12px 16px;
   width: 100%;
-  padding: 13px 16px;
+  padding: 14px 18px;
   border: 0;
   border-bottom: 1px solid var(--line-2);
   background: transparent;
@@ -3447,7 +3518,7 @@ svg {
   flex: 1 1 220px;
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 
 .my-task-row-title {
@@ -3583,6 +3654,27 @@ svg {
     height: 42px;
     padding: 0 12px;
     font-size: 14px;
+  }
+
+  .directory-toolbar .ui-input,
+  .directory-toolbar .ui-select,
+  .directory-toolbar .ui-btn,
+  .audit-toolbar .ui-select,
+  .audit-toolbar .ui-btn {
+    height: 42px;
+    min-height: 42px;
+  }
+
+  .directory-toolbar .ui-segmented {
+    height: 42px;
+  }
+
+  .directory-toolbar .ui-check-inline {
+    min-height: 42px;
+  }
+
+  .directory-table-wrap {
+    overflow: visible;
   }
 
   .ui-textarea {

@@ -17,6 +17,7 @@ import { GET as sessionGet } from '@/app/api/v1/auth/session/route';
 import { POST as departmentsPost } from '@/app/api/v1/departments/route';
 import { GET as meGet } from '@/app/api/v1/me/route';
 import { PUT as memberAdminPut } from '@/app/api/v1/members/[id]/admin/route';
+import { POST as memberDeactivatePost } from '@/app/api/v1/members/[id]/deactivate/route';
 import { POST as memberPresetPost } from '@/app/api/v1/members/[id]/permissions/apply-preset/route';
 import {
   GET as memberPermsGet,
@@ -384,8 +385,8 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
         ],
       });
 
-      // 7. AC-09 last active admin 409 + DB trigger + grant/revoke admin flag
-      const lastAdminDemoteRes = await memberAdminPut(
+      // 7. CR-02B-01 self-demotion guard (409 CANNOT_REVOKE_OWN_ADMIN) + AC-09 last active admin + DB trigger + grant/revoke admin flag
+      const selfDemoteSoleRes = await memberAdminPut(
         new Request(`http://localhost:3000/api/v1/members/${adminId}/admin`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json', cookie: adminCookie },
@@ -393,10 +394,23 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
         }),
         { params: Promise.resolve({ id: adminId }) },
       );
-      expect(lastAdminDemoteRes.status).toBe(409);
-      expect(((await lastAdminDemoteRes.json()) as { error: { code: string } }).error.code).toBe(
-        'LAST_ACTIVE_ADMIN',
+      expect(selfDemoteSoleRes.status).toBe(409);
+      expect(((await selfDemoteSoleRes.json()) as { error: { code: string } }).error.code).toBe(
+        'CANNOT_REVOKE_OWN_ADMIN',
       );
+
+      // AC-09: Deactivating sole active admin returns 409 LAST_ACTIVE_ADMIN
+      const lastAdminDeactivateRes = await memberDeactivatePost(
+        new Request(`http://localhost:3000/api/v1/members/${adminId}/deactivate`, {
+          method: 'POST',
+          headers: { cookie: adminCookie },
+        }),
+        { params: Promise.resolve({ id: adminId }) },
+      );
+      expect(lastAdminDeactivateRes.status).toBe(409);
+      expect(
+        ((await lastAdminDeactivateRes.json()) as { error: { code: string } }).error.code,
+      ).toBe('LAST_ACTIVE_ADMIN');
 
       // Verify PostgreSQL trigger directly rejects raw SQL demotion of last active admin
       let triggerErr: unknown = null;
@@ -430,6 +444,47 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
       expect(grantAdminRes.status).toBe(200);
       expect(await grantAdminRes.json()).toEqual({ userId: targetId, isAdmin: true });
 
+      // CR-02B-01: Self-demotion STILL returns 409 CANNOT_REVOKE_OWN_ADMIN when >= 2 active admins exist
+      const selfDemoteMultiAdminRes = await memberAdminPut(
+        new Request(`http://localhost:3000/api/v1/members/${adminId}/admin`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ isAdmin: false }),
+        }),
+        { params: Promise.resolve({ id: adminId }) },
+      );
+      expect(selfDemoteMultiAdminRes.status).toBe(409);
+      expect(
+        ((await selfDemoteMultiAdminRes.json()) as { error: { code: string } }).error.code,
+      ).toBe('CANNOT_REVOKE_OWN_ADMIN');
+
+      const [adminRowAfterSelfDemote] = await tx
+        .select({ isAdmin: profiles.isAdmin })
+        .from(profiles)
+        .where(eq(profiles.id, adminId))
+        .limit(1);
+      expect(adminRowAfterSelfDemote?.isAdmin).toBe(true);
+
+      const targetSelfDemoteRes = await memberAdminPut(
+        new Request(`http://localhost:3000/api/v1/members/${targetId}/admin`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', cookie: targetCookie },
+          body: JSON.stringify({ isAdmin: false }),
+        }),
+        { params: Promise.resolve({ id: targetId }) },
+      );
+      expect(targetSelfDemoteRes.status).toBe(409);
+      expect(
+        ((await targetSelfDemoteRes.json()) as { error: { code: string } }).error.code,
+      ).toBe('CANNOT_REVOKE_OWN_ADMIN');
+
+      const [targetRowAfterSelfDemote] = await tx
+        .select({ isAdmin: profiles.isAdmin })
+        .from(profiles)
+        .where(eq(profiles.id, targetId))
+        .limit(1);
+      expect(targetRowAfterSelfDemote?.isAdmin).toBe(true);
+
       const revokeAdminRes = await memberAdminPut(
         new Request(`http://localhost:3000/api/v1/members/${targetId}/admin`, {
           method: 'PUT',
@@ -442,6 +497,12 @@ describe('Permissions & Admin Flag Route Handlers integration', () => {
       expect(await revokeAdminRes.json()).toEqual({ userId: targetId, isAdmin: false });
 
       // 8. Verify AC-10 audit_logs & logs have ZERO PII
+      const adminAuditRows = await tx
+        .select()
+        .from(auditLogs)
+        .where(eq(auditLogs.targetUserId, adminId));
+      expect(adminAuditRows).toHaveLength(0);
+
       const auditRows = await tx
         .select()
         .from(auditLogs)

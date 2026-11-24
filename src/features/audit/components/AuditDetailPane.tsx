@@ -67,6 +67,50 @@ function appendEntityMetadata(
   }
 }
 
+function formatYesNo(
+  flag: boolean,
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): string {
+  return flag ? t('detailValues.yes') : t('detailValues.no');
+}
+
+function formatByteLength(bytes: number): string {
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function appendMediaMetadata(
+  detail: Record<string, unknown>,
+  rows: MetadataEntry[],
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): void {
+  if (typeof detail.assetKey === 'string' && detail.assetKey) {
+    rows.push({ label: t('detailLabels.assetKey'), value: detail.assetKey, mono: true });
+  }
+  if (typeof detail.mimeType === 'string' && detail.mimeType) {
+    rows.push({ label: t('detailLabels.mimeType'), value: detail.mimeType, mono: true });
+  }
+  if (typeof detail.byteLength === 'number' && Number.isFinite(detail.byteLength) && detail.byteLength >= 0) {
+    rows.push({ label: t('detailLabels.byteLength'), value: formatByteLength(detail.byteLength), mono: true });
+  }
+  if (typeof detail.removed === 'boolean') {
+    rows.push({ label: t('detailLabels.removed'), value: formatYesNo(detail.removed, t) });
+  }
+}
+
+function appendSecurityMetadata(
+  detail: Record<string, unknown>,
+  rows: MetadataEntry[],
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): void {
+  if (typeof detail.forceChangeOnLogin === 'boolean') {
+    rows.push({ label: t('detailLabels.forceChangeOnLogin'), value: formatYesNo(detail.forceChangeOnLogin, t) });
+  }
+  if (typeof detail.sessionsRevoked === 'boolean') {
+    rows.push({ label: t('detailLabels.sessionsRevoked'), value: formatYesNo(detail.sessionsRevoked, t) });
+  }
+}
+
 function buildMetadataRows(
   detail: Record<string, unknown>,
   t: ReturnType<typeof useTranslations<'auditLogs'>>,
@@ -75,6 +119,8 @@ function buildMetadataRows(
   const rows: MetadataEntry[] = [];
   appendPermissionMetadata(detail, rows, t, tPerm);
   appendEntityMetadata(detail, rows, t);
+  appendMediaMetadata(detail, rows, t);
+  appendSecurityMetadata(detail, rows, t);
   return rows;
 }
 

@@ -204,12 +204,19 @@ export class PermissionsService {
     readonly tx: Parameters<PermissionsRepository['lockAndUpdateAdminFlag']>[1];
   }) {
     const state = await this.deps.permissionsRepo.lockAndUpdateAdminFlag(
-      { userId: params.targetUserId, isAdmin: params.isAdmin, now: params.now },
+      {
+        actorId: params.actorId,
+        userId: params.targetUserId,
+        isAdmin: params.isAdmin,
+        now: params.now,
+      },
       params.tx,
     );
     if (!state) throw notFound('errors.notFound', {}, 'NOT_FOUND');
 
     assertAdminFlagChangeAllowed({
+      actorId: params.actorId,
+      targetUserId: params.targetUserId,
       currentIsAdmin: state.previousIsAdmin,
       nextIsAdmin: params.isAdmin,
       targetIsActive: state.targetIsActive,

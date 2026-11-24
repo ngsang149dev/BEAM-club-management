@@ -133,9 +133,17 @@ function formatAddedRemoved(detail: Record<string, unknown>): string | null {
     .join(' / ');
 }
 
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 function formatEntityPreview(detail: Record<string, unknown>): string {
-  if (typeof detail.name === 'string' && detail.name) return detail.name;
-  if (typeof detail.fullName === 'string' && detail.fullName) return detail.fullName;
+  const textPreview =
+    readNonEmptyString(detail.name) ??
+    readNonEmptyString(detail.fullName) ??
+    readNonEmptyString(detail.mimeType) ??
+    readNonEmptyString(detail.assetKey);
+  if (textPreview) return textPreview;
   if (typeof detail.isAdmin === 'boolean') return detail.isAdmin ? 'isAdmin=true' : 'isAdmin=false';
   return '—';
 }

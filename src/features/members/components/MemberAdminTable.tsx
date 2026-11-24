@@ -1,8 +1,9 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from '@/components/ActionMenu';
 import { MemberAvatar } from '@/components/MemberAvatar';
-import { Can, usePermissions } from '@/features/shared/permissions/can';
+import { usePermissions } from '@/features/shared/permissions/can';
 import { isMemberDetail, type MemberListItem } from '../hooks/useMembers';
 
 export function canViewerResetMemberPassword({
@@ -59,6 +60,27 @@ export function MemberDepartmentsCell({ member }: { member: MemberListItem }) {
   );
 }
 
+function MemberStatusMenuItem({
+  member,
+  onStatusAction,
+}: {
+  member: MemberListItem;
+  onStatusAction: (member: MemberListItem, action: 'deactivate' | 'activate') => void;
+}) {
+  const tAdmin = useTranslations('memberAdmin');
+  const nextAction = member.isActive ? 'deactivate' : 'activate';
+  const label = member.isActive ? tAdmin('deactivateAction') : tAdmin('activateAction');
+
+  return (
+    <ActionMenuItem
+      variant={member.isActive ? 'danger' : 'default'}
+      onSelect={() => onStatusAction(member, nextAction)}
+    >
+      {label}
+    </ActionMenuItem>
+  );
+}
+
 function MemberAdminRowActions({
   member,
   onEdit,
@@ -71,32 +93,36 @@ function MemberAdminRowActions({
   onStatusAction: (member: MemberListItem, action: 'deactivate' | 'activate') => void;
 }) {
   const tAdmin = useTranslations('memberAdmin');
-  const { isAdmin } = usePermissions();
+  const { isAdmin, can } = usePermissions();
+  const canEdit = can('member.update');
   const canResetPassword = canViewerResetMemberPassword({
     viewerIsAdmin: isAdmin,
   });
+  const canDeactivate = can('member.deactivate');
+  const hasPrimaryAction = canEdit || canResetPassword;
+
+  if (!hasPrimaryAction && !canDeactivate) {
+    return null;
+  }
 
   return (
     <div className="admin-row-actions">
-      <Can permission="member.update">
-        <button type="button" className="ui-btn ghost is-sm" onClick={() => onEdit(member)}>
-          {tAdmin('editAction')}
-        </button>
-      </Can>
-      {canResetPassword ? (
-        <button type="button" className="ui-btn ghost is-sm" onClick={() => onResetPassword(member)}>
-          {tAdmin('resetPasswordAction')}
-        </button>
-      ) : null}
-      <Can permission="member.deactivate">
-        <button
-          type="button"
-          className={member.isActive ? 'ui-btn danger is-sm' : 'ui-btn ghost is-sm'}
-          onClick={() => onStatusAction(member, member.isActive ? 'deactivate' : 'activate')}
-        >
-          {member.isActive ? tAdmin('deactivateAction') : tAdmin('activateAction')}
-        </button>
-      </Can>
+      <ActionMenu label={tAdmin('rowActionsMenu')}>
+        {canEdit ? (
+          <ActionMenuItem onSelect={() => onEdit(member)}>
+            {tAdmin('editAction')}
+          </ActionMenuItem>
+        ) : null}
+        {canResetPassword ? (
+          <ActionMenuItem onSelect={() => onResetPassword(member)}>
+            {tAdmin('resetPasswordAction')}
+          </ActionMenuItem>
+        ) : null}
+        {hasPrimaryAction && canDeactivate ? <ActionMenuSeparator /> : null}
+        {canDeactivate ? (
+          <MemberStatusMenuItem member={member} onStatusAction={onStatusAction} />
+        ) : null}
+      </ActionMenu>
     </div>
   );
 }

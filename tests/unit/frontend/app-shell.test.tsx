@@ -46,6 +46,8 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     );
 
     expect(html).toContain('href="/boards"');
+    expect(html).toContain('href="/boards" class="app-brand"');
+    expect(html).not.toContain('href="/"');
     expect(html).toContain('href="/my-tasks"');
     expect(html).toContain('href="/profile"');
     expect(html).not.toContain('href="/members"');

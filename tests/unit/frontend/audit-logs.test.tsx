@@ -210,31 +210,62 @@ describe('AuditLogsView & S13 helpers', () => {
       actor: { ...ENTRY_PERM.actor, avatarUrl: '/api/v1/members/u-actor/avatar?v=5' },
       targetUser: null,
       action: 'branding.logo_updated',
-      detail: {},
+      detail: {
+        assetKey: 'club_logo',
+        mimeType: 'image/webp',
+        byteLength: 4096,
+      },
     };
     const avatarEntry: AuditLogDto = {
       ...ENTRY_PERM,
       action: 'member.avatar_removed',
-      detail: {},
+      detail: {
+        removed: true,
+      },
+    };
+    const pwDetailEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      action: 'member.password_reset',
+      detail: {
+        forceChangeOnLogin: true,
+        sessionsRevoked: true,
+      },
     };
     auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
       isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
       fetchNextPage: vi.fn(), refetch: vi.fn(),
-      data: { pages: [{ items: [brandingEntry, avatarEntry], meta: { nextCursor: null, limit: 20 } }] },
+      data: { pages: [{ items: [brandingEntry, avatarEntry, pwDetailEntry], meta: { nextCursor: null, limit: 20 } }] },
     });
     const mediaAuditVi = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
     expect(mediaAuditVi).toContain('Cập nhật logo CLB');
     expect(mediaAuditVi).toContain('Xóa ảnh đại diện');
     expect(mediaAuditVi).toContain('src="/api/v1/members/u-actor/avatar?v=5"');
+    expect(mediaAuditVi).toContain('Khóa tài nguyên');
+    expect(mediaAuditVi).toContain('club_logo');
+    expect(mediaAuditVi).toContain('Định dạng ảnh');
+    expect(mediaAuditVi).toContain('image/webp');
+    expect(mediaAuditVi).toContain('Dung lượng');
+    expect(mediaAuditVi).toContain('4.0 KB');
 
     auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
       isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
       fetchNextPage: vi.fn(), refetch: vi.fn(),
-      data: { pages: [{ items: [brandingEntry, avatarEntry], meta: { nextCursor: null, limit: 20 } }] },
+      data: { pages: [{ items: [avatarEntry, pwDetailEntry], meta: { nextCursor: null, limit: 20 } }] },
     });
-    const mediaAuditEn = renderAudit({ permissions: ['audit.view'], locale: 'en' });
-    expect(mediaAuditEn).toContain('Updated club logo');
-    expect(mediaAuditEn).toContain('Removed member avatar');
+    const avatarRemovedEn = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(avatarRemovedEn).toContain('Removed member avatar');
+    expect(avatarRemovedEn).toContain('Removed');
+    expect(avatarRemovedEn).toContain('Yes');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [pwDetailEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const pwResetDetailEn = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(pwResetDetailEn).toContain('Force password change on sign-in');
+    expect(pwResetDetailEn).toContain('Sessions revoked');
+    expect(pwResetDetailEn).toContain('Yes');
   });
 
   it('renders ErrorState with requestId and maps INVALID_DATE_RANGE / 403 / INVALID_CURSOR cleanly', () => {

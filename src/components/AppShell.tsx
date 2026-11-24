@@ -183,7 +183,7 @@ function SidebarContent({
   const tLang = useTranslations('language');
   return (
     <>
-      <Link href="/" className="app-brand" onClick={onNavigate}>
+      <Link href="/boards" className="app-brand" onClick={onNavigate}>
         <ClubLogo alt="" />
         <span className="app-brand-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
       </Link>

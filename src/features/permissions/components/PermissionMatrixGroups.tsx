@@ -7,11 +7,11 @@ import type { PermissionDto } from '../hooks/usePermissionsAdmin';
 
 const GROUP_ORDER: readonly PermissionGroup[] = [
   'members',
-  'departments',
-  'boards',
   'tasks',
+  'boards',
   'comments',
   'system',
+  'departments',
 ];
 
 const CATALOG_KEY_MAP = new Map<PermissionCode, string>(

@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
 import { MemberAvatar } from '@/components/MemberAvatar';
+import { useSessionQuery } from '@/features/auth/hooks/useAuth';
 import { isMemberDetail, type MemberListItem } from '@/features/members/hooks/useMembers';
-import { usePermissions, type PermissionCode } from '@/features/shared/permissions/can';
+import { usePermissions } from '@/features/shared/permissions/can';
 import { PERMISSION_PRESETS } from '@/lib/permissions';
 import { describePermissionsError } from '../error-mapping';
 import { usePermissionsEditorState } from '../hooks/usePermissionsEditorState';
@@ -62,12 +63,10 @@ function PermissionsHeaderBar({
 }
 
 function PermissionsBanners({
-  memberName,
   isActive,
   isMemberAdmin,
   saveError,
 }: {
-  memberName: string;
   isActive: boolean;
   isMemberAdmin: boolean;
   saveError: unknown;
@@ -76,11 +75,12 @@ function PermissionsBanners({
   const tErr = useTranslations('errors');
   const err = describePermissionsError(saveError);
 
+  if (isActive && !isMemberAdmin && !err) {
+    return null;
+  }
+
   return (
     <>
-      <div className="ui-banner" role="status">
-        <div className="ui-banner-body"><span className="ui-banner-text">{t('editingBanner', { name: memberName })}</span></div>
-      </div>
       {!isActive ? (
         <div className="ui-banner is-warn" role="status">
           <div className="ui-banner-body"><span className="ui-banner-text">{t('inactiveWarning')}</span></div>
@@ -104,26 +104,27 @@ function PermissionsBanners({
 }
 
 function PermissionsSaveBar({
-  effectiveCodes,
+  effectiveCount,
   isDirty,
   isSaving,
   onDiscard,
   onSave,
 }: {
-  effectiveCodes: readonly PermissionCode[];
+  effectiveCount: number;
   isDirty: boolean;
   isSaving: boolean;
   onDiscard: () => void;
   onSave: () => void;
 }) {
   const t = useTranslations('permissionsAdmin');
-  const summaryCodes = effectiveCodes.length > 0 ? effectiveCodes.join(' · ') : t('effectiveNone');
 
   return (
     <div className="perm-savebar">
       <div className="perm-effective">
-        <b>{t('effectiveSummaryCount', { count: effectiveCodes.length })}</b>
-        <span>{summaryCodes}</span>
+        <span className="ui-chip perm-effective-badge">
+          {t('effectiveSummaryCount', { count: effectiveCount })}
+        </span>
+        {isDirty ? <span className="perm-unsaved-note">{t('unsavedChanges')}</span> : null}
       </div>
       <div className="perm-save-actions">
         <button type="button" className="ui-btn ghost" disabled={!isDirty || isSaving} onClick={onDiscard}>
@@ -168,7 +169,13 @@ function resolvePresets(items?: readonly PresetOption[]): PresetOption[] {
   return PERMISSION_PRESETS.map((p) => ({ code: p.code, permissionCodes: p.permissions }));
 }
 
-function PermissionsMainColumn({ state }: { state: ReturnType<typeof usePermissionsEditorState> }) {
+function PermissionsMainColumn({
+  state,
+  currentUserId,
+}: {
+  state: ReturnType<typeof usePermissionsEditorState>;
+  currentUserId: string | null;
+}) {
   const t = useTranslations('permissionsAdmin');
   const member = state.activeMember;
 
@@ -193,10 +200,10 @@ function PermissionsMainColumn({ state }: { state: ReturnType<typeof usePermissi
   return (
     <section className="perm-main">
       <PermissionsHeaderBar member={member} isAdminFlag={isMemberAdmin} presets={presets} onPickPreset={(p) => { state.presetMutation.reset(); state.setPendingPreset(p); }} />
-      <PermissionsBanners memberName={member.fullName} isActive={member.isActive} isMemberAdmin={isMemberAdmin} saveError={state.replaceMutation.error} />
-      <AdminFlagPanel memberName={member.fullName} isAdmin={isMemberAdmin} isUpdating={state.adminMutation.isPending} error={state.adminMutation.error} onToggleAdmin={state.toggleAdminFlag} />
+      <PermissionsBanners isActive={member.isActive} isMemberAdmin={isMemberAdmin} saveError={state.replaceMutation.error} />
+      <AdminFlagPanel memberName={member.fullName} isAdmin={isMemberAdmin} isSelf={member.id === currentUserId} isUpdating={state.adminMutation.isPending} error={state.adminMutation.error} onToggleAdmin={state.toggleAdminFlag} />
       <PermissionMatrixGroups catalogItems={state.catalogQuery.data?.items} selectedCodes={state.effectiveCodes} disabled={state.memberPermQuery.isPending || state.replaceMutation.isPending} isLoading={state.memberPermQuery.isPending} onTogglePermission={state.togglePermission} />
-      <PermissionsSaveBar effectiveCodes={state.effectiveCodes} isDirty={state.isDirty} isSaving={state.replaceMutation.isPending} onDiscard={state.discardDraft} onSave={state.savePermissions} />
+      <PermissionsSaveBar effectiveCount={state.effectiveCodes.length} isDirty={state.isDirty} isSaving={state.replaceMutation.isPending} onDiscard={state.discardDraft} onSave={state.savePermissions} />
     </section>
   );
 }
@@ -206,6 +213,7 @@ export function PermissionsAdminView() {
   const t = useTranslations('permissionsAdmin');
   const tCommon = useTranslations('common');
   const tErr = useTranslations('errors');
+  const sessionQuery = useSessionQuery(isAdmin);
   const state = usePermissionsEditorState(isAdmin);
 
   if (!isAdmin) {
@@ -238,7 +246,7 @@ export function PermissionsAdminView() {
           onSelectMember={state.selectMember}
           onLoadMore={() => state.membersQuery.fetchNextPage()}
         />
-        <PermissionsMainColumn state={state} />
+        <PermissionsMainColumn state={state} currentUserId={sessionQuery.data?.userId ?? null} />
       </div>
       {state.pendingPreset ? (
         <PermissionPresetModal

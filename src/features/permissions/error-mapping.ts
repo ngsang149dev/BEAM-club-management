@@ -2,6 +2,7 @@ import { isApiClientError } from '@/features/shared/api/client';
 
 export type PermissionsErrorKey =
   | 'lastActiveAdmin'
+  | 'cannotRevokeOwnAdmin'
   | 'unauthorized'
   | 'forbidden'
   | 'notFound'
@@ -17,6 +18,7 @@ export interface PermissionsErrorDescriptor {
 
 const CODE_TO_KEY: Record<string, PermissionsErrorKey> = {
   LAST_ACTIVE_ADMIN: 'lastActiveAdmin',
+  CANNOT_REVOKE_OWN_ADMIN: 'cannotRevokeOwnAdmin',
   UNAUTHORIZED: 'unauthorized',
   SESSION_EXPIRED: 'unauthorized',
   ACCOUNT_INACTIVE: 'unauthorized',

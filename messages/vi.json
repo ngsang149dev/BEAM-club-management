@@ -243,6 +243,7 @@
     "studentIdExists": "MSSV này đã tồn tại trong hệ thống.",
     "emailExists": "Email này đã được gán cho một thành viên khác.",
     "lastActiveAdmin": "Không thể vô hiệu hóa hoặc gỡ quyền admin hoạt động cuối cùng.",
+    "cannotRevokeOwnAdmin": "Bạn không thể tự gỡ quyền admin của chính mình.",
     "invalidDepartmentIds": "Một hoặc nhiều ban được chọn không hợp lệ.",
     "studentIdImmutable": "MSSV không thể thay đổi sau khi tạo tài khoản.",
     "invalidCursor": "Con trỏ phân trang không hợp lệ. Danh sách sẽ được tải lại từ đầu.",
@@ -379,6 +380,7 @@
     "deactivatedToast": "Đã khóa tài khoản {name}.",
     "activatedToast": "Đã mở lại tài khoản {name}.",
     "colActions": "Thao tác",
+    "rowActionsMenu": "Thao tác thành viên",
     "validationFullName": "Vui lòng nhập họ tên hợp lệ (1–120 ký tự).",
     "validationStudentId": "MSSV không được để trống (tối đa 64 ký tự).",
     "validationEmailDomain": "Email phải hợp lệ và thuộc tên miền @{domain}.",
@@ -476,6 +478,7 @@
     "updatingAdmin": "Đang cập nhật...",
     "adminGrantedToast": "Đã cấp quyền admin cho {name}.",
     "adminRevokedToast": "Đã gỡ quyền admin của {name}.",
+    "cannotRevokeSelfHint": "Không thể tự gỡ quyền admin của chính bạn.",
     "lastAdminBannerTitle": "Không thể gỡ quyền admin cuối cùng",
     "effectiveSummaryCount": "{count} quyền đang bật",
     "effectiveNone": "Chưa bật quyền nào",
@@ -534,6 +537,18 @@
     "detailFieldDepartments": "Số ban",
     "detailFieldLocale": "Ngôn ngữ",
     "detailFieldReminders": "Mốc nhắc",
+    "detailLabels": {
+      "assetKey": "Khóa tài nguyên",
+      "mimeType": "Định dạng ảnh",
+      "byteLength": "Dung lượng",
+      "removed": "Đã gỡ ảnh",
+      "forceChangeOnLogin": "Buộc đổi mật khẩu khi đăng nhập",
+      "sessionsRevoked": "Đã thu hồi các phiên"
+    },
+    "detailValues": {
+      "yes": "Có",
+      "no": "Không"
+    },
     "actions": {
       "memberCreated": "Tạo thành viên",
       "memberUpdated": "Sửa thành viên",

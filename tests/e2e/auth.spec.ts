@@ -28,13 +28,16 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
   const suffix = randomUUID().slice(0, 8);
   const adminUserId = randomUUID();
   const activeUserId = randomUUID();
+  const mustChangeUserId = randomUUID();
   const inactiveUserId = randomUUID();
   const adminStudentId = `MSSV-E2E-ADM-${suffix}`;
   const activeStudentId = `MSSV-E2E-${suffix}`;
+  const mustChangeStudentId = `MSSV-E2E-PWD-${suffix}`;
   const inactiveStudentId = `MSSV-E2E-OFF-${suffix}`;
   const unknownStudentId = `MSSV-E2E-UNK-${suffix}`;
   const adminEmail = `e2e-admin-${suffix}@eiu.edu.vn`;
   const activeEmail = `e2e-active-${suffix}@eiu.edu.vn`;
+  const mustChangeEmail = `e2e-pwd-${suffix}@eiu.edu.vn`;
   const activeFullName = `E2E Active ${suffix}`;
 
   test.beforeAll(async () => {
@@ -86,6 +89,17 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
         locale: 'vi',
       },
       {
+        id: mustChangeUserId,
+        studentId: mustChangeStudentId,
+        email: mustChangeEmail,
+        fullName: `E2E MustChange ${suffix}`,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: true,
+        isAdmin: false,
+        isActive: true,
+        locale: 'vi',
+      },
+      {
         id: inactiveUserId,
         studentId: inactiveStudentId,
         email: `e2e-inactive-${suffix}@eiu.edu.vn`,
@@ -103,13 +117,16 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
       { userId: activeUserId, permissionCode: 'member.view', grantedBy: adminUserId },
       { userId: activeUserId, permissionCode: 'task.update_assigned', grantedBy: adminUserId },
       { userId: activeUserId, permissionCode: 'comment.create', grantedBy: adminUserId },
+      { userId: mustChangeUserId, permissionCode: 'member.view', grantedBy: adminUserId },
+      { userId: mustChangeUserId, permissionCode: 'task.update_assigned', grantedBy: adminUserId },
+      { userId: mustChangeUserId, permissionCode: 'comment.create', grantedBy: adminUserId },
     ]);
   });
 
   test.beforeEach(async () => {
     await db
       .delete(sessions)
-      .where(inArray(sessions.userId, [adminUserId, activeUserId, inactiveUserId]));
+      .where(inArray(sessions.userId, [adminUserId, activeUserId, mustChangeUserId, inactiveUserId]));
     await db
       .delete(loginAttempts)
       .where(
@@ -117,6 +134,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
           inArray(loginAttempts.studentId, [
             adminStudentId,
             activeStudentId,
+            mustChangeStudentId,
             inactiveStudentId,
             unknownStudentId,
           ]),
@@ -125,7 +143,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
       );
     await db
       .update(profiles)
-      .set({ locale: 'vi', updatedAt: new Date() })
+      .set({ locale: 'vi', mustChangePassword: false, updatedAt: new Date() })
       .where(eq(profiles.id, activeUserId));
   });
 
@@ -133,10 +151,10 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     if (db) {
       await db
         .delete(sessions)
-        .where(inArray(sessions.userId, [adminUserId, activeUserId, inactiveUserId]));
+        .where(inArray(sessions.userId, [adminUserId, activeUserId, mustChangeUserId, inactiveUserId]));
       await db
         .delete(userPermissions)
-        .where(inArray(userPermissions.userId, [adminUserId, activeUserId, inactiveUserId]));
+        .where(inArray(userPermissions.userId, [adminUserId, activeUserId, mustChangeUserId, inactiveUserId]));
       await db
         .delete(loginAttempts)
         .where(
@@ -144,6 +162,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
             inArray(loginAttempts.studentId, [
               adminStudentId,
               activeStudentId,
+              mustChangeStudentId,
               inactiveStudentId,
               unknownStudentId,
             ]),
@@ -152,7 +171,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
         );
       await db
         .delete(profiles)
-        .where(inArray(profiles.id, [activeUserId, inactiveUserId]));
+        .where(inArray(profiles.id, [activeUserId, mustChangeUserId, inactiveUserId]));
 
       const remainingAdmins = await db
         .select({ id: profiles.id })
@@ -163,6 +182,82 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
       }
     }
     await pool?.end();
+  });
+
+  test('redirects root / immediately to /login when unauthenticated, /boards when active, and /profile?changePassword=1 when mustChangePassword=true (CR-02B)', async ({
+    page,
+    context,
+    browser,
+  }) => {
+    // 1. Unauthenticated visitor -> /login cleanly (no welcome cards)
+    const anonRootRes = await page.request.get('/', { maxRedirects: 0 });
+    expect([303, 307, 308]).toContain(anonRootRes.status());
+    const anonLocation = anonRootRes.headers()['location'] ?? '';
+    const anonParsed = new URL(anonLocation, BASE_ORIGIN);
+    expect(`${anonParsed.pathname}${anonParsed.search}`).toBe('/login');
+
+    await page.goto('/');
+    await page.waitForURL(`${BASE_ORIGIN}/login`);
+    await expect(page.locator('.home-card')).toHaveCount(0);
+    await expect(page.getByLabel(viMessages.auth.studentIdLabel, { exact: true })).toBeVisible();
+    await expect(page.getByLabel(viMessages.auth.passwordLabel, { exact: true })).toBeVisible();
+
+    // Invalid/stale session cookie on / also redirects cleanly to /login
+    await context.addCookies([
+      { name: 'beam_session', value: 'stale-invalid-token', url: BASE_ORIGIN },
+    ]);
+    await page.goto('/');
+    await page.waitForURL(`${BASE_ORIGIN}/login`);
+    await context.clearCookies();
+
+    // 2. Authenticated active visitor -> /boards (and AppShell brand link points to /boards)
+    await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
+    await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
+    await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
+    await page.waitForURL(`${BASE_ORIGIN}/boards`);
+    await expect(page.locator('.app-side a.app-brand')).toHaveAttribute('href', '/boards');
+
+    const activeRootRes = await page.request.get('/', { maxRedirects: 0 });
+    expect([303, 307, 308]).toContain(activeRootRes.status());
+    const activeLocation = activeRootRes.headers()['location'] ?? '';
+    const activeParsed = new URL(activeLocation, BASE_ORIGIN);
+    expect(`${activeParsed.pathname}${activeParsed.search}`).toBe('/boards');
+
+    await page.goto('/profile');
+    await page.waitForURL(`${BASE_ORIGIN}/profile`);
+    await page.goto('/');
+    await page.waitForURL(`${BASE_ORIGIN}/boards`);
+
+    // 3. Authenticated mustChangePassword=true visitor -> /profile?changePassword=1
+    const mustChangeContext = await browser.newContext();
+    const mustChangePage = await mustChangeContext.newPage();
+    try {
+      await mustChangePage.goto('/login');
+      await mustChangePage
+        .getByLabel(viMessages.auth.studentIdLabel, { exact: true })
+        .fill(mustChangeStudentId);
+      await mustChangePage
+        .getByLabel(viMessages.auth.passwordLabel, { exact: true })
+        .fill(DEV_SEED_PASSWORD);
+      await mustChangePage
+        .getByRole('button', { name: viMessages.auth.signInButton, exact: true })
+        .click();
+      await mustChangePage.waitForURL(`${BASE_ORIGIN}/profile?changePassword=1`);
+
+      const mustChangeRootRes = await mustChangePage.request.get('/', { maxRedirects: 0 });
+      expect([303, 307, 308]).toContain(mustChangeRootRes.status());
+      const mustChangeLocation = mustChangeRootRes.headers()['location'] ?? '';
+      const mustChangeParsed = new URL(mustChangeLocation, BASE_ORIGIN);
+      expect(`${mustChangeParsed.pathname}${mustChangeParsed.search}`).toBe(
+        '/profile?changePassword=1',
+      );
+
+      await mustChangePage.goto('/');
+      await mustChangePage.waitForURL(`${BASE_ORIGIN}/profile?changePassword=1`);
+      await expect(mustChangePage.locator('#change-password .ui-banner.is-warn')).toBeVisible();
+    } finally {
+      await mustChangeContext.close();
+    }
   });
 
   test('redirects unauthenticated access to /profile back to /login with expired notice and password field (AC-05, CR-01, WQ-09)', async ({
