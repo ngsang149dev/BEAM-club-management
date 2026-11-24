@@ -78,7 +78,7 @@ function buildSearchCondition(q: string | undefined, includeSid: boolean): SQL |
 }
 
 function buildListConditions(db: DbExecutor, params: ListMembersParams): SQL | undefined {
-  const filters: SQL[] = [];
+  const filters: SQL[] = [isNull(profiles.purgedAt)];
   const searchCond = buildSearchCondition(params.q, params.includeStudentIdSearch);
   if (searchCond) filters.push(searchCond);
   if (params.departmentId) {
@@ -90,7 +90,7 @@ function buildListConditions(db: DbExecutor, params: ListMembersParams): SQL | u
     const cursorCond = or(gt(profiles.fullName, fullName), and(eq(profiles.fullName, fullName), gt(profiles.id, id)));
     if (cursorCond) filters.push(cursorCond);
   }
-  return filters.length > 0 ? and(...filters) : undefined;
+  return and(...filters);
 }
 
 export class DrizzleMembersRepository implements MembersRepository {
@@ -106,12 +106,12 @@ export class DrizzleMembersRepository implements MembersRepository {
 
   async findById(id: string, tx?: TransactionContext): Promise<MemberProfileRecord | null> {
     const executor = tx ?? this.db;
-    const rows = await executor.select(MEMBER_PROFILE_COLUMNS).from(profiles).where(eq(profiles.id, id)).limit(1);
+    const rows = await executor.select(MEMBER_PROFILE_COLUMNS).from(profiles).where(and(eq(profiles.id, id), isNull(profiles.purgedAt))).limit(1);
     return rows[0] ? this.hydrateSingle(rows[0], executor) : null;
   }
 
   async lockAndFindById(id: string, tx: TransactionContext): Promise<MemberProfileRecord | null> {
-    const rows = await tx.select(MEMBER_PROFILE_COLUMNS).from(profiles).where(eq(profiles.id, id)).for('update').limit(1);
+    const rows = await tx.select(MEMBER_PROFILE_COLUMNS).from(profiles).where(and(eq(profiles.id, id), isNull(profiles.purgedAt))).for('update').limit(1);
     return rows[0] ? this.hydrateSingle(rows[0], tx) : null;
   }
 
@@ -119,7 +119,7 @@ export class DrizzleMembersRepository implements MembersRepository {
     const rows = await this.db
       .select({ id: profiles.id, avatarData: profiles.avatarData, avatarMime: profiles.avatarMime })
       .from(profiles)
-      .where(eq(profiles.id, id))
+      .where(and(eq(profiles.id, id), isNull(profiles.purgedAt)))
       .limit(1);
     return rows[0] ?? null;
   }
@@ -156,7 +156,7 @@ export class DrizzleMembersRepository implements MembersRepository {
       if (input.email !== undefined) patch.email = input.email;
       if (input.fullName !== undefined) patch.fullName = input.fullName;
       if (input.locale !== undefined) patch.locale = input.locale;
-      const [updated] = await tx.update(profiles).set(patch).where(eq(profiles.id, input.id)).returning(MEMBER_PROFILE_COLUMNS);
+      const [updated] = await tx.update(profiles).set(patch).where(and(eq(profiles.id, input.id), isNull(profiles.purgedAt))).returning(MEMBER_PROFILE_COLUMNS);
       if (!updated) return null;
       if (input.departmentIds !== undefined) {
         await tx.delete(memberDepartments).where(eq(memberDepartments.userId, input.id));
@@ -169,7 +169,7 @@ export class DrizzleMembersRepository implements MembersRepository {
   }
 
   async countActiveAdmins(tx: TransactionContext): Promise<number> {
-    const rows = await tx.select({ value: count() }).from(profiles).where(and(eq(profiles.isAdmin, true), eq(profiles.isActive, true)));
+    const rows = await tx.select({ value: count() }).from(profiles).where(and(eq(profiles.isAdmin, true), eq(profiles.isActive, true), isNull(profiles.purgedAt)));
     return Number(rows[0]?.value ?? 0);
   }
 
@@ -192,7 +192,7 @@ export class DrizzleMembersRepository implements MembersRepository {
     try {
       const [updated] = await tx.update(profiles)
         .set({ passwordHash: input.passwordHash, mustChangePassword: input.mustChangePassword, updatedAt: input.now })
-        .where(eq(profiles.id, input.userId)).returning(MEMBER_PROFILE_COLUMNS);
+        .where(and(eq(profiles.id, input.userId), isNull(profiles.purgedAt))).returning(MEMBER_PROFILE_COLUMNS);
       if (!updated) return null;
       await this.revokeAllActiveSessions(input.userId, input.now, tx);
       return this.hydrateSingle(updated, tx);
@@ -207,20 +207,20 @@ export class DrizzleMembersRepository implements MembersRepository {
   ): Promise<MemberProfileRecord | null> {
     const [updated] = await tx.update(profiles)
       .set({ avatarData: input.avatarData, avatarMime: input.avatarMime, avatarUpdatedAt: input.now, updatedAt: input.now })
-      .where(eq(profiles.id, input.id)).returning(MEMBER_PROFILE_COLUMNS);
+      .where(and(eq(profiles.id, input.id), isNull(profiles.purgedAt))).returning(MEMBER_PROFILE_COLUMNS);
     return updated ? this.hydrateSingle(updated, tx) : null;
   }
 
   async clearAvatar(input: { readonly id: string; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null> {
     const [updated] = await tx.update(profiles)
       .set({ avatarData: null, avatarMime: null, avatarUpdatedAt: null, updatedAt: input.now })
-      .where(eq(profiles.id, input.id)).returning(MEMBER_PROFILE_COLUMNS);
+      .where(and(eq(profiles.id, input.id), isNull(profiles.purgedAt))).returning(MEMBER_PROFILE_COLUMNS);
     return updated ? this.hydrateSingle(updated, tx) : null;
   }
 
   private async updateActiveState(patch: { readonly id: string; readonly isActive: boolean; readonly leftAt: Date | null; readonly now: Date }, tx: TransactionContext): Promise<MemberProfileRecord | null> {
     try {
-      const [updated] = await tx.update(profiles).set({ isActive: patch.isActive, leftAt: patch.leftAt, updatedAt: patch.now }).where(eq(profiles.id, patch.id)).returning(MEMBER_PROFILE_COLUMNS);
+      const [updated] = await tx.update(profiles).set({ isActive: patch.isActive, leftAt: patch.leftAt, updatedAt: patch.now }).where(and(eq(profiles.id, patch.id), isNull(profiles.purgedAt))).returning(MEMBER_PROFILE_COLUMNS);
       return updated ? this.hydrateSingle(updated, tx) : null;
     } catch (error) {
       rethrowMemberWriteError(error);

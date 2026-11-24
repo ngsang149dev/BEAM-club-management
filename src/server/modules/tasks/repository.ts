@@ -11,9 +11,13 @@ import type { CreateTaskRepoParams, ListMyTasksParams, ListVisibleTasksParams, M
 
 type TaskRow = typeof tasks.$inferSelect;
 
+function boardNotPurgedSql(db: DbExecutor): SQL {
+  return exists(db.select({ one: sql`1` }).from(boards).where(and(eq(boards.id, tasks.boardId), isNull(boards.purgedAt))));
+}
+
 export function visibleTaskSqlCondition(db: DbExecutor, actor: AuthActor): SQL {
   if (!actor.isActive) return sql`false`;
-  const notDeleted = isNull(tasks.deletedAt);
+  const notDeleted = and(isNull(tasks.deletedAt), isNull(tasks.purgedAt))!;
   if (actor.isAdmin) return notDeleted;
   const visible = or(
     eq(tasks.isHidden, false),
@@ -78,7 +82,7 @@ function appendCommonTaskFilters(filters: SQL[], params: ListVisibleTasksParams)
 }
 
 function buildVisibleTaskFilters(db: DbExecutor, actor: AuthActor, params: ListVisibleTasksParams): SQL {
-  const filters: SQL[] = [visibleTaskSqlCondition(db, actor)];
+  const filters: SQL[] = [visibleTaskSqlCondition(db, actor), boardNotPurgedSql(db)];
   if (params.boardId) filters.push(eq(tasks.boardId, params.boardId));
   if (params.columnId) filters.push(eq(tasks.columnId, params.columnId));
   if (params.assigneeId) {
@@ -92,6 +96,8 @@ function buildVisibleTaskFilters(db: DbExecutor, actor: AuthActor, params: ListV
 function buildMyTasksFilters(db: DbExecutor, actor: AuthActor, params: ListMyTasksParams): SQL {
   const filters: SQL[] = [
     isNull(tasks.deletedAt),
+    isNull(tasks.purgedAt),
+    boardNotPurgedSql(db),
     exists(db.select({ one: sql`1` }).from(taskAssignees).where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, actor.id)))),
   ];
   if (params.boardId) filters.push(eq(tasks.boardId, params.boardId));
@@ -117,7 +123,7 @@ export class DrizzleTasksRepository implements TasksRepository {
 
   async listVisibleByBoardId(boardId: string, actor: AuthActor, tx?: TransactionContext): Promise<TaskRecord[]> {
     const executor = tx ?? this.db;
-    const rows = await executor.select().from(tasks).where(and(eq(tasks.boardId, boardId), visibleTaskSqlCondition(executor, actor))).orderBy(asc(tasks.position), asc(tasks.id));
+    const rows = await executor.select().from(tasks).where(and(eq(tasks.boardId, boardId), visibleTaskSqlCondition(executor, actor), boardNotPurgedSql(executor))).orderBy(asc(tasks.position), asc(tasks.id));
     return this.hydrateTasks(executor, rows);
   }
 
@@ -135,7 +141,7 @@ export class DrizzleTasksRepository implements TasksRepository {
 
   async findActiveById(taskId: string, tx?: TransactionContext): Promise<TaskRecord | null> {
     const executor = tx ?? this.db;
-    const cond = and(eq(tasks.id, taskId), isNull(tasks.deletedAt));
+    const cond = and(eq(tasks.id, taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt), boardNotPurgedSql(executor));
     const rows = tx ? await executor.select().from(tasks).where(cond).for('update').limit(1) : await executor.select().from(tasks).where(cond).limit(1);
     if (!rows[0]) return null;
     return (await this.hydrateTasks(executor, rows))[0] ?? null;
@@ -202,7 +208,7 @@ export class DrizzleTasksRepository implements TasksRepository {
   }
 
   private async assertBoardAndColumnMatch(boardId: string, columnId: string, tx: TransactionContext): Promise<void> {
-    const boardRows = await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, boardId)).limit(1);
+    const boardRows = await tx.select({ id: boards.id }).from(boards).where(and(eq(boards.id, boardId), isNull(boards.purgedAt))).limit(1);
     if (!boardRows[0]) throw notFound('errors.notFound', {}, 'NOT_FOUND');
     await this.lockColumnForBoard(boardId, columnId, tx);
   }

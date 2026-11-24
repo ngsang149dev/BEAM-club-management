@@ -14,6 +14,7 @@
     "boards": "Boards",
     "myTasks": "My tasks",
     "members": "Members",
+    "archive": "Archive",
     "profile": "Profile",
     "memberAdmin": "Member admin",
     "permissions": "Permissions",
@@ -260,6 +261,12 @@
     "boardColumnMismatch": "The selected column does not belong to this board.",
     "invalidImageFormat": "Unsupported image format. Only PNG, JPEG, or WEBP images are allowed (SVG is not supported).",
     "imageTooLarge": "Image still exceeds 256 KB after compression. Please choose a smaller image.",
+    "boardArchived": "This task’s parent board is currently archived. Restore the board before restoring this task.",
+    "boardHasNoColumns": "This board has no columns to place the restored task into. Create a column first.",
+    "taskNotDeleted": "This task is currently active and is not in the Archive.",
+    "memberAlreadyActive": "This member account is already active.",
+    "boardNotArchived": "This board is currently active and is not archived.",
+    "entityNotArchived": "Only items currently in the Archive can be permanently purged.",
     "401": {
       "code": "401",
       "title": "Sign in required",
@@ -543,11 +550,23 @@
       "byteLength": "File size",
       "removed": "Removed",
       "forceChangeOnLogin": "Force password change on sign-in",
-      "sessionsRevoked": "Sessions revoked"
+      "sessionsRevoked": "Sessions revoked",
+      "retentionDays": "New retention window",
+      "previousRetentionDays": "Previous retention window",
+      "purgeMode": "Purge mode",
+      "cascadedTasks": "Cascaded tasks",
+      "taskId": "Task ID",
+      "boardId": "Board ID",
+      "purgedMemberId": "Purged member ID"
     },
     "detailValues": {
       "yes": "Yes",
-      "no": "No"
+      "no": "No",
+      "retentionNever": "Never auto-purge",
+      "retentionDaysCount": "{days} days",
+      "purgeModeMarkedPurged": "Marked purged",
+      "purgeModeAnonymized": "Anonymized PII (history preserved)",
+      "purgeModePhysicalDelete": "Physically deleted"
     },
     "actions": {
       "memberCreated": "Created member",
@@ -570,7 +589,13 @@
       "boardUpdated": "Updated board",
       "boardArchived": "Archived board",
       "brandingLogoUpdated": "Updated club logo",
-      "brandingLogoRemoved": "Restored default club logo"
+      "brandingLogoRemoved": "Restored default club logo",
+      "archiveMemberRestored": "Restored member from Archive",
+      "archiveBoardRestored": "Restored board from Archive",
+      "archiveTaskPurged": "Permanently purged task",
+      "archiveBoardPurged": "Permanently purged board",
+      "archiveMemberPurged": "Permanently purged member",
+      "archiveRetentionUpdated": "Updated Archive retention policy"
     }
   },
   "boards": {
@@ -708,5 +733,73 @@
     "loadError": "Could not load your tasks.",
     "loadMore": "Load more tasks",
     "loadingMore": "Loading more..."
+  },
+  "archive": {
+    "kicker": "Workspace",
+    "title": "Archive Center",
+    "subtitle": "Restore soft-deleted tasks, deactivated members, or archived boards. Only admins can permanently purge items or change auto-purge retention.",
+    "forbiddenTitle": "You cannot view the Archive",
+    "forbiddenDescription": "Requires at least one archive permission (task.delete, member.deactivate, or board.delete) or admin access.",
+    "tabsAriaLabel": "Archive categories",
+    "tabs": {
+      "tasks": "Deleted tasks",
+      "members": "Deactivated members",
+      "boards": "Archived boards"
+    },
+    "searchLabel": "Search archive",
+    "searchPlaceholder": "Search by task title, name, or email...",
+    "resetSearch": "Clear search",
+    "loadMore": "Load more",
+    "loadingMore": "Loading more...",
+    "loadErrorTitle": "Could not load Archive items",
+    "emptyTitle": "No items in Archive",
+    "emptyDescription": "Soft-deleted tasks, deactivated members, and archived boards appear here.",
+    "restoreButton": "Restore",
+    "restoringButton": "Restoring...",
+    "purgeButton": "Delete permanently",
+    "colTask": "Task",
+    "colBoardColumn": "Board / Column",
+    "colAssignees": "Assignees",
+    "colDeletedAt": "Deleted at",
+    "colLeftAt": "Left at",
+    "colBoard": "Board",
+    "colDepartment": "Department",
+    "colTaskCount": "Tasks",
+    "colArchivedAt": "Archived at",
+    "colCreatedBy": "Created by",
+    "colActions": "Actions",
+    "boardArchivedBadge": "Board archived",
+    "deletedColumnFallback": "Original column deleted (restores to first column)",
+    "boardTaskCount": "{count} tasks",
+    "retentionTitle": "Automatic purge retention",
+    "retentionLabel": "Retention window",
+    "retentionAdminOnlyNote": "Only admins can change the automatic purge retention schedule.",
+    "retentionUpdatedNote": "Last updated: {time}",
+    "retentionUpdatedByNote": "Last updated: {time} · by {name}",
+    "retentionSave": "Save policy",
+    "retentionSaving": "Saving...",
+    "retentionLoadError": "Could not load archive retention policy.",
+    "retentionSavedToast": "Updated Archive retention policy.",
+    "retentionOptions": {
+      "never": "Never auto-purge",
+      "days7": "1 week (7 days)",
+      "days30": "1 month (30 days)",
+      "days90": "3 months (90 days)"
+    },
+    "entityTypes": {
+      "tasks": "task",
+      "members": "member",
+      "boards": "board"
+    },
+    "purgeModalTitle": "Confirm permanent purge",
+    "purgeModalBody": "You are about to permanently purge {entityType} \"{name}\". This action cannot be undone.",
+    "purgeModalHistoryNote": "Personal identifiable data (PII) will be removed or anonymized while immutable audit logs and task history remain intact.",
+    "purgeModalConfirm": "Delete permanently",
+    "purging": "Purging...",
+    "taskRestoredToast": "Restored task \"{title}\".",
+    "memberRestoredToast": "Restored member account \"{name}\".",
+    "boardRestoredToast": "Restored board \"{name}\".",
+    "purgedToast": "Permanently purged {entityType} \"{name}\".",
+    "privacyHint": "Student ID and email are only shown with member.view_detail permission."
   }
 }

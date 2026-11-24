@@ -14,6 +14,7 @@ export type AppNavKey =
   | 'boards'
   | 'myTasks'
   | 'members'
+  | 'archive'
   | 'profile'
   | 'memberAdmin'
   | 'permissions'
@@ -52,6 +53,7 @@ const WORKSPACE_NAV: readonly NavItemConfig[] = [
   { key: 'boards', href: '/boards' },
   { key: 'myTasks', href: '/my-tasks' },
   { key: 'members', href: '/members', permission: 'member.view' },
+  { key: 'archive', href: '/archive', anyOf: ['task.delete', 'member.deactivate', 'board.delete'] },
   { key: 'profile', href: '/profile' },
 ];
 
@@ -74,6 +76,7 @@ const NAV_ICON_PATHS: Record<AppNavKey, ReactNode> = {
   boards: <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />,
   myTasks: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M8 12l3 3 5-6" /></>,
   members: MEMBERS_ICON,
+  archive: <><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></>,
   profile: <><circle cx="12" cy="8" r="3.4" /><path d="M5 20c.7-3.7 3.2-5.8 7-5.8s6.3 2.1 7 5.8" /></>,
   memberAdmin: MEMBERS_ICON,
   permissions: <><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l2 2M14 9l2 2" /></>,

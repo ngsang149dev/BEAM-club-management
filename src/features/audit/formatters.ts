@@ -21,7 +21,13 @@ export type AuditActionMessageKey =
   | 'boardUpdated'
   | 'boardArchived'
   | 'brandingLogoUpdated'
-  | 'brandingLogoRemoved';
+  | 'brandingLogoRemoved'
+  | 'archiveMemberRestored'
+  | 'archiveBoardRestored'
+  | 'archiveTaskPurged'
+  | 'archiveBoardPurged'
+  | 'archiveMemberPurged'
+  | 'archiveRetentionUpdated';
 
 const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'member.created': 'memberCreated',
@@ -50,6 +56,12 @@ const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'board.archived': 'boardArchived',
   'branding.logo_updated': 'brandingLogoUpdated',
   'branding.logo_removed': 'brandingLogoRemoved',
+  'archive.member_restored': 'archiveMemberRestored',
+  'archive.board_restored': 'archiveBoardRestored',
+  'archive.task_purged': 'archiveTaskPurged',
+  'archive.board_purged': 'archiveBoardPurged',
+  'archive.member_purged': 'archiveMemberPurged',
+  'settings.archive_retention_updated': 'archiveRetentionUpdated',
 };
 
 export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
@@ -76,6 +88,12 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'reminders.updated', key: 'remindersUpdated' },
   { value: 'branding.logo_updated', key: 'brandingLogoUpdated' },
   { value: 'branding.logo_removed', key: 'brandingLogoRemoved' },
+  { value: 'archive.member_restored', key: 'archiveMemberRestored' },
+  { value: 'archive.board_restored', key: 'archiveBoardRestored' },
+  { value: 'archive.task_purged', key: 'archiveTaskPurged' },
+  { value: 'archive.board_purged', key: 'archiveBoardPurged' },
+  { value: 'archive.member_purged', key: 'archiveMemberPurged' },
+  { value: 'settings.archive_retention_updated', key: 'archiveRetentionUpdated' },
 ];
 
 export function resolveAuditActionKey(action: string): AuditActionMessageKey | null {
@@ -137,6 +155,25 @@ function readNonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function formatRetentionPreview(value: unknown): string | null {
+  if (value === null) return 'null';
+  if (typeof value === 'number' && Number.isFinite(value)) return `${value}d`;
+  return null;
+}
+
+function formatArchivePreview(detail: Record<string, unknown>): string | null {
+  if ('retentionDays' in detail) {
+    const next = formatRetentionPreview(detail.retentionDays);
+    if (next) return next;
+  }
+  return (
+    readNonEmptyString(detail.purgeMode) ??
+    readNonEmptyString(detail.taskId) ??
+    readNonEmptyString(detail.boardId) ??
+    readNonEmptyString(detail.purgedMemberId)
+  );
+}
+
 function formatEntityPreview(detail: Record<string, unknown>): string {
   const textPreview =
     readNonEmptyString(detail.name) ??
@@ -145,7 +182,7 @@ function formatEntityPreview(detail: Record<string, unknown>): string {
     readNonEmptyString(detail.assetKey);
   if (textPreview) return textPreview;
   if (typeof detail.isAdmin === 'boolean') return detail.isAdmin ? 'isAdmin=true' : 'isAdmin=false';
-  return '—';
+  return formatArchivePreview(detail) ?? '—';
 }
 
 export function formatAuditDetailPreview(detail: Record<string, unknown>): string {

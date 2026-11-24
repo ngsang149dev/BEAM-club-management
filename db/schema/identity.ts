@@ -43,6 +43,7 @@ export const profiles = pgTable(
     isAdmin: boolean('is_admin').notNull().default(false),
     isActive: boolean('is_active').notNull().default(true),
     leftAt: timestamp('left_at', { withTimezone: true, mode: 'date' }),
+    purgedAt: timestamp('purged_at', { withTimezone: true, mode: 'date' }),
     locale: text('locale').notNull().default('vi'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
@@ -55,6 +56,13 @@ export const profiles = pgTable(
     unique('profiles_student_id_uq').on(table.studentId),
     uniqueIndex('profiles_email_lower_uq').on(sql`lower(${table.email})`),
     check('profiles_locale_chk', sql`${table.locale} IN ('vi', 'en')`),
+    check(
+      'profiles_purged_requires_inactive_chk',
+      sql`${table.purgedAt} IS NULL OR ${table.isActive} = false`,
+    ),
+    index('profiles_archive_left_at_idx')
+      .on(sql`${table.leftAt} DESC NULLS LAST`, table.id.desc())
+      .where(sql`${table.isActive} = false AND ${table.purgedAt} IS NULL`),
   ],
 );
 

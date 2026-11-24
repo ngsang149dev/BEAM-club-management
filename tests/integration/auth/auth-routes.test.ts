@@ -1060,9 +1060,9 @@ describe('Auth & /me Route Handlers integration', () => {
           .select()
           .from(auditLogs)
           .where(eq(auditLogs.actorId, activeUserId));
-        expect(auditRows.map((r) => r.action)).toEqual([
-          'member.avatar_updated',
+        expect(auditRows.map((r) => r.action).sort()).toEqual([
           'member.avatar_removed',
+          'member.avatar_updated',
         ]);
         const serializedAudits = JSON.stringify(auditRows);
         const serializedLogs = txLogs.join('\n');

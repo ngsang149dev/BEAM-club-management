@@ -1,5 +1,6 @@
-import { isNotNull } from 'drizzle-orm';
+import { isNotNull, sql } from 'drizzle-orm';
 import {
+  check,
   index,
   integer,
   pgTable,
@@ -22,6 +23,7 @@ export const boards = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: 'restrict' }),
     archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
+    purgedAt: timestamp('purged_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -30,9 +32,16 @@ export const boards = pgTable(
       .defaultNow(),
   },
   (table) => [
+    check(
+      'boards_purged_requires_archived_chk',
+      sql`${table.purgedAt} IS NULL OR ${table.archivedAt} IS NOT NULL`,
+    ),
     index('boards_department_id_idx')
       .on(table.departmentId)
       .where(isNotNull(table.departmentId)),
+    index('boards_archive_archived_at_idx')
+      .on(table.archivedAt.desc(), table.id.desc())
+      .where(sql`${table.archivedAt} IS NOT NULL AND ${table.purgedAt} IS NULL`),
   ],
 );
 

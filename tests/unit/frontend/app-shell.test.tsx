@@ -51,6 +51,7 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).toContain('href="/my-tasks"');
     expect(html).toContain('href="/profile"');
     expect(html).not.toContain('href="/members"');
+    expect(html).not.toContain('href="/archive"');
     expect(html).not.toContain('href="/admin/members"');
     expect(html).not.toContain('href="/admin/permissions"');
     expect(html).not.toContain('href="/admin/departments"');
@@ -76,8 +77,25 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).toContain('href="/admin/departments"');
     expect(html).toContain('href="/admin/reminders"');
     expect(html).toContain('href="/admin/audit"');
+    expect(html).not.toContain('href="/archive"');
     expect(html).not.toContain('href="/admin/members"');
     expect(html).not.toContain('href="/admin/permissions"');
+  });
+
+  it('shows archive link when non-admin holds any archive permission (task.delete, member.deactivate, board.delete)', () => {
+    for (const perm of ['task.delete', 'member.deactivate', 'board.delete'] as const) {
+      const html = renderToStaticMarkup(
+        <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
+          <PermissionsProvider isAdmin={false} permissions={[perm]}>
+            <AppShell activeNav="archive" user={{ fullName: 'Lead User' }}>
+              <div>content</div>
+            </AppShell>
+          </PermissionsProvider>
+        </NextIntlClientProvider>
+      );
+      expect(html).toContain('href="/archive"');
+      expect(html).toContain('Archive');
+    }
   });
 
   it('shows all workspace and admin links for admins and renders left badge when inactive', () => {
@@ -92,6 +110,7 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     );
 
     expect(html).toContain('href="/members"');
+    expect(html).toContain('href="/archive"');
     expect(html).toContain('href="/admin/members"');
     expect(html).toContain('href="/admin/permissions"');
     expect(html).toContain('href="/admin/departments"');

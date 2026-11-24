@@ -12,15 +12,16 @@ Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống qu�
 1. **Hệ quản trị & kiểu dữ liệu:** PostgreSQL 16; khóa chính UUID (`gen_random_uuid()`, trừ các bảng danh mục/khóa tự nhiên như `permissions.code`, `app_settings.key`, `schema_migrations.version` và bảng liên kết dùng khóa chính kép); tên bảng `snake_case` số nhiều.
 2. **Thời gian:** Lưu UTC `timestamptz`; hiển thị múi giờ `Asia/Ho_Chi_Minh`. Ngày hạn task (`tasks.due_at`) lưu mốc `00:00:00+07` của ngày được chọn (`WQ-12`).
 3. **Dấu vết thời gian:** Mọi bảng đều có `created_at`; các bảng có thay đổi dữ liệu (mutable) có thêm `updated_at` tự cập nhật qua trigger `set_updated_at`.
-4. **Bảo vệ lịch sử & danh tính:**
+4. **Bảo vệ lịch sử & danh tính (`CR-04` mở rộng `WQ-21`, `Q39`):**
    - Mọi khóa ngoại trỏ về `profiles(id)` dùng `ON DELETE RESTRICT` (không bao giờ xóa cascade lịch sử thành viên; thành viên rời CLB dùng `is_active = false`, `left_at`).
-   - `profiles.student_id` bất biến sau khi tạo (trigger `prevent_student_id_change`, `WQ-21`).
+   - `profiles.student_id` bất biến sau khi tạo (trigger `prevent_student_id_change`, `WQ-21`), chỉ mở ngoại lệ một chiều duy nhất khi Admin/Cron thực hiện purge tài khoản đã phát sinh lịch sử (`OLD.purged_at IS NULL AND NEW.purged_at IS NOT NULL AND NEW.is_active = false`) để ẩn danh thành `'PURGED-' || id::text`; đồng thời chặn mọi thao tác bỏ `purged_at` (`ALREADY_PURGED`) trên `profiles`, `boards` và `tasks` (trigger `prevent_entity_unpurge`).
+   - Tài khoản đã khóa nhưng **chưa có** bản ghi lịch sử/liên kết (`audit_logs`, `task_events`, `tasks`, `task_assignees`, `comments`, `boards`, `reminders`, `app_settings`, `club_assets`, `user_permissions(granted_by)`) có thể bị xóa vật lý (`DELETE FROM profiles`) bởi Admin/Cron sau khi dọn `sessions`, `member_departments`, `user_permissions(user_id)`.
    - Luôn có ít nhất 1 admin hoạt động (hai trigger `AFTER STATEMENT` với transition tables `prevent_last_active_admin_update` và `prevent_last_active_admin_delete`, khóa đồng thời bằng `pg_advisory_xact_lock`).
    - `task_events` và `audit_logs` là bảng **chỉ ghi thêm** (`append-only`), chặn `UPDATE`/`DELETE`/`TRUNCATE` bằng trigger `prevent_append_only_mutation`.
    - `task_events.changes` chỉ lưu ID và giá trị trường miền, **không lưu** họ tên, MSSV hay email.
    - Không hardcode `@eiu.edu.vn` trong ràng buộc SQL; kiểm tra domain email nằm ở cấu hình máy chủ (`ALLOWED_EMAIL_DOMAIN`).
-5. **Xóa mềm & Thùng rác (`Q39`, `WQ-05`, `WQ-33`):**
-   - `tasks.deleted_at` giữ vô thời hạn trong MVP (không xóa vĩnh viễn).
+5. **Xóa mềm, Kho lưu trữ Archive & Purge an toàn (`CR-04`, `WQ-05`, `WQ-33`):**
+   - `profiles.purged_at`, `boards.purged_at`, `tasks.purged_at`: đánh dấu đối tượng đã bị xóa vĩnh viễn khỏi Kho lưu trữ (`/archive`) bởi Admin hoặc Cron (`app_settings('archive_retention')`: `null`/`7`/`30`/`90` ngày) nhưng vẫn bảo toàn khóa ngoại & lịch sử bất biến.
    - `columns -> tasks` dùng `ON DELETE RESTRICT` để chặn xóa cột còn task (`409`). Riêng `tasks.column_id` cho phép `NULL` khi `deleted_at IS NOT NULL` (`CHECK (deleted_at IS NOT NULL OR column_id IS NOT NULL)`), giúp service xóa cột có thể dọn `column_id = NULL` cho các task đã nằm sẵn trong Thùng rác và khi khôi phục (`WQ-33`) sẽ đưa về cột đầu tiên của board.
 
 ---
@@ -42,6 +43,7 @@ erDiagram
         boolean is_admin
         boolean is_active
         timestamptz left_at
+        timestamptz purged_at "NULL"
         text locale
         timestamptz created_at
         timestamptz updated_at
@@ -144,6 +146,7 @@ erDiagram
         uuid department_id FK
         uuid created_by FK
         timestamptz archived_at
+        timestamptz purged_at "NULL"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -169,6 +172,7 @@ erDiagram
         boolean is_hidden
         integer version
         timestamptz deleted_at
+        timestamptz purged_at "NULL"
         uuid created_by FK
         timestamptz created_at
         timestamptz updated_at
@@ -262,6 +266,7 @@ Lưu danh tính nội bộ, trạng thái hoạt động, cờ admin và tùy ch
 | `is_admin` | `boolean` | NO | `false` | Toàn quyền + quản trị quyền/admin |
 | `is_active` | `boolean` | NO | `true` | `false` = đã rời CLB (`"(đã rời)"`) |
 | `left_at` | `timestamptz` | YES | `NULL` | Mốc đánh dấu rời CLB |
+| `purged_at` | `timestamptz` | YES | `NULL` | Mốc xóa vĩnh viễn/ẩn danh PII khỏi Archive (`CHECK (purged_at IS NULL OR is_active = false)`) |
 | `locale` | `text` | NO | `'vi'` | `CHECK (locale IN ('vi', 'en'))` |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
@@ -400,6 +405,7 @@ Bảng công việc kiểu Trello; thuộc tối đa 1 ban hoặc chung CLB (`de
 | `department_id` | `uuid` | YES | `NULL` | `FK -> departments(id) ON DELETE RESTRICT` (`WQ-02`) |
 | `created_by` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` |
 | `archived_at` | `timestamptz` | YES | `NULL` | Lưu trữ board thay vì xóa cứng |
+| `purged_at` | `timestamptz` | YES | `NULL` | Mốc xóa vĩnh viễn khỏi Archive (`CHECK (purged_at IS NULL OR archived_at IS NOT NULL)`) |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
 
@@ -430,7 +436,8 @@ Thẻ công việc trong board; hỗ trợ priority 1..4, vị trí `numeric`, t
 | `position` | `numeric` | NO | — | Vị trí sắp xếp liên tục trong cột |
 | `is_hidden` | `boolean` | NO | `false` | Chỉ người tạo, người được giao và admin được xem |
 | `version` | `integer` | NO | `1` | `CHECK (version >= 1)`, chống ghi đè đồng thời |
-| `deleted_at` | `timestamptz` | YES | `NULL` | Xóa mềm, giữ vô thời hạn trong Thùng rác (`Q39`) |
+| `deleted_at` | `timestamptz` | YES | `NULL` | Xóa mềm đưa vào Kho lưu trữ Archive |
+| `purged_at` | `timestamptz` | YES | `NULL` | Mốc xóa vĩnh viễn khỏi Archive (`CHECK (purged_at IS NULL OR deleted_at IS NOT NULL)`) |
 | `created_by` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
@@ -497,6 +504,9 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `tasks_priority_chk`: `CHECK (priority BETWEEN 1 AND 4)` trên `tasks`.
 - `tasks_version_chk`: `CHECK (version >= 1)` trên `tasks`.
 - `tasks_active_column_not_null_chk`: `CHECK (deleted_at IS NOT NULL OR column_id IS NOT NULL)` trên `tasks`.
+- `profiles_purged_requires_inactive_chk`: `CHECK (purged_at IS NULL OR is_active = false)` trên `profiles`.
+- `boards_purged_requires_archived_chk`: `CHECK (purged_at IS NULL OR archived_at IS NOT NULL)` trên `boards`.
+- `tasks_purged_requires_deleted_chk`: `CHECK (purged_at IS NULL OR deleted_at IS NOT NULL)` trên `tasks`.
 - `reminders_task_user_kind_uq`: `UNIQUE (task_id, user_id, kind)` trên `reminders`.
 - Khóa chính kép: `member_departments (user_id, department_id)`, `user_permissions (user_id, permission_code)`, `preset_permissions (preset_id, permission_code)`, `task_assignees (task_id, user_id)`.
 
@@ -518,6 +528,9 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `tasks_board_column_position_active_idx`: `ON tasks (board_id, column_id, position) WHERE deleted_at IS NULL`
 - `tasks_due_at_active_idx`: `ON tasks (due_at) WHERE deleted_at IS NULL AND due_at IS NOT NULL`
 - `tasks_board_deleted_at_idx`: `ON tasks (board_id, deleted_at DESC) WHERE deleted_at IS NOT NULL`
+- `tasks_archive_deleted_at_idx`: `ON tasks (deleted_at DESC, id DESC) WHERE deleted_at IS NOT NULL AND purged_at IS NULL`
+- `boards_archive_archived_at_idx`: `ON boards (archived_at DESC, id DESC) WHERE archived_at IS NOT NULL AND purged_at IS NULL`
+- `profiles_archive_left_at_idx`: `ON profiles (left_at DESC NULLS LAST, id DESC) WHERE is_active = false AND purged_at IS NULL`
 - `tasks_created_by_idx`: `ON tasks (created_by)`
 - `task_assignees_user_id_idx`: `ON task_assignees (user_id)`
 - `comments_task_id_created_at_idx`: `ON comments (task_id, created_at)`
@@ -541,6 +554,7 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 |---|---|---|---|
 | `prevent_last_active_admin_update` | `profiles` (`AFTER UPDATE REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT`) | Nếu có admin hoạt động bị hạ quyền/khóa, khóa `pg_advisory_xact_lock(hashtext('beam_active_admin_guard'))` và kiểm tra `EXISTS (SELECT 1 FROM profiles WHERE is_admin AND is_active)` | `HINT = 'LAST_ACTIVE_ADMIN'` — chống gỡ/khóa admin cuối kể cả lệnh cập nhật nhiều dòng & cạnh tranh đồng thời |
 | `prevent_last_active_admin_delete` | `profiles` (`AFTER DELETE REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT`) | Nếu có admin hoạt động bị xóa, khóa `pg_advisory_xact_lock(hashtext('beam_active_admin_guard'))` và kiểm tra `EXISTS (SELECT 1 FROM profiles WHERE is_admin AND is_active)` | `HINT = 'LAST_ACTIVE_ADMIN'` — chống xóa admin cuối kể cả lệnh xóa nhiều dòng & cạnh tranh đồng thời |
-| `prevent_student_id_change` | `profiles` (`BEFORE UPDATE FOR EACH ROW`) | Chặn nếu `NEW.student_id IS DISTINCT FROM OLD.student_id` | `HINT = 'STUDENT_ID_IMMUTABLE'` — khóa MSSV sau khi tạo (`WQ-21`) |
+| `prevent_student_id_change` | `profiles` (`BEFORE UPDATE FOR EACH ROW`) | Chặn đổi `student_id` (trừ duy nhất chuyển đổi purge một chiều `OLD.purged_at IS NULL AND NEW.purged_at IS NOT NULL AND NEW.is_active = false`) và chặn xóa `purged_at` | `HINT = 'STUDENT_ID_IMMUTABLE'` / `'ALREADY_PURGED'` |
+| `prevent_entity_unpurge` | `boards`, `tasks` (`BEFORE UPDATE FOR EACH ROW`) | Chặn đặt lại `purged_at = NULL` sau khi đối tượng đã bị purge | `HINT = 'ALREADY_PURGED'` — khóa xóa vĩnh viễn một chiều |
 | `prevent_append_only_mutation` | `task_events`, `audit_logs` (`BEFORE UPDATE OR DELETE OR TRUNCATE FOR EACH STATEMENT`) | Từ chối mọi thao tác `UPDATE`, `DELETE` hoặc `TRUNCATE` | `HINT = 'APPEND_ONLY_TABLE'` — đảm bảo nhật ký chỉ ghi thêm (`Q36`, `D35`) |
 | `set_updated_at` | `profiles`, `sessions`, `app_settings`, `departments`, `permissions`, `permission_presets`, `boards`, `columns`, `tasks` (`BEFORE UPDATE FOR EACH ROW`) | Gán `NEW.updated_at := now()` | Đồng bộ thời điểm cập nhật UTC |

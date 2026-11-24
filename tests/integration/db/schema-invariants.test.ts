@@ -399,4 +399,124 @@ describe('PostgreSQL schema & trigger invariants', () => {
       );
     });
   });
+
+  it('enforces 0004 archive CHECK constraints, prevent_student_id_change anonymization exception, and ALREADY_PURGED triggers', async () => {
+    await withRollbackTransaction(pool, async (client) => {
+      const actorId = '96000000-0000-4000-8000-000000000001';
+      const inactiveId = '96000000-0000-4000-8000-000000000002';
+      const boardId = '96000000-0000-4000-8000-000000000010';
+      const colId = '96000000-0000-4000-8000-000000000020';
+      const taskId = '96000000-0000-4000-8000-000000000030';
+
+      await client.query(
+        `INSERT INTO profiles (id, student_id, email, full_name, is_admin, is_active)
+         VALUES
+           ($1, 'INV04-ACT', 'inv04-act@eiu.edu.vn', 'Inv04 Actor', false, true),
+           ($2, 'INV04-INACT', 'inv04-inact@eiu.edu.vn', 'Inv04 Inactive', false, false)`,
+        [actorId, inactiveId],
+      );
+      await client.query(
+        `INSERT INTO boards (id, name, created_by) VALUES ($1, 'Inv04 Board', $2)`,
+        [boardId, actorId],
+      );
+      await client.query(
+        `INSERT INTO columns (id, board_id, name, order_index) VALUES ($1, $2, 'Todo', 0)`,
+        [colId, boardId],
+      );
+      await client.query(
+        `INSERT INTO tasks (id, board_id, column_id, title, priority, position, created_by)
+         VALUES ($1, $2, $3, 'Inv04 Task', 2, 1000, $4)`,
+        [taskId, boardId, colId, actorId],
+      );
+
+      // 1. Seeded app_settings('archive_retention') exists
+      const settingRes = await client.query<{ key: string; value: { retentionDays: number | null } }>(
+        `SELECT key, value FROM app_settings WHERE key = 'archive_retention'`,
+      );
+      expect(settingRes.rows[0]?.key).toBe('archive_retention');
+
+      // 2. CHECK constraints: purged_at requires inactive/archived/deleted
+      await expectPgError(
+        client,
+        'sp_prof_purged_active',
+        () => client.query(`UPDATE profiles SET purged_at = now() WHERE id = $1`, [actorId]),
+        { code: '23514' },
+      );
+      await expectPgError(
+        client,
+        'sp_board_purged_active',
+        () => client.query(`UPDATE boards SET purged_at = now() WHERE id = $1`, [boardId]),
+        { code: '23514' },
+      );
+      await expectPgError(
+        client,
+        'sp_task_purged_active',
+        () => client.query(`UPDATE tasks SET purged_at = now() WHERE id = $1`, [taskId]),
+        { code: '23514' },
+      );
+
+      // 3. prevent_student_id_change blocks normal changes even when inactive without purged_at
+      await expectPgError(
+        client,
+        'sp_sid_inact_no_purge',
+        () =>
+          client.query(`UPDATE profiles SET student_id = 'INV04-MUTATED' WHERE id = $1`, [
+            inactiveId,
+          ]),
+        { hint: 'STUDENT_ID_IMMUTABLE' },
+      );
+
+      // 4. One-way anonymization exception succeeds on inactive -> purged_at transition
+      await client.query(
+        `UPDATE profiles
+         SET student_id = $2,
+             email = $3,
+             full_name = 'Thành viên đã xóa',
+             purged_at = now(),
+             is_active = false
+         WHERE id = $1`,
+        [inactiveId, `PURGED-${inactiveId}`, `purged+${inactiveId}@redacted.local`],
+      );
+
+      // 5. Un-purging profile or mutating student_id afterwards is blocked
+      await expectPgError(
+        client,
+        'sp_prof_unpurge',
+        () => client.query(`UPDATE profiles SET purged_at = NULL WHERE id = $1`, [inactiveId]),
+        { hint: 'ALREADY_PURGED' },
+      );
+      await expectPgError(
+        client,
+        'sp_prof_sid_after_purge',
+        () =>
+          client.query(`UPDATE profiles SET student_id = 'INV04-AGAIN' WHERE id = $1`, [
+            inactiveId,
+          ]),
+        { hint: 'STUDENT_ID_IMMUTABLE' },
+      );
+
+      // 6. prevent_entity_unpurge on tasks & boards
+      await client.query(
+        `UPDATE tasks SET deleted_at = now(), purged_at = now() WHERE id = $1`,
+        [taskId],
+      );
+      await expectPgError(
+        client,
+        'sp_task_unpurge',
+        () => client.query(`UPDATE tasks SET purged_at = NULL WHERE id = $1`, [taskId]),
+        { hint: 'ALREADY_PURGED' },
+      );
+
+      await client.query(
+        `UPDATE boards SET archived_at = now(), purged_at = now() WHERE id = $1`,
+        [boardId],
+      );
+      await expectPgError(
+        client,
+        'sp_board_unpurge',
+        () => client.query(`UPDATE boards SET purged_at = NULL WHERE id = $1`, [boardId]),
+        { hint: 'ALREADY_PURGED' },
+      );
+    });
+  });
 });

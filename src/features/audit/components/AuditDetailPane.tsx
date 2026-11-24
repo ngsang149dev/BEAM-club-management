@@ -111,6 +111,77 @@ function appendSecurityMetadata(
   }
 }
 
+function formatRetentionMetadataValue(
+  value: unknown,
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): string | null {
+  if (value === null) return t('detailValues.retentionNever');
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return t('detailValues.retentionDaysCount', { days: value });
+  }
+  return null;
+}
+
+const PURGE_MODE_KEY_MAP: Record<
+  string,
+  'purgeModeMarkedPurged' | 'purgeModeAnonymized' | 'purgeModePhysicalDelete'
+> = {
+  marked_purged: 'purgeModeMarkedPurged',
+  anonymized: 'purgeModeAnonymized',
+  physical_delete: 'purgeModePhysicalDelete',
+};
+
+function appendArchiveRetentionMetadata(
+  detail: Record<string, unknown>,
+  rows: MetadataEntry[],
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): void {
+  if ('retentionDays' in detail) {
+    const formatted = formatRetentionMetadataValue(detail.retentionDays, t);
+    if (formatted) rows.push({ label: t('detailLabels.retentionDays'), value: formatted });
+  }
+  if ('previousRetentionDays' in detail) {
+    const formatted = formatRetentionMetadataValue(detail.previousRetentionDays, t);
+    if (formatted) rows.push({ label: t('detailLabels.previousRetentionDays'), value: formatted });
+  }
+}
+
+function appendArchivePurgeIds(
+  detail: Record<string, unknown>,
+  rows: MetadataEntry[],
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): void {
+  const idFields = [
+    ['taskId', 'taskId'],
+    ['boardId', 'boardId'],
+    ['purgedMemberId', 'purgedMemberId'],
+  ] as const;
+  for (const [field, labelKey] of idFields) {
+    const val = detail[field];
+    if (typeof val === 'string' && val) {
+      rows.push({ label: t(`detailLabels.${labelKey}`), value: val, mono: true });
+    }
+  }
+}
+
+function appendArchivePurgeMetadata(
+  detail: Record<string, unknown>,
+  rows: MetadataEntry[],
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): void {
+  if (typeof detail.purgeMode === 'string' && detail.purgeMode) {
+    const valueKey = PURGE_MODE_KEY_MAP[detail.purgeMode];
+    rows.push({
+      label: t('detailLabels.purgeMode'),
+      value: valueKey ? t(`detailValues.${valueKey}`) : detail.purgeMode,
+    });
+  }
+  if (typeof detail.cascadedTasks === 'number' && Number.isFinite(detail.cascadedTasks)) {
+    rows.push({ label: t('detailLabels.cascadedTasks'), value: String(detail.cascadedTasks), mono: true });
+  }
+  appendArchivePurgeIds(detail, rows, t);
+}
+
 function buildMetadataRows(
   detail: Record<string, unknown>,
   t: ReturnType<typeof useTranslations<'auditLogs'>>,
@@ -121,6 +192,8 @@ function buildMetadataRows(
   appendEntityMetadata(detail, rows, t);
   appendMediaMetadata(detail, rows, t);
   appendSecurityMetadata(detail, rows, t);
+  appendArchiveRetentionMetadata(detail, rows, t);
+  appendArchivePurgeMetadata(detail, rows, t);
   return rows;
 }
 
