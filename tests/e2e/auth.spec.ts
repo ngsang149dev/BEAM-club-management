@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { and, eq, inArray, ne, or } from 'drizzle-orm';
 import type { Pool } from 'pg';
-import { loginAttempts, permissions, profiles, sessions, userPermissions } from '@db/schema';
+import { clubAssets, loginAttempts, permissions, profiles, sessions, userPermissions } from '@db/schema';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
+import { expectColorfulInitialsAvatar } from './helpers/media-fixtures';
 import viMessages from '../../messages/vi.json';
 import enMessages from '../../messages/en.json';
 
@@ -44,6 +45,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
 
     pool = createDbPool(testDatabaseUrl);
     db = createDb(pool);
+    await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
     const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
 
     await db
@@ -180,6 +182,8 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     page,
   }) => {
     await page.goto('/login');
+    await expect(page.locator('.login-left .ui-logo i')).toHaveCount(4);
+    await expect(page.locator('.login-left img.club-logo-img')).toHaveCount(0);
 
     const studentInput = page.getByLabel(viMessages.auth.studentIdLabel, { exact: true });
     const passwordInput = page.getByLabel(viMessages.auth.passwordLabel, { exact: true });
@@ -307,6 +311,9 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     await expect(page.locator('.profile-perms')).toContainText('member.view');
     await expect(page.locator('.profile-perms')).toContainText('task.update_assigned');
     await expect(page.locator('.profile-perms')).toContainText('comment.create');
+
+    await expectColorfulInitialsAvatar(page.locator('.profile-hero .ui-avatar'), activeUserId, activeFullName);
+    await expectColorfulInitialsAvatar(page.locator('.app-side .app-user .ui-avatar'), activeUserId, activeFullName);
 
     expect(mePayload.length).toBeGreaterThan(0);
     assertNoSecretsInText(mePayload, [DEV_SEED_PASSWORD]);

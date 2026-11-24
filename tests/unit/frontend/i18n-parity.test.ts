@@ -209,6 +209,23 @@ describe('i18n message dictionaries (vi/en)', () => {
       'departmentsAdmin.unusedSectionTitle',
       'departmentsAdmin.deleteModalTitle',
       'departmentsAdmin.deleteBlockedHint',
+      'errors.invalidImageFormat',
+      'errors.imageTooLarge',
+      'media.uploadPhoto',
+      'media.changePhoto',
+      'media.removePhoto',
+      'media.avatarHint',
+      'branding.modalTitle',
+      'branding.uploadButton',
+      'branding.restoreDefaultButton',
+      'profile.avatarUpdatedToast',
+      'profile.avatarRemovedToast',
+      'memberAdmin.clubLogoButton',
+      'memberAdmin.memberAvatarTitle',
+      'auditLogs.actions.memberAvatarUpdated',
+      'auditLogs.actions.memberAvatarRemoved',
+      'auditLogs.actions.brandingLogoUpdated',
+      'auditLogs.actions.brandingLogoRemoved',
     ];
 
     for (const key of e3Keys) {

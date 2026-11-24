@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { getMemberInitials } from '@/features/members/components/MembersToolbar';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import {
   PRIORITY_MESSAGE_KEY,
   formatTaskDueDate,
@@ -91,9 +91,13 @@ export function TaskAssigneeChips({ assignees }: { assignees: readonly MemberPub
     <div className="task-assignees-chips">
       {assignees.map((person) => (
         <span key={person.id} className="ui-chip">
-          <span className={person.isActive ? 'ui-avatar is-xs' : 'ui-avatar is-xs is-out'} aria-hidden="true">
-            {getMemberInitials(person.fullName)}
-          </span>
+          <MemberAvatar
+            memberId={person.id}
+            fullName={person.fullName}
+            avatarUrl={person.avatarUrl}
+            isActive={person.isActive}
+            size="xs"
+          />
           <span>
             {person.fullName}
             {!person.isActive ? ` ${tBadge('leftBadge')}` : ''}

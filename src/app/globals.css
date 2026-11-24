@@ -217,18 +217,72 @@ svg {
   background: var(--pink);
 }
 
+.ui-logo.is-sm,
+.club-logo-box.is-sm {
+  width: 22px;
+  height: 22px;
+}
+
+.ui-logo.is-lg,
+.club-logo-box.is-lg {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+}
+
+.ui-logo.is-lg {
+  padding: 8px;
+  gap: 5px;
+}
+
+.club-logo-box {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1.5px solid var(--ink);
+  border-radius: 5px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop-xs);
+}
+
+.club-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .ui-avatar {
   width: 28px;
   height: 28px;
   flex: none;
   display: inline-grid;
   place-items: center;
+  overflow: hidden;
   border: 1.5px solid var(--ink);
   border-radius: 50%;
   background: var(--pink-soft);
   color: var(--ink);
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ui-avatar img,
+.ui-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ui-avatar.has-image {
+  background: var(--surface);
 }
 
 .ui-avatar.is-out {
@@ -243,11 +297,32 @@ svg {
   );
 }
 
+.ui-avatar.has-image.is-out {
+  background: var(--surface);
+}
+
+.ui-avatar.has-image.is-out img {
+  opacity: 0.72;
+  filter: grayscale(0.55);
+}
+
 .ui-avatar.is-xs {
   width: 19px;
   height: 19px;
   font-size: 9px;
   border-width: 1px;
+}
+
+.ui-avatar.is-sm {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.ui-avatar.is-lg {
+  width: 56px;
+  height: 56px;
+  font-size: 20px;
 }
 
 /* ---------- Language switch ---------- */
@@ -3421,9 +3496,16 @@ svg {
     padding: 28px 36px 48px;
   }
 
-  .ui-logo {
+  .ui-logo,
+  .club-logo-box {
     width: 32px;
     height: 32px;
+  }
+
+  .ui-logo.is-lg,
+  .club-logo-box.is-lg {
+    width: 64px;
+    height: 64px;
   }
 
   .app-nav-item,
@@ -3717,6 +3799,76 @@ svg {
   display: flex;
   justify-content: flex-start;
   padding-top: 2px;
+}
+
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.avatar-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.avatar-upload-box {
+  display: grid;
+  gap: 10px;
+}
+
+.avatar-upload-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.avatar-upload-meta {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.avatar-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.club-logo-preview-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--paper) 100%);
+  box-shadow: var(--shadow-pop-xs);
+}
+
+.club-logo-preview-meta {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  min-width: 0;
+  flex: 1;
+}
+
+.club-logo-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

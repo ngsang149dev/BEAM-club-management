@@ -1,7 +1,7 @@
 # STATUS
 
-Cập nhật: 2026-11-24 · Phiên: 3
-Epic hiện tại: CR-02 · Item: CR-02-01, CR-02-02, CR-02-03 · Trạng thái: Ready (chờ chủ dự án duyệt danh sách item)
+Cập nhật: 2026-11-24 · Phiên: 4
+Epic hiện tại: CR-02 · Item: CR-02-01, CR-02-02, CR-02-03 · Trạng thái: Done trên nhánh `feat/CR02-branding-and-avatars` (chờ chủ dự án duyệt merge PR)
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -18,9 +18,16 @@ Epic hiện tại: CR-02 · Item: CR-02-01, CR-02-02, CR-02-03 · Trạng thái:
   - Backend: `src/server/shared/password.ts` (`scrypt` + `timingSafeEqual` + `DUMMY_PASSWORD_HASH`), che `passwordhash` trong `Logger`, `POST /api/v1/auth/login` kiểm tra mật khẩu + redirect `/profile?changePassword=1` khi `mustChangePassword=true` (và không có `returnTo` hợp lệ), `POST /api/v1/me/password` (`400 INVALID_CURRENT_PASSWORD`, giữ session hiện tại & thu hồi session khác), `POST /api/v1/members` (`initialPassword` hoặc config fallback non-prod), `POST /api/v1/members/{id}/reset-password` (chặn `403` khi tài khoản không phải admin đặt lại cho admin, thu hồi toàn bộ session & ghi `audit_logs` `'member.password_reset'` không chứa bí mật).
   - Frontend: `PasswordInput`, `S01` `LoginForm` + `LoginPage` (`resolveExplicitReturnTo`), `S08` `ProfileView` + `ChangePasswordCard` (giữ mount ổn định khi đổi `mustChangePassword`), `S09` `MemberFormDrawer` (`initialPassword` + nút tạo ngẫu nhiên) + `ResetPasswordModal` (ẩn nút đặt lại trên dòng Admin với người không phải Admin), nhãn audit `memberPasswordReset`, `messages/{vi,en}.json`.
   - Kiểm thử & QA (`qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`200/856`), `openapi:check`, `184 unit test / 37 tệp`, `16 integration test PostgreSQL / 10 tệp`, `next build` (`26/26` trang/route), **`15/15` Chrome E2E** đều đạt -> **`VERDICT: PASS`**.
+- **CR-02 (Done trên `feat/CR02-branding-and-avatars`, chờ chủ dự án duyệt merge PR):**
+  - Hợp đồng & CSDL: `docs/DECISIONS.md` (gồm cập nhật đặt lại mật khẩu chỉ dành cho Admin), `docs/ERD.md` (19 bảng), `docs/openapi.yaml` (sinh lại `schema.d.ts`), migration `0003_branding_and_avatars.sql` (`club_assets` + `profiles.avatar_*` tối đa `256 KB`, chỉ PNG/JPEG/WEBP), `src/lib/media.ts`, `src/server/shared/media.ts`.
+  - Backend: Module `branding` (`GET /branding`, `GET/PUT/DELETE /branding/logo` Admin-only), `PUT/DELETE /me/avatar`, `GET/PUT/DELETE /members/{id}/avatar` (`member.update`/Admin, kiểm tra magic bytes & gắn `X-Content-Type-Options: nosniff` + `CSP: default-src 'none'; sandbox`), `avatarUrl` trên `auth`/`members`/`boards`/`tasks`/`audit` (không SELECT `bytea` ở danh sách), audit `branding.logo_*` & `member.avatar_*`, và siết `POST /members/{id}/reset-password` **chỉ Admin (`403` với non-admin kể cả có `member.update`)**.
+  - Frontend: `ClubLogo` (`AppShell`, `LoginForm`, `LoginShowcase`, `ErrorState`), `MemberAvatar` (ảnh thật hoặc chữ cái đầu tên + 8 màu `AVATAR_PALETTE` đồng bộ toàn site kể cả chip assignee Kanban), `image-compress.ts` (nén `<= 256 KB`), `AvatarUploadControl` tại `S08` (`/profile`) & `S09` (`MemberFormDrawer`), `ClubLogoModal` (Admin-only tại `/admin/members`), ẩn nút đặt lại mật khẩu trên UI với mọi user không phải Admin, `vi`/`en` 100%.
+  - Kiểm thử & QA (`qa-engineer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`220/959`), `openapi:check`, **`206` unit test / `41` tệp**, **`18` integration PostgreSQL / `11` tệp**, `next build` (`29/29` trang/route), **`18/18` Chrome E2E** -> **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor nhỏ không chặn).
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Chờ Sang **duyệt danh sách item của `CR-02`** (`CR-02-01`, `CR-02-02`, `CR-02-03`, migration `0003_branding_and_avatars.sql` & OpenAPI cộng thêm) trong `docs/BACKLOG.md` để bắt đầu triển khai ngay.
+- Chờ Sang xác nhận:
+  1. **Duyệt merge nhánh `feat/CR02-branding-and-avatars` vào `main`.**
+  2. **Duyệt bắt đầu `CR-03`** (`[RỦI RO CAO]` Giao task cho Ban `task_departments` + gửi Email SMTP & Thông báo chuông).
 
 ## Việc tiếp theo
-- Sau khi Sang duyệt danh sách item `CR-02`: tạo nhánh `feat/CR02-branding-and-avatars` triển khai **`CR-02`** (Logo CLB & Avatar thành viên <= 256 KB + chữ cái đầu đa sắc) -> **`CR-03`** (Giao task theo Ban & Thông báo) -> **`CR-04`** (Kho lưu trữ tập trung Archive cho Task/User/Board, `A1`–`A5`) -> **`E6–E9`**.
+- Sau khi Sang duyệt merge `CR-02`: merge `--no-ff` vào `main`, rồi triển khai **`CR-03`** (Giao task theo Ban & Thông báo) -> **`CR-04`** (Kho lưu trữ tập trung Archive cho Task/User/Board, `A1`–`A5`) -> **`E6–E9`**.

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  customType,
   index,
   jsonb,
   pgTable,
@@ -12,6 +13,18 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType() {
+    return 'bytea';
+  },
+  toDriver(value: Buffer): Buffer {
+    return value;
+  },
+  fromDriver(value: Buffer | Uint8Array): Buffer {
+    return Buffer.isBuffer(value) ? value : Buffer.from(value);
+  },
+});
+
 export const profiles = pgTable(
   'profiles',
   {
@@ -21,6 +34,12 @@ export const profiles = pgTable(
     fullName: text('full_name').notNull(),
     passwordHash: text('password_hash'),
     mustChangePassword: boolean('must_change_password').notNull().default(false),
+    avatarData: bytea('avatar_data'),
+    avatarMime: text('avatar_mime'),
+    avatarUpdatedAt: timestamp('avatar_updated_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     isAdmin: boolean('is_admin').notNull().default(false),
     isActive: boolean('is_active').notNull().default(true),
     leftAt: timestamp('left_at', { withTimezone: true, mode: 'date' }),
@@ -96,3 +115,31 @@ export const appSettings = pgTable('app_settings', {
     .notNull()
     .defaultNow(),
 });
+
+export const clubAssets = pgTable(
+  'club_assets',
+  {
+    key: text('key').primaryKey(),
+    mimeType: text('mime_type').notNull(),
+    data: bytea('data').notNull(),
+    updatedBy: uuid('updated_by').references(() => profiles.id, {
+      onDelete: 'restrict',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      'club_assets_mime_type_chk',
+      sql`${table.mimeType} IN ('image/png', 'image/jpeg', 'image/webp')`,
+    ),
+    check(
+      'club_assets_data_size_chk',
+      sql`octet_length(${table.data}) BETWEEN 1 AND 262144`,
+    ),
+  ],
+);

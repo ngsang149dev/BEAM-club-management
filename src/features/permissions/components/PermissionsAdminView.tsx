@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
-import { getMemberInitials } from '@/features/members/components/MembersToolbar';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { isMemberDetail, type MemberListItem } from '@/features/members/hooks/useMembers';
 import { usePermissions, type PermissionCode } from '@/features/shared/permissions/can';
 import { PERMISSION_PRESETS } from '@/lib/permissions';
@@ -35,9 +35,12 @@ function PermissionsHeaderBar({
   return (
     <div className="perm-top">
       <div className="perm-who">
-        <span className={member.isActive ? 'ui-avatar' : 'ui-avatar is-out'} aria-hidden="true">
-          {getMemberInitials(member.fullName)}
-        </span>
+        <MemberAvatar
+          memberId={member.id}
+          fullName={member.fullName}
+          avatarUrl={member.avatarUrl}
+          isActive={member.isActive}
+        />
         <div>
           <h2>{member.fullName}</h2>
           <span>{isAdminFlag ? t('roleAdmin') : t('roleMember')} · {deptText}</span>

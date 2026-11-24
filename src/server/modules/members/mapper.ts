@@ -1,4 +1,5 @@
-import type { MemberProfileRecord } from './repository';
+import { toMemberAvatarUrl } from '@/lib/media';
+import type { MemberProfileRecord } from './types';
 
 export interface DepartmentSummaryDto {
   readonly id: string;
@@ -11,6 +12,7 @@ export interface MemberPublicSummaryDto {
   readonly isActive: boolean;
   readonly leftAt: string | null;
   readonly departments: DepartmentSummaryDto[];
+  readonly avatarUrl: string | null;
 }
 
 export interface MemberDetailDto extends MemberPublicSummaryDto {
@@ -50,6 +52,7 @@ export function toMemberDto(
       id: department.id,
       name: department.name,
     })),
+    avatarUrl: toMemberAvatarUrl(record.id, record.avatarUpdatedAt),
   };
 
   if (!includeDetail) {

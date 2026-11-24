@@ -11,6 +11,8 @@ export interface MemberErrorDescriptor {
     | 'studentIdImmutable'
     | 'initialPasswordRequired'
     | 'invalidCursor'
+    | 'invalidImageFormat'
+    | 'imageTooLarge'
     | 'validation'
     | 'unauthorized'
     | 'forbidden'
@@ -31,6 +33,8 @@ const CODE_TO_KEY: Record<string, Exclude<MemberErrorDescriptor['key'], 'invalid
   STUDENT_ID_IMMUTABLE: 'studentIdImmutable',
   INITIAL_PASSWORD_REQUIRED: 'initialPasswordRequired',
   INVALID_CURSOR: 'invalidCursor',
+  INVALID_IMAGE_FORMAT: 'invalidImageFormat',
+  IMAGE_TOO_LARGE: 'imageTooLarge',
   VALIDATION_ERROR: 'validation',
   UNAUTHORIZED: 'unauthorized',
   SESSION_EXPIRED: 'unauthorized',

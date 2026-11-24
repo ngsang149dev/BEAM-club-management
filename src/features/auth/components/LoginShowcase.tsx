@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { ClubLogo } from '@/components/ClubLogo';
 
 function PriorityBars({ level, label }: { level: 1 | 2 | 3 | 4; label: string }) {
   return (
@@ -48,7 +49,7 @@ export function LoginShowcase() {
     <section className="login-left" aria-hidden="true">
       <div className="login-brand-row">
         <div className="login-word">
-          <span className="ui-logo"><i /><i /><i /><i /></span>
+          <ClubLogo alt="" />
           <span className="login-word-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
         </div>
         <span className="login-left-tag">{tAuth('tag')}</span>

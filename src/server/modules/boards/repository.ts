@@ -9,6 +9,7 @@ export interface BoardDepartmentSummaryRecord { readonly id: string; readonly na
 export interface BoardMemberSummaryRecord {
   readonly id: string;
   readonly fullName: string;
+  readonly avatarUpdatedAt: Date | null;
   readonly isActive: boolean;
   readonly leftAt: Date | null;
   readonly departments: readonly BoardDepartmentSummaryRecord[];
@@ -224,7 +225,7 @@ export class DrizzleBoardsRepository implements BoardsRepository {
     const map = new Map<string, BoardMemberSummaryRecord>();
     if (userIds.length === 0) return map;
     const [profileRows, deptRows] = await Promise.all([
-      executor.select({ id: profiles.id, fullName: profiles.fullName, isActive: profiles.isActive, leftAt: profiles.leftAt }).from(profiles).where(inArray(profiles.id, [...userIds])),
+      executor.select({ id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt, isActive: profiles.isActive, leftAt: profiles.leftAt }).from(profiles).where(inArray(profiles.id, [...userIds])),
       executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name }).from(memberDepartments).innerJoin(departments, eq(memberDepartments.departmentId, departments.id)).where(inArray(memberDepartments.userId, [...userIds])).orderBy(asc(departments.name), asc(departments.id)),
     ]);
     const deptMap = new Map<string, BoardDepartmentSummaryRecord[]>();

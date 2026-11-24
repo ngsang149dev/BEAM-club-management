@@ -30,7 +30,7 @@ const SIB_HIDDEN = '60000000-0000-4000-8000-000000000004';
 const TASK_HIDDEN = '60000000-0000-4000-8000-000000000005';
 
 function makeUser(id: string, name: string) {
-  return { id, fullName: name, isActive: true, leftAt: null, departments: [] };
+  return { id, fullName: name, avatarUpdatedAt: null, isActive: true, leftAt: null, departments: [] };
 }
 
 class MoveFakeTasksRepository implements TasksRepository {

@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
+import { ClubLogo } from '@/components/ClubLogo';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { PasswordInput } from '@/components/PasswordInput';
 import { isApiClientError } from '@/features/shared/api/client';
@@ -93,7 +94,7 @@ function LoginHeaderBar() {
   return (
     <header className="login-top">
       <div className="login-word login-mobile-brand">
-        <span className="ui-logo" aria-hidden="true"><i /><i /><i /><i /></span>
+        <ClubLogo alt="" />
         <span className="login-word-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
       </div>
       <LanguageSwitch />

@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { NextIntlClientProvider } from 'next-intl';
 import { describe, expect, it, vi } from 'vitest';
 import viMessages from '../../../messages/vi.json';
 import enMessages from '../../../messages/en.json';
 import { AppShell } from '@/components/AppShell';
+import { ErrorState } from '@/components/ErrorState';
+import { BRANDING_QUERY_KEYS } from '@/features/branding/hooks/useBranding';
 import { PermissionsProvider } from '@/features/shared/permissions/can';
 
 vi.mock('next/navigation', () => ({
@@ -93,5 +96,41 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).toContain('href="/admin/reminders"');
     expect(html).toContain('href="/admin/audit"');
     expect(html).toContain('(đã rời)');
+  });
+
+  it('renders custom club logo and member avatar from QueryClient cache and renders ErrorState cleanly without QueryClientProvider', () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(BRANDING_QUERY_KEYS.branding, {
+      logoUrl: '/api/v1/branding/logo?v=123',
+      updatedAt: '2026-11-24T00:00:00.000Z',
+    });
+
+    const withBrandingHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <QueryClientProvider client={queryClient}>
+          <AppShell
+            user={{
+              id: 'u-1',
+              fullName: 'Le Van C',
+              avatarUrl: '/api/v1/members/u-1/avatar?v=456',
+              roleLabel: 'Thành viên',
+            }}
+          >
+            <div>content</div>
+          </AppShell>
+        </QueryClientProvider>
+      </NextIntlClientProvider>
+    );
+
+    expect(withBrandingHtml).toContain('src="/api/v1/branding/logo?v=123"');
+    expect(withBrandingHtml).toContain('class="club-logo-img"');
+    expect(withBrandingHtml).toContain('src="/api/v1/members/u-1/avatar?v=456"');
+    expect(withBrandingHtml).toContain('class="ui-avatar-img"');
+
+    const errorStandaloneHtml = renderToStaticMarkup(
+      <ErrorState fullPage brandName="BEAM" code="404" title="Not found" description="Missing" />
+    );
+    expect(errorStandaloneHtml).toContain('class="ui-logo"');
+    expect(errorStandaloneHtml).toContain('BEAM');
   });
 });

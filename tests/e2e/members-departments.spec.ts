@@ -4,6 +4,7 @@ import { and, eq, inArray, ne, or } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import {
   auditLogs,
+  clubAssets,
   departments,
   loginAttempts,
   memberDepartments,
@@ -15,6 +16,16 @@ import {
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import viMessages from '../../messages/vi.json';
+import {
+  SVG_PAYLOAD_BYTES,
+  createCanvasWebpBuffer,
+  createOversizedPngDataUrl,
+  createSolidPngBuffer,
+  expectColorfulInitialsAvatar,
+  expectLoadedAvatarImage,
+  expectLoadedLogoImage,
+  expectSafeBinaryHeaders,
+} from './helpers/media-fixtures';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
@@ -118,6 +129,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
 
     pool = createDbPool(testDatabaseUrl);
     db = createDb(pool);
+    await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
     const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
 
     await db
@@ -267,6 +279,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
         inactiveUserId,
         ...createdProfiles.map((row) => row.id),
       ];
+      await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
       await db.delete(sessions).where(inArray(sessions.userId, cleanupIds));
       await db.delete(userPermissions).where(inArray(userPermissions.userId, cleanupIds));
       await db
@@ -337,6 +350,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     expect(parsed.items.length).toBeGreaterThan(0);
     for (const item of parsed.items) {
       expect(Object.keys(item).sort()).toEqual([
+        'avatarUrl',
         'departments',
         'fullName',
         'id',
@@ -344,6 +358,10 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
         'leftAt',
       ]);
     }
+
+    const basicRow = table.locator('tbody tr', { hasText: basicFullName });
+    await expect(basicRow).toBeVisible();
+    await expectColorfulInitialsAvatar(basicRow.locator('.ui-avatar'), basicUserId, basicFullName);
 
     const mainContent = await page.locator('#main-content').innerText();
     expect(mainContent).toContain(basicFullName);
@@ -680,17 +698,18 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     await tracker.assertClean();
   });
 
-  test('enforces RBAC guard on password reset, revokes active sessions immediately via ResetPasswordModal, records clean audit_logs, and forces password change on next login (CR-01)', async ({
+  test('enforces admin-only RBAC on password reset, revokes active sessions immediately via ResetPasswordModal, records clean audit_logs, and forces password change on next login (CR-01, CR-02)', async ({
     page,
     browser,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
-    const hrResetSecret = 'HrResetPass#2026';
-    const hrAdminAttemptSecret = 'HrAttemptAdmin#2026';
+    const hrAttemptRegularSecret = 'HrAttemptRegular#2026';
+    const hrAttemptAdminSecret = 'HrAttemptAdmin#2026';
     const adminResetSecret = 'AdminReset#2026';
 
     // 1. Non-admin with member.update + member.view + member.view_detail:
-    //    hides reset button on Admin rows, blocks direct POST on Admin (403), allows reset on regular member (200)
+    //    sees ZERO Reset Password buttons on BOTH Admin and regular member rows in S09,
+    //    and direct POST /api/v1/members/{id}/reset-password returns 403 FORBIDDEN for BOTH.
     const hrContext = await browser.newContext();
     const hrPage = await hrContext.newPage();
     const hrTracker = await attachRuntimeErrorTracker(hrPage);
@@ -709,58 +728,45 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
         adminRowForHr.getByRole('button', { name: viMessages.memberAdmin.resetPasswordAction, exact: true }),
       ).toHaveCount(0);
 
+      await hrPage.getByLabel(viMessages.members.searchLabel).fill(resetTargetFullName);
+      const targetRowForHr = hrTable.locator('tbody tr', { hasText: resetTargetFullName });
+      await expect(targetRowForHr).toBeVisible();
+      await expect(
+        targetRowForHr.getByRole('button', { name: viMessages.memberAdmin.editAction, exact: true }),
+      ).toBeVisible();
+      await expect(
+        targetRowForHr.getByRole('button', { name: viMessages.memberAdmin.resetPasswordAction, exact: true }),
+      ).toHaveCount(0);
+
       const directAdminResetRes = await hrPage.request.post(
         `/api/v1/members/${adminUserId}/reset-password`,
-        { data: { newPassword: hrAdminAttemptSecret } },
+        { data: { newPassword: hrAttemptAdminSecret } },
       );
       expect(directAdminResetRes.status()).toBe(403);
       expect(JSON.parse(await directAdminResetRes.text())).toMatchObject({
         error: { code: 'FORBIDDEN' },
       });
 
-      await hrPage.getByLabel(viMessages.members.searchLabel).fill(resetTargetFullName);
-      const targetRowForHr = hrTable.locator('tbody tr', { hasText: resetTargetFullName });
-      await expect(targetRowForHr).toBeVisible();
-      const hrResetBtn = targetRowForHr.getByRole('button', {
-        name: viMessages.memberAdmin.resetPasswordAction,
-        exact: true,
-      });
-      await expect(hrResetBtn).toBeVisible();
-      await hrResetBtn.click();
-
-      const hrResetModal = hrPage.getByRole('dialog');
-      await expect(hrResetModal).toContainText(viMessages.memberAdmin.resetPasswordModalTitle);
-      await hrResetModal
-        .getByLabel(viMessages.memberAdmin.newPasswordLabel, { exact: true })
-        .fill(hrResetSecret);
-      await hrResetModal
-        .getByLabel(viMessages.memberAdmin.confirmNewPasswordLabel, { exact: true })
-        .fill(hrResetSecret);
-
-      const hrResetPromise = hrPage.waitForResponse(
-        (res) =>
-          res.url().includes(`/api/v1/members/${resetTargetUserId}/reset-password`) &&
-          res.request().method() === 'POST',
+      const directRegularResetRes = await hrPage.request.post(
+        `/api/v1/members/${resetTargetUserId}/reset-password`,
+        { data: { newPassword: hrAttemptRegularSecret } },
       );
-      await hrResetModal
-        .getByRole('button', { name: viMessages.memberAdmin.resetPasswordSubmit, exact: true })
-        .click();
-      const hrResetResp = await hrResetPromise;
-      expect(hrResetResp.status()).toBe(200);
-      assertNoSecretsInText(await hrResetResp.text(), [hrResetSecret]);
-      await expect(hrResetModal).not.toBeVisible();
+      expect(directRegularResetRes.status()).toBe(403);
+      expect(JSON.parse(await directRegularResetRes.text())).toMatchObject({
+        error: { code: 'FORBIDDEN' },
+      });
 
       await hrTracker.assertClean();
     } finally {
       await hrContext.close();
     }
 
-    // 2. Target member logs in (active session) while Admin resets their password via ResetPasswordModal
+    // 2. Target member logs in (active session) while Active Admin resets their password via ResetPasswordModal
     const targetContext = await browser.newContext();
     const targetPage = await targetContext.newPage();
     const targetTracker = await attachRuntimeErrorTracker(targetPage);
     try {
-      await signInAs(targetPage, resetTargetStudentId, '/profile', hrResetSecret);
+      await signInAs(targetPage, resetTargetStudentId, '/profile', DEV_SEED_PASSWORD);
       expect((await targetPage.request.get('/api/v1/me')).status()).toBe(200);
 
       await signInAs(page, adminStudentId, '/admin/members');
@@ -769,9 +775,13 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       const targetRow = adminTable.locator('tbody tr', { hasText: resetTargetFullName });
       await expect(targetRow).toBeVisible();
 
-      await targetRow
-        .getByRole('button', { name: viMessages.memberAdmin.resetPasswordAction, exact: true })
-        .click();
+      const adminResetBtn = targetRow.getByRole('button', {
+        name: viMessages.memberAdmin.resetPasswordAction,
+        exact: true,
+      });
+      await expect(adminResetBtn).toBeVisible();
+      await adminResetBtn.click();
+
       const resetModal = page.getByRole('dialog');
       await expect(resetModal).toBeVisible();
       await resetModal
@@ -792,7 +802,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       const adminResetResp = await adminResetPromise;
       expect(adminResetResp.status()).toBe(200);
       const adminResetText = await adminResetResp.text();
-      assertNoSecretsInText(adminResetText, [adminResetSecret, hrResetSecret]);
+      assertNoSecretsInText(adminResetText, [adminResetSecret, hrAttemptRegularSecret, hrAttemptAdminSecret]);
       expect((JSON.parse(adminResetText) as { member: { mustChangePassword: boolean } }).member.mustChangePassword).toBe(
         true,
       );
@@ -830,8 +840,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       const auditDomText = await page.locator('main').innerText();
       const forbiddenArtifacts = [
         adminResetSecret,
-        hrResetSecret,
-        hrAdminAttemptSecret,
+        hrAttemptRegularSecret,
+        hrAttemptAdminSecret,
         DEV_SEED_PASSWORD,
         adminStudentId,
         hrDetailStudentId,
@@ -854,13 +864,11 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
             eq(auditLogs.action, 'member.password_reset'),
           ),
         );
-      expect(dbAuditRows).toHaveLength(2);
-      for (const row of dbAuditRows) {
-        expect(row.detail).toEqual({
-          forceChangeOnLogin: true,
-          sessionsRevoked: true,
-        });
-      }
+      expect(dbAuditRows).toHaveLength(1);
+      expect(dbAuditRows[0]?.detail).toEqual({
+        forceChangeOnLogin: true,
+        sessionsRevoked: true,
+      });
       assertNoSecretsInText(JSON.stringify(dbAuditRows), forbiddenArtifacts);
 
       // Target cannot log in with previous password, and unsafe returnTo cannot bypass /profile?changePassword=1
@@ -869,7 +877,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
         (res) => res.url().endsWith('/api/v1/auth/login') && res.request().method() === 'POST',
       );
       await targetPage.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(resetTargetStudentId);
-      await targetPage.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(hrResetSecret);
+      await targetPage.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
       await targetPage.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
       expect((await oldLoginPromise).status()).toBe(401);
 
@@ -883,6 +891,341 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await targetTracker.assertClean();
     } finally {
       await targetContext.close();
+    }
+
+    await tracker.assertClean();
+  });
+
+  test('manages club logo via ClubLogoModal, enforces admin-only RBAC and magic-byte/size validation, updates AppShell & /login, and writes clean audit_logs (CR-02)', async ({
+    page,
+    browser,
+  }) => {
+    const tracker = await attachRuntimeErrorTracker(page);
+    const pngBytes = createSolidPngBuffer(20, 20, [219, 39, 119, 255]);
+    const pngBase64 = pngBytes.toString('base64');
+    const pngDataUrl = `data:image/png;base64,${pngBase64}`;
+    const svgDataUrl = `data:image/svg+xml;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
+    const spoofedPngDataUrl = `data:image/png;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
+    const oversizedDataUrl = createOversizedPngDataUrl();
+
+    await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+
+    try {
+      // 1. Non-admin holding member.update does NOT see Club Logo button & gets 403 on PUT/DELETE /api/v1/branding/logo
+      const hrContext = await browser.newContext();
+      const hrPage = await hrContext.newPage();
+      const hrTracker = await attachRuntimeErrorTracker(hrPage);
+      try {
+        await signInAs(hrPage, hrDetailStudentId, '/admin/members');
+        await expect(
+          hrPage.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }),
+        ).toHaveCount(0);
+
+        const putForbidden = await hrPage.request.put('/api/v1/branding/logo', {
+          data: { dataUrl: pngDataUrl },
+        });
+        expect(putForbidden.status()).toBe(403);
+        expect(JSON.parse(await putForbidden.text())).toMatchObject({ error: { code: 'FORBIDDEN' } });
+
+        const delForbidden = await hrPage.request.delete('/api/v1/branding/logo');
+        expect(delForbidden.status()).toBe(403);
+        expect(JSON.parse(await delForbidden.text())).toMatchObject({ error: { code: 'FORBIDDEN' } });
+
+        await hrTracker.assertClean();
+      } finally {
+        await hrContext.close();
+      }
+
+      // 2. Admin checks default badge, tests UI/API rejection of SVG, spoofed PNG, and >256 KB
+      await signInAs(page, adminStudentId, '/admin/members');
+      await expect(page.locator('.app-side .app-brand .ui-logo i')).toHaveCount(4);
+      await expect(page.locator('.app-side .app-brand img.club-logo-img')).toHaveCount(0);
+
+      for (const badPayload of [svgDataUrl, spoofedPngDataUrl, oversizedDataUrl]) {
+        const badRes = await page.request.put('/api/v1/branding/logo', {
+          data: { dataUrl: badPayload },
+        });
+        expect(badRes.status()).toBe(400);
+      }
+
+      await page.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }).click();
+      const logoModal = page.getByRole('dialog');
+      await expect(logoModal).toContainText(viMessages.branding.modalTitle);
+      await expect(logoModal).toContainText(viMessages.branding.defaultBadgeActive);
+
+      const fileInput = logoModal.locator('input[type="file"]');
+      await fileInput.setInputFiles({
+        name: 'evil.svg',
+        mimeType: 'image/svg+xml',
+        buffer: SVG_PAYLOAD_BYTES,
+      });
+      await expect(logoModal.locator('.ui-banner.is-danger')).toContainText(
+        viMessages.errors.invalidImageFormat,
+      );
+
+      // Reopen modal so error banner resets cleanly before testing spoofed PNG bytes
+      await logoModal
+        .locator('.ui-modal-actions')
+        .getByRole('button', { name: viMessages.common.close, exact: true })
+        .click();
+      await expect(logoModal).not.toBeVisible();
+      await page.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }).click();
+      await expect(logoModal.locator('.ui-banner.is-danger')).toHaveCount(0);
+
+      await logoModal.locator('input[type="file"]').setInputFiles({
+        name: 'spoofed.png',
+        mimeType: 'image/png',
+        buffer: SVG_PAYLOAD_BYTES,
+      });
+      await expect(logoModal.locator('.ui-banner.is-danger')).toContainText(
+        viMessages.errors.invalidImageFormat,
+      );
+
+      // 3. Admin uploads valid PNG via ClubLogoModal -> AppShell & /login render custom <img> cleanly
+      const putLogoPromise = page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/branding/logo') && res.request().method() === 'PUT',
+      );
+      await logoModal.locator('input[type="file"]').setInputFiles({
+        name: 'beam-logo.png',
+        mimeType: 'image/png',
+        buffer: pngBytes,
+      });
+      const putLogoRes = await putLogoPromise;
+      expect(putLogoRes.status()).toBe(200);
+      const putLogoJson = (await putLogoRes.json()) as { logoUrl: string | null };
+      expect(putLogoJson.logoUrl).toMatch(/^\/api\/v1\/branding\/logo\?v=\d+$/);
+
+      await expect(logoModal).toContainText(viMessages.branding.customLogoActive);
+      const modalLogoSrc = await expectLoadedLogoImage(
+        logoModal.locator('.club-logo-preview-card img.club-logo-img'),
+      );
+      const shellLogoSrc = await expectLoadedLogoImage(
+        page.locator('.app-side .app-brand img.club-logo-img'),
+      );
+      expect(modalLogoSrc).toBe(putLogoJson.logoUrl);
+      expect(shellLogoSrc).toBe(putLogoJson.logoUrl);
+
+      const logoGetRes = await page.request.get('/api/v1/branding/logo');
+      expect(logoGetRes.status()).toBe(200);
+      expectSafeBinaryHeaders(logoGetRes.headers(), 'image/png');
+
+      // Check unauthenticated /login showcase & mobile header DOM
+      const anonContext = await browser.newContext();
+      const anonPage = await anonContext.newPage();
+      const anonTracker = await attachRuntimeErrorTracker(anonPage);
+      try {
+        await anonPage.goto('/login');
+        const loginShowcaseSrc = await expectLoadedLogoImage(
+          anonPage.locator('.login-left img.club-logo-img'),
+        );
+        expect(loginShowcaseSrc).toBe(putLogoJson.logoUrl);
+        await expect(anonPage.locator('.login-mobile-brand img.club-logo-img')).toHaveAttribute(
+          'src',
+          putLogoJson.logoUrl!,
+        );
+
+        // 4. Admin removes custom logo -> restores default 4-dot .ui-logo badge on AppShell & /login
+        const deleteLogoPromise = page.waitForResponse(
+          (res) => res.url().endsWith('/api/v1/branding/logo') && res.request().method() === 'DELETE',
+        );
+        await logoModal
+          .getByRole('button', { name: viMessages.branding.restoreDefaultButton, exact: true })
+          .click();
+        const deleteLogoRes = await deleteLogoPromise;
+        expect(deleteLogoRes.status()).toBe(200);
+
+        await expect(logoModal).toContainText(viMessages.branding.defaultBadgeActive);
+        await expect(logoModal.locator('.club-logo-preview-card .ui-logo i')).toHaveCount(4);
+        await expect(page.locator('.app-side .app-brand .ui-logo i')).toHaveCount(4);
+        await expect(page.locator('.app-side .app-brand img.club-logo-img')).toHaveCount(0);
+
+        await logoModal
+          .locator('.ui-modal-actions')
+          .getByRole('button', { name: viMessages.common.close, exact: true })
+          .click();
+        await expect(logoModal).not.toBeVisible();
+
+        expect((await page.request.get('/api/v1/branding/logo')).status()).toBe(404);
+
+        await anonPage.reload();
+        await expect(anonPage.locator('.login-left .ui-logo i')).toHaveCount(4);
+        await expect(anonPage.locator('.login-left img.club-logo-img')).toHaveCount(0);
+        await anonTracker.assertClean();
+      } finally {
+        await anonContext.close();
+      }
+
+      // 5. Verify /admin/audit UI & API show branding.logo_updated & branding.logo_removed without binary/dataUrl/PII
+      await page.goto('/admin/audit');
+      await expect(page.locator('.audit-table tbody tr').first()).toBeVisible();
+
+      const forbiddenAuditArtifacts = [
+        pngBase64,
+        'data:image/',
+        adminStudentId,
+        hrDetailStudentId,
+        adminEmail,
+        hrDetailEmail,
+      ];
+
+      for (const item of [
+        { action: 'branding.logo_updated', label: viMessages.auditLogs.actions.brandingLogoUpdated },
+        { action: 'branding.logo_removed', label: viMessages.auditLogs.actions.brandingLogoRemoved },
+      ]) {
+        const respPromise = page.waitForResponse(
+          (res) =>
+            res.url().includes('/api/v1/audit-logs') &&
+            res.url().includes(`action=${item.action}`) &&
+            res.status() === 200,
+        );
+        await page.getByLabel(viMessages.auditLogs.actionFilterLabel, { exact: true }).selectOption(item.action);
+        const rawBody = await (await respPromise).text();
+        assertNoSecretsInText(rawBody, forbiddenAuditArtifacts);
+        expect(rawBody).not.toContain('"studentId"');
+        expect(rawBody).not.toContain('"email"');
+        await expect(page.locator('.audit-table tbody tr', { hasText: item.label }).first()).toBeVisible();
+      }
+    } finally {
+      await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+    }
+
+    await tracker.assertClean();
+  });
+
+  test('allows member.update holder to upload, replace (WEBP), and remove member avatar via S09 MemberFormDrawer, reverting cleanly to colorful initials and auditing safely (CR-02)', async ({
+    page,
+    browser,
+  }) => {
+    const tracker = await attachRuntimeErrorTracker(page);
+    const pngBytes = createSolidPngBuffer(24, 24, [124, 58, 237, 255]);
+    const pngBase64 = pngBytes.toString('base64');
+
+    const hrContext = await browser.newContext();
+    const hrPage = await hrContext.newPage();
+    const hrTracker = await attachRuntimeErrorTracker(hrPage);
+    let webpBase64 = '';
+    try {
+      await signInAs(hrPage, hrDetailStudentId, '/admin/members');
+      const hrTable = hrPage.locator('.directory-table-wrap table.ui-table');
+      await hrPage.getByLabel(viMessages.members.searchLabel).fill(basicFullName);
+      const targetRow = hrTable.locator('tbody tr', { hasText: basicFullName });
+      await expect(targetRow).toBeVisible();
+      await expectColorfulInitialsAvatar(targetRow.locator('.ui-avatar'), basicUserId, basicFullName);
+
+      await targetRow.getByRole('button', { name: viMessages.memberAdmin.editAction, exact: true }).click();
+      const editDrawer = hrPage.getByRole('dialog');
+      await expect(editDrawer).toBeVisible();
+      await expectColorfulInitialsAvatar(
+        editDrawer.locator('.avatar-upload-row .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+
+      // Upload PNG
+      const uploadPngPromise = hrPage.waitForResponse(
+        (res) =>
+          res.url().includes(`/api/v1/members/${basicUserId}/avatar`) &&
+          res.request().method() === 'PUT',
+      );
+      await editDrawer.locator('input[type="file"]').setInputFiles({
+        name: 'member-avatar.png',
+        mimeType: 'image/png',
+        buffer: pngBytes,
+      });
+      const uploadPngRes = await uploadPngPromise;
+      expect(uploadPngRes.status()).toBe(200);
+      const firstSrc = await expectLoadedAvatarImage(
+        editDrawer.locator('.avatar-upload-row .ui-avatar'),
+        `/api/v1/members/${basicUserId}/avatar?v=`,
+      );
+
+      // Replace with WEBP
+      const webpBuffer = await createCanvasWebpBuffer(hrPage);
+      webpBase64 = webpBuffer.toString('base64');
+      const uploadWebpPromise = hrPage.waitForResponse(
+        (res) =>
+          res.url().includes(`/api/v1/members/${basicUserId}/avatar`) &&
+          res.request().method() === 'PUT',
+      );
+      await editDrawer.locator('input[type="file"]').setInputFiles({
+        name: 'member-avatar.webp',
+        mimeType: 'image/webp',
+        buffer: webpBuffer,
+      });
+      const uploadWebpRes = await uploadWebpPromise;
+      expect(uploadWebpRes.status()).toBe(200);
+      const secondSrc = await expectLoadedAvatarImage(
+        editDrawer.locator('.avatar-upload-row .ui-avatar'),
+        `/api/v1/members/${basicUserId}/avatar?v=`,
+      );
+      expect(secondSrc).not.toBe(firstSrc);
+
+      // Verify binary avatar response headers
+      const binRes = await hrPage.request.get(`/api/v1/members/${basicUserId}/avatar`);
+      expect(binRes.status()).toBe(200);
+      expectSafeBinaryHeaders(binRes.headers(), 'image/webp');
+
+      // Remove avatar -> reverts cleanly to colorful initials in Drawer and Table
+      const removePromise = hrPage.waitForResponse(
+        (res) =>
+          res.url().includes(`/api/v1/members/${basicUserId}/avatar`) &&
+          res.request().method() === 'DELETE',
+      );
+      await editDrawer.getByRole('button', { name: viMessages.media.removePhoto, exact: true }).click();
+      expect((await removePromise).status()).toBe(200);
+      await expectColorfulInitialsAvatar(
+        editDrawer.locator('.avatar-upload-row .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+
+      await editDrawer.getByRole('button', { name: viMessages.common.cancel, exact: true }).click();
+      await expect(editDrawer).not.toBeVisible();
+      await expectColorfulInitialsAvatar(targetRow.locator('.ui-avatar'), basicUserId, basicFullName);
+      expect((await hrPage.request.get(`/api/v1/members/${basicUserId}/avatar`)).status()).toBe(404);
+
+      await hrTracker.assertClean();
+    } finally {
+      await db
+        .update(profiles)
+        .set({ avatarData: null, avatarMime: null, avatarUpdatedAt: null, updatedAt: new Date() })
+        .where(eq(profiles.id, basicUserId));
+      await hrContext.close();
+    }
+
+    // Verify /admin/audit shows member.avatar_updated and member.avatar_removed cleanly
+    await signInAs(page, adminStudentId, '/admin/audit');
+    await expect(page.locator('.audit-table tbody tr').first()).toBeVisible();
+    const forbiddenAuditArtifacts = [
+      pngBase64,
+      webpBase64,
+      'data:image/',
+      adminStudentId,
+      hrDetailStudentId,
+      basicStudentId,
+      adminEmail,
+      hrDetailEmail,
+      basicEmail,
+    ];
+
+    for (const item of [
+      { action: 'member.avatar_updated', label: viMessages.auditLogs.actions.memberAvatarUpdated },
+      { action: 'member.avatar_removed', label: viMessages.auditLogs.actions.memberAvatarRemoved },
+    ]) {
+      const respPromise = page.waitForResponse(
+        (res) =>
+          res.url().includes('/api/v1/audit-logs') &&
+          res.url().includes(`action=${item.action}`) &&
+          res.status() === 200,
+      );
+      await page.getByLabel(viMessages.auditLogs.actionFilterLabel, { exact: true }).selectOption(item.action);
+      const rawBody = await (await respPromise).text();
+      assertNoSecretsInText(rawBody, forbiddenAuditArtifacts);
+      expect(rawBody).not.toContain('"studentId"');
+      expect(rawBody).not.toContain('"email"');
+      const row = page.locator('.audit-table tbody tr', { hasText: basicFullName }).first();
+      await expect(row).toBeVisible();
+      await expect(row).toContainText(item.label);
     }
 
     await tracker.assertClean();

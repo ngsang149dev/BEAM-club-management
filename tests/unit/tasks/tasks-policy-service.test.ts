@@ -38,7 +38,7 @@ const TASK_1 = '60000000-0000-4000-8000-000000000001';
 const TASK_HIDDEN = '60000000-0000-4000-8000-000000000002';
 
 function makeUser(id: string, name: string) {
-  return { id, fullName: name, isActive: true, leftAt: null, departments: [] };
+  return { id, fullName: name, avatarUpdatedAt: null, isActive: true, leftAt: null, departments: [] };
 }
 
 class InMemoryTasksRepository implements TasksRepository {

@@ -17,6 +17,14 @@ import { DEFAULT_MEMBER_PERMISSIONS, PERMISSIONS } from '@/lib/permissions';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import viMessages from '../../messages/vi.json';
+import {
+  SVG_PAYLOAD_BYTES,
+  createOversizedPngDataUrl,
+  createSolidPngBuffer,
+  expectColorfulInitialsAvatar,
+  expectLoadedAvatarImage,
+  expectSafeBinaryHeaders,
+} from './helpers/media-fixtures';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
@@ -878,6 +886,200 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
       for (const secret of sensitiveValues) {
         expect(domText).not.toContain(secret);
       }
+    }
+
+    await tracker.assertClean();
+  });
+
+  test('uploads member avatar on S08 /profile, renders across ProfileView, AppShell, /members, and assigned Kanban task card, enforces 403/400 guards, and reverts to colorful initials (CR-02)', async ({
+    browser,
+    page,
+  }) => {
+    const tracker = await attachRuntimeErrorTracker(page);
+    const boardName = `Board E5 Avatar ${suffix}`;
+    const avatarTaskTitle = `Task Avatar Card ${suffix}`;
+    const pngBytes = createSolidPngBuffer(24, 24, [29, 78, 216, 255]);
+    const pngDataUrl = `data:image/png;base64,${pngBytes.toString('base64')}`;
+    const svgDataUrl = `data:image/svg+xml;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
+    const spoofedPngDataUrl = `data:image/png;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
+    const oversizedDataUrl = createOversizedPngDataUrl();
+
+    // 1. Lead creates a board and assigns a task to basicUserId
+    const leadContext = await browser.newContext();
+    const leadPage = await leadContext.newPage();
+    const leadTracker = await attachRuntimeErrorTracker(leadPage);
+    let boardId: string;
+    try {
+      await signInAs(leadPage, leadStudentId, '/boards');
+      const boardRes = await leadPage.request.post('/api/v1/boards', {
+        data: { name: boardName, departmentId: deptId },
+      });
+      expect(boardRes.status()).toBe(201);
+      const boardData = (await boardRes.json()) as {
+        board: { id: string; columns: Array<{ id: string; name: string }> };
+      };
+      boardId = boardData.board.id;
+      const todoColId = boardData.board.columns.find((col) => col.name === 'Todo')?.id;
+      expect(todoColId).toBeTruthy();
+
+      const taskRes = await leadPage.request.post('/api/v1/tasks', {
+        data: {
+          boardId,
+          columnId: todoColId,
+          title: avatarTaskTitle,
+          priority: 2,
+          assigneeIds: [basicUserId],
+        },
+      });
+      expect(taskRes.status()).toBe(201);
+      await leadTracker.assertClean();
+    } finally {
+      await leadContext.close();
+    }
+
+    try {
+      // 2. Basic member (without member.update) checks colorful initials fallback & 403/400 guards on /profile
+      await signInAs(page, basicStudentId, '/profile');
+      await expectColorfulInitialsAvatar(
+        page.locator('.profile-hero .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+      await expectColorfulInitialsAvatar(
+        page.locator('.app-side .app-user .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+
+      const otherPutForbidden = await page.request.put(`/api/v1/members/${leadUserId}/avatar`, {
+        data: { dataUrl: pngDataUrl },
+      });
+      expect(otherPutForbidden.status()).toBe(403);
+      expect(JSON.parse(await otherPutForbidden.text())).toMatchObject({
+        error: { code: 'FORBIDDEN' },
+      });
+
+      const otherDelForbidden = await page.request.delete(`/api/v1/members/${leadUserId}/avatar`);
+      expect(otherDelForbidden.status()).toBe(403);
+      expect(JSON.parse(await otherDelForbidden.text())).toMatchObject({
+        error: { code: 'FORBIDDEN' },
+      });
+
+      for (const badPayload of [svgDataUrl, spoofedPngDataUrl, oversizedDataUrl]) {
+        const badRes = await page.request.put('/api/v1/me/avatar', {
+          data: { dataUrl: badPayload },
+        });
+        expect(badRes.status()).toBe(400);
+      }
+
+      const profileFileInput = page.locator('.profile-hero input[type="file"]');
+      await profileFileInput.setInputFiles({
+        name: 'evil.svg',
+        mimeType: 'image/svg+xml',
+        buffer: SVG_PAYLOAD_BYTES,
+      });
+      await expect(page.locator('.profile-hero .ui-banner.is-danger')).toContainText(
+        viMessages.errors.invalidImageFormat,
+      );
+
+      await page.reload();
+      await expect(page.locator('.profile-hero .ui-banner.is-danger')).toHaveCount(0);
+      await page.locator('.profile-hero input[type="file"]').setInputFiles({
+        name: 'spoof.png',
+        mimeType: 'image/png',
+        buffer: SVG_PAYLOAD_BYTES,
+      });
+      await expect(page.locator('.profile-hero .ui-banner.is-danger')).toContainText(
+        viMessages.errors.invalidImageFormat,
+      );
+
+      // 3. Upload valid PNG on S08 /profile -> displays in ProfileView, AppShell, /members, & Kanban task card
+      const uploadPromise = page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/me/avatar') && res.request().method() === 'PUT',
+      );
+      await page.locator('.profile-hero input[type="file"]').setInputFiles({
+        name: 'my-avatar.png',
+        mimeType: 'image/png',
+        buffer: pngBytes,
+      });
+      const uploadRes = await uploadPromise;
+      expect(uploadRes.status()).toBe(200);
+      const uploadJson = (await uploadRes.json()) as { profile: { avatarUrl: string | null } };
+      expect(uploadJson.profile.avatarUrl).toMatch(
+        new RegExp(`^/api/v1/members/${basicUserId}/avatar\\?v=\\d+$`),
+      );
+
+      const expectedPrefix = `/api/v1/members/${basicUserId}/avatar?v=`;
+      const profileSrc = await expectLoadedAvatarImage(
+        page.locator('.profile-hero .ui-avatar'),
+        expectedPrefix,
+      );
+      const shellSrc = await expectLoadedAvatarImage(
+        page.locator('.app-side .app-user .ui-avatar'),
+        expectedPrefix,
+      );
+      expect(profileSrc).toBe(uploadJson.profile.avatarUrl);
+      expect(shellSrc).toBe(uploadJson.profile.avatarUrl);
+
+      const binRes = await page.request.get(`/api/v1/members/${basicUserId}/avatar`);
+      expect(binRes.status()).toBe(200);
+      expectSafeBinaryHeaders(binRes.headers(), 'image/png');
+
+      await page.goto('/members');
+      await page.getByLabel(viMessages.members.searchLabel).fill(basicFullName);
+      const directoryRow = page.locator('.directory-table-wrap table.ui-table tbody tr', {
+        hasText: basicFullName,
+      });
+      await expect(directoryRow).toBeVisible();
+      const directorySrc = await expectLoadedAvatarImage(
+        directoryRow.locator('.ui-avatar'),
+        expectedPrefix,
+      );
+      expect(directorySrc).toBe(uploadJson.profile.avatarUrl);
+
+      await page.goto(`/boards/${boardId}`);
+      const assignedCard = page.locator('article.kanban-card', { hasText: avatarTaskTitle });
+      await expect(assignedCard).toBeVisible();
+      const cardSrc = await expectLoadedAvatarImage(
+        assignedCard.locator('.task-assignees-chips .ui-avatar'),
+        expectedPrefix,
+      );
+      expect(cardSrc).toBe(uploadJson.profile.avatarUrl);
+
+      // 4. Remove own avatar on S08 /profile -> restores colorful initials across views
+      await page.goto('/profile');
+      const removePromise = page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/me/avatar') && res.request().method() === 'DELETE',
+      );
+      await page
+        .locator('.profile-hero')
+        .getByRole('button', { name: viMessages.media.removePhoto, exact: true })
+        .click();
+      expect((await removePromise).status()).toBe(200);
+      await expectColorfulInitialsAvatar(
+        page.locator('.profile-hero .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+      await expectColorfulInitialsAvatar(
+        page.locator('.app-side .app-user .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+      expect((await page.request.get(`/api/v1/members/${basicUserId}/avatar`)).status()).toBe(404);
+
+      await page.goto(`/boards/${boardId}`);
+      const revertedCard = page.locator('article.kanban-card', { hasText: avatarTaskTitle });
+      await expectColorfulInitialsAvatar(
+        revertedCard.locator('.task-assignees-chips .ui-avatar'),
+        basicUserId,
+        basicFullName,
+      );
+    } finally {
+      await db
+        .update(profiles)
+        .set({ avatarData: null, avatarMime: null, avatarUpdatedAt: null, updatedAt: new Date() })
+        .where(eq(profiles.id, basicUserId));
     }
 
     await tracker.assertClean();

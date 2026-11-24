@@ -1,13 +1,16 @@
-import { badRequest, tooManyRequests, unauthorized } from '@/lib/errors';
+import { badRequest, unauthorized } from '@/lib/errors';
+import type { AuditLogWriter } from '@/server/modules/audit';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
 import type { Logger } from '@/server/shared/logger';
+import { parseAndValidateImageDataUrl } from '@/server/shared/media';
 import {
   DUMMY_PASSWORD_HASH,
   hashPassword,
   verifyPassword,
 } from '@/server/shared/password';
+import type { TransactionRunner } from '@/server/shared/transaction';
 import {
   type LoginResponseDto,
   type MeResponseDto,
@@ -21,38 +24,24 @@ import {
   computeSlidingExpiry,
   generateOpaqueSessionToken,
   hashSessionToken,
-  isRateLimited,
   isSessionExpired,
-  RATE_LIMIT_WINDOW_MINUTES,
   resolveLoginRedirect,
 } from './policy';
+import {
+  assertIpWithinRateLimit,
+  persistMyAvatarRemoval,
+  persistMyAvatarUpdate,
+  verifyLoginProfile,
+} from './service-helpers';
 import type {
   AuthRepository,
+  ChangeMyPasswordCommand,
+  LoginCommand,
   ProfileWithDepartmentsRecord,
+  RemoveMyAvatarCommand,
   SessionRecord,
-} from './repository';
-import type { ChangeMyPasswordRequestInput } from './schemas';
-
-export interface AuthServiceDeps {
-  readonly authRepo: AuthRepository;
-  readonly clock: Clock;
-  readonly config: Config;
-  readonly logger: Logger;
-}
-
-export interface LoginCommand {
-  readonly studentId: string;
-  readonly password: string;
-  readonly remember?: boolean;
-  readonly returnTo?: string | null;
-  readonly ip: string;
-}
-
-export interface ChangeMyPasswordCommand {
-  readonly actor: AuthActor;
-  readonly currentSessionId: string;
-  readonly input: ChangeMyPasswordRequestInput;
-}
+  UpdateMyAvatarCommand,
+} from './types';
 
 export interface LoginResult {
   readonly rawToken: string;
@@ -72,49 +61,43 @@ export interface MeResult {
   readonly rememberMe: boolean;
 }
 
-const MS_PER_MINUTE = 60 * 1000;
+export type {
+  ChangeMyPasswordCommand,
+  LoginCommand,
+  RemoveMyAvatarCommand,
+  UpdateMyAvatarCommand,
+};
+
+export interface AuthServiceDeps {
+  readonly authRepo: AuthRepository;
+  readonly auditWriter: AuditLogWriter;
+  readonly transactionRunner: TransactionRunner;
+  readonly clock: Clock;
+  readonly config: Config;
+  readonly logger: Logger;
+}
 
 export class AuthService {
   constructor(private readonly deps: AuthServiceDeps) {}
 
   async login(input: LoginCommand): Promise<LoginResult> {
     const now = this.deps.clock.now();
-    await this.assertIpWithinRateLimit(input.ip, now);
-
-    const profile = await this.verifyLoginProfile(input, now);
-    await this.deps.authRepo.recordLoginAttempt({
-      studentId: profile.studentId,
-      ip: input.ip,
-      success: true,
-      createdAt: now,
-    });
+    await assertIpWithinRateLimit({ authRepo: this.deps.authRepo, logger: this.deps.logger, ip: input.ip, now });
+    const profile = await verifyLoginProfile({ authRepo: this.deps.authRepo, logger: this.deps.logger, input, now });
+    await this.deps.authRepo.recordLoginAttempt({ studentId: profile.studentId, ip: input.ip, success: true, createdAt: now });
 
     const rememberMe = Boolean(input.remember);
     const rawToken = generateOpaqueSessionToken();
     const tokenHash = hashSessionToken(rawToken, this.deps.config.sessionSecret);
     const expiresAt = computeSessionExpiry(now, rememberMe, this.deps.config);
-    const session = await this.deps.authRepo.createSession({
-      userId: profile.id,
-      tokenHash,
-      rememberMe,
-      expiresAt,
-      now,
-    });
-
-    const redirectTo = resolveLoginRedirect(
-      input.returnTo,
-      profile.mustChangePassword,
-    );
+    const session = await this.deps.authRepo.createSession({ userId: profile.id, tokenHash, rememberMe, expiresAt, now });
+    const redirectTo = resolveLoginRedirect(input.returnTo, profile.mustChangePassword);
     this.deps.logger.info('User authenticated', { userId: profile.id, rememberMe });
     return {
       rawToken,
       rememberMe,
       locale: profile.locale,
-      response: toLoginResponseDto({
-        profile,
-        redirectTo,
-        expiresAt: session.expiresAt,
-      }),
+      response: toLoginResponseDto({ profile, redirectTo, expiresAt: session.expiresAt }),
     };
   }
 
@@ -124,14 +107,12 @@ export class AuthService {
     if (!rawToken) {
       throw unauthorized('errors.unauthorized', {}, 'UNAUTHORIZED');
     }
-
     const tokenHash = hashSessionToken(rawToken, this.deps.config.sessionSecret);
     const session = await this.deps.authRepo.findSessionByTokenHash(tokenHash);
     const now = this.deps.clock.now();
     if (!session || isSessionExpired(session, now)) {
       throw unauthorized('errors.sessionExpired', {}, 'SESSION_EXPIRED');
     }
-
     const profile = await this.deps.authRepo.findProfileWithDepartmentsById(
       session.userId,
     );
@@ -139,7 +120,6 @@ export class AuthService {
       await this.deps.authRepo.revokeSession({ sessionId: session.id, revokedAt: now });
       throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
     }
-
     const permissions = await this.deps.authRepo.findUserPermissions(profile.id);
     const nextExpiresAt = computeSlidingExpiry(now, session, this.deps.config);
     await this.deps.authRepo.touchSession({
@@ -147,7 +127,6 @@ export class AuthService {
       lastSeenAt: now,
       expiresAt: nextExpiresAt,
     });
-
     const updatedSession: SessionRecord = {
       ...session,
       lastSeenAt: now,
@@ -245,53 +224,48 @@ export class AuthService {
     return toMeResponseDto(updated, command.actor.permissions);
   }
 
-  private async verifyLoginProfile(
-    input: LoginCommand,
-    now: Date,
-  ): Promise<ProfileWithDepartmentsRecord> {
-    const profile = await this.deps.authRepo.findProfileWithDepartmentsByStudentId(
-      input.studentId,
-    );
-    const activeHash =
-      profile?.isActive && profile.passwordHash ? profile.passwordHash : null;
-    const passwordMatches = await verifyPassword(
-      input.password,
-      activeHash ?? DUMMY_PASSWORD_HASH,
-    );
-    if (!profile || !activeHash || !passwordMatches) {
-      await this.recordFailedLogin(input.studentId, input.ip, now);
-      throw unauthorized('auth.invalidCredentials', {}, 'INVALID_CREDENTIALS');
+  async updateMyAvatar(command: UpdateMyAvatarCommand): Promise<MeResponseDto> {
+    if (!command.actor.isActive) {
+      throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
     }
-    return profile;
-  }
-
-  private async assertIpWithinRateLimit(ip: string, now: Date): Promise<void> {
-    const since = new Date(now.getTime() - RATE_LIMIT_WINDOW_MINUTES * MS_PER_MINUTE);
-    const failedCount = await this.deps.authRepo.countRecentFailedLoginAttempts(
-      ip,
-      since,
+    const parsed = parseAndValidateImageDataUrl(command.dataUrl);
+    const now = this.deps.clock.now();
+    const updated = await this.deps.transactionRunner.runInTransaction((tx) =>
+      persistMyAvatarUpdate({
+        authRepo: this.deps.authRepo,
+        auditWriter: this.deps.auditWriter,
+        userId: command.actor.id,
+        avatarData: parsed.buffer,
+        avatarMime: parsed.mimeType,
+        now,
+        tx,
+      }),
     );
-    if (isRateLimited(failedCount)) {
-      this.deps.logger.warn('Login rate limit exceeded', { failedCount });
-      throw tooManyRequests(
-        'errors.tooManyRequests',
-        { retryAfterSeconds: RATE_LIMIT_WINDOW_MINUTES * 60 },
-        'RATE_LIMITED',
-      );
-    }
-  }
-
-  private async recordFailedLogin(
-    studentId: string,
-    ip: string,
-    now: Date,
-  ): Promise<void> {
-    await this.deps.authRepo.recordLoginAttempt({
-      studentId,
-      ip,
-      success: false,
-      createdAt: now,
+    this.deps.logger.info('Member avatar updated', {
+      actorId: command.actor.id,
+      mimeType: parsed.mimeType,
+      byteLength: parsed.buffer.byteLength,
     });
-    this.deps.logger.warn('Failed login attempt', { reason: 'rejected' });
+    return toMeResponseDto(updated, command.actor.permissions);
+  }
+
+  async removeMyAvatar(command: RemoveMyAvatarCommand): Promise<MeResponseDto> {
+    if (!command.actor.isActive) {
+      throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
+    }
+    const now = this.deps.clock.now();
+    const updated = await this.deps.transactionRunner.runInTransaction((tx) =>
+      persistMyAvatarRemoval({
+        authRepo: this.deps.authRepo,
+        auditWriter: this.deps.auditWriter,
+        userId: command.actor.id,
+        now,
+        tx,
+      }),
+    );
+    this.deps.logger.info('Member avatar removed', {
+      actorId: command.actor.id,
+    });
+    return toMeResponseDto(updated, command.actor.permissions);
   }
 }

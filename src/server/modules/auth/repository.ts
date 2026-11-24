@@ -9,83 +9,49 @@ import {
 } from '@db/schema';
 import { isPermissionCode, type PermissionCode } from '@/lib/permissions';
 import type { DbExecutor } from '@/server/shared/db';
+import type { TransactionContext } from '@/server/shared/transaction';
+import type {
+  AuthRepository,
+  DepartmentRecord,
+  ProfileWithDepartmentsRecord,
+  SessionRecord,
+} from './types';
 
-export interface DepartmentRecord {
-  readonly id: string;
-  readonly name: string;
-}
+export type {
+  AuthRepository,
+  DepartmentRecord,
+  ProfileWithDepartmentsRecord,
+  SessionRecord,
+};
 
-export interface ProfileWithDepartmentsRecord {
+const AUTH_PROFILE_COLUMNS = {
+  id: profiles.id,
+  studentId: profiles.studentId,
+  email: profiles.email,
+  fullName: profiles.fullName,
+  passwordHash: profiles.passwordHash,
+  mustChangePassword: profiles.mustChangePassword,
+  avatarUpdatedAt: profiles.avatarUpdatedAt,
+  isAdmin: profiles.isAdmin,
+  isActive: profiles.isActive,
+  leftAt: profiles.leftAt,
+  locale: profiles.locale,
+};
+
+interface SelectedAuthProfileRow {
   readonly id: string;
   readonly studentId: string;
   readonly email: string;
   readonly fullName: string;
   readonly passwordHash: string | null;
   readonly mustChangePassword: boolean;
+  readonly avatarUpdatedAt: Date | null;
   readonly isAdmin: boolean;
   readonly isActive: boolean;
   readonly leftAt: Date | null;
-  readonly locale: 'vi' | 'en';
-  readonly departments: readonly DepartmentRecord[];
+  readonly locale: string;
 }
 
-export interface SessionRecord {
-  readonly id: string;
-  readonly userId: string;
-  readonly tokenHash: string;
-  readonly rememberMe: boolean;
-  readonly expiresAt: Date;
-  readonly lastSeenAt: Date;
-  readonly revokedAt: Date | null;
-}
-
-export interface AuthRepository {
-  countRecentFailedLoginAttempts(ip: string, since: Date): Promise<number>;
-  recordLoginAttempt(input: {
-    readonly studentId: string;
-    readonly ip: string;
-    readonly success: boolean;
-    readonly createdAt: Date;
-  }): Promise<void>;
-  findProfileWithDepartmentsByStudentId(
-    studentId: string,
-  ): Promise<ProfileWithDepartmentsRecord | null>;
-  findProfileWithDepartmentsById(
-    userId: string,
-  ): Promise<ProfileWithDepartmentsRecord | null>;
-  findUserPermissions(userId: string): Promise<PermissionCode[]>;
-  createSession(input: {
-    readonly userId: string;
-    readonly tokenHash: string;
-    readonly rememberMe: boolean;
-    readonly expiresAt: Date;
-    readonly now: Date;
-  }): Promise<SessionRecord>;
-  findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | null>;
-  touchSession(input: {
-    readonly sessionId: string;
-    readonly lastSeenAt: Date;
-    readonly expiresAt: Date;
-  }): Promise<void>;
-  revokeSession(input: {
-    readonly sessionId: string;
-    readonly revokedAt: Date;
-  }): Promise<void>;
-  updateProfileLocale(input: {
-    readonly userId: string;
-    readonly locale: 'vi' | 'en';
-    readonly updatedAt: Date;
-  }): Promise<ProfileWithDepartmentsRecord | null>;
-  updatePasswordAndRevokeOtherSessions(input: {
-    readonly userId: string;
-    readonly currentSessionId: string;
-    readonly passwordHash: string;
-    readonly mustChangePassword: boolean;
-    readonly now: Date;
-  }): Promise<ProfileWithDepartmentsRecord | null>;
-}
-
-type ProfileRow = typeof profiles.$inferSelect;
 type SessionRow = typeof sessions.$inferSelect;
 
 function mapSessionRow(row: SessionRow): SessionRecord {
@@ -135,24 +101,22 @@ export class DrizzleAuthRepository implements AuthRepository {
     studentId: string,
   ): Promise<ProfileWithDepartmentsRecord | null> {
     const rows = await this.db
-      .select()
+      .select(AUTH_PROFILE_COLUMNS)
       .from(profiles)
       .where(eq(profiles.studentId, studentId))
       .limit(1);
-    const row = rows[0];
-    return row ? this.hydrateProfile(row) : null;
+    return rows[0] ? this.hydrateProfile(rows[0]) : null;
   }
 
   async findProfileWithDepartmentsById(
     userId: string,
   ): Promise<ProfileWithDepartmentsRecord | null> {
     const rows = await this.db
-      .select()
+      .select(AUTH_PROFILE_COLUMNS)
       .from(profiles)
       .where(eq(profiles.id, userId))
       .limit(1);
-    const row = rows[0];
-    return row ? this.hydrateProfile(row) : null;
+    return rows[0] ? this.hydrateProfile(rows[0]) : null;
   }
 
   async findUserPermissions(userId: string): Promise<PermissionCode[]> {
@@ -197,8 +161,7 @@ export class DrizzleAuthRepository implements AuthRepository {
       .from(sessions)
       .where(eq(sessions.tokenHash, tokenHash))
       .limit(1);
-    const row = rows[0];
-    return row ? mapSessionRow(row) : null;
+    return rows[0] ? mapSessionRow(rows[0]) : null;
   }
 
   async touchSession(input: {
@@ -222,10 +185,7 @@ export class DrizzleAuthRepository implements AuthRepository {
   }): Promise<void> {
     await this.db
       .update(sessions)
-      .set({
-        revokedAt: input.revokedAt,
-        updatedAt: input.revokedAt,
-      })
+      .set({ revokedAt: input.revokedAt, updatedAt: input.revokedAt })
       .where(eq(sessions.id, input.sessionId));
   }
 
@@ -236,14 +196,10 @@ export class DrizzleAuthRepository implements AuthRepository {
   }): Promise<ProfileWithDepartmentsRecord | null> {
     const rows = await this.db
       .update(profiles)
-      .set({
-        locale: input.locale,
-        updatedAt: input.updatedAt,
-      })
+      .set({ locale: input.locale, updatedAt: input.updatedAt })
       .where(eq(profiles.id, input.userId))
-      .returning();
-    const updated = rows[0];
-    return updated ? this.hydrateProfile(updated) : null;
+      .returning(AUTH_PROFILE_COLUMNS);
+    return rows[0] ? this.hydrateProfile(rows[0]) : null;
   }
 
   async updatePasswordAndRevokeOtherSessions(input: {
@@ -262,17 +218,12 @@ export class DrizzleAuthRepository implements AuthRepository {
           updatedAt: input.now,
         })
         .where(eq(profiles.id, input.userId))
-        .returning();
+        .returning(AUTH_PROFILE_COLUMNS);
       const updated = rows[0];
-      if (!updated) {
-        return null;
-      }
+      if (!updated) return null;
       await tx
         .update(sessions)
-        .set({
-          revokedAt: input.now,
-          updatedAt: input.now,
-        })
+        .set({ revokedAt: input.now, updatedAt: input.now })
         .where(
           and(
             eq(sessions.userId, input.userId),
@@ -284,20 +235,57 @@ export class DrizzleAuthRepository implements AuthRepository {
     });
   }
 
+  async updateUserAvatar(
+    input: {
+      readonly userId: string;
+      readonly avatarData: Buffer;
+      readonly avatarMime: string;
+      readonly now: Date;
+    },
+    tx?: TransactionContext,
+  ): Promise<ProfileWithDepartmentsRecord | null> {
+    const executor = tx ?? this.db;
+    const rows = await executor
+      .update(profiles)
+      .set({
+        avatarData: input.avatarData,
+        avatarMime: input.avatarMime,
+        avatarUpdatedAt: input.now,
+        updatedAt: input.now,
+      })
+      .where(eq(profiles.id, input.userId))
+      .returning(AUTH_PROFILE_COLUMNS);
+    return rows[0] ? this.hydrateProfile(rows[0], executor) : null;
+  }
+
+  async clearUserAvatar(
+    input: { readonly userId: string; readonly now: Date },
+    tx?: TransactionContext,
+  ): Promise<ProfileWithDepartmentsRecord | null> {
+    const executor = tx ?? this.db;
+    const rows = await executor
+      .update(profiles)
+      .set({
+        avatarData: null,
+        avatarMime: null,
+        avatarUpdatedAt: null,
+        updatedAt: input.now,
+      })
+      .where(eq(profiles.id, input.userId))
+      .returning(AUTH_PROFILE_COLUMNS);
+    return rows[0] ? this.hydrateProfile(rows[0], executor) : null;
+  }
+
   private async hydrateProfile(
-    row: ProfileRow,
+    row: SelectedAuthProfileRow,
     executor: DbExecutor = this.db,
   ): Promise<ProfileWithDepartmentsRecord> {
     const deptRows = await executor
-      .select({
-        id: departments.id,
-        name: departments.name,
-      })
+      .select({ id: departments.id, name: departments.name })
       .from(memberDepartments)
       .innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
       .where(eq(memberDepartments.userId, row.id))
       .orderBy(asc(departments.name));
-
     return {
       id: row.id,
       studentId: row.studentId,
@@ -305,6 +293,7 @@ export class DrizzleAuthRepository implements AuthRepository {
       fullName: row.fullName,
       passwordHash: row.passwordHash,
       mustChangePassword: row.mustChangePassword,
+      avatarUpdatedAt: row.avatarUpdatedAt,
       isAdmin: row.isAdmin,
       isActive: row.isActive,
       leftAt: row.leftAt,

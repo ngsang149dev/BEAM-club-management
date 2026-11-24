@@ -15,10 +15,22 @@ const membersHookMock = vi.hoisted(() => ({
   useDeactivateMemberMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useActivateMemberMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useResetMemberPasswordMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useUpdateMemberAvatarMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useRemoveMemberAvatarMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
 }));
 
 const departmentsHookMock = vi.hoisted(() => ({
   useDepartmentsQuery: vi.fn(),
+}));
+
+const brandingHookMock = vi.hoisted(() => ({
+  useBrandingQuery: vi.fn(() => ({
+    isPending: false,
+    isError: false,
+    data: { logoUrl: null as string | null, updatedAt: null as string | null },
+  })),
+  useUpdateClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
+  useRemoveClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
 }));
 
 vi.mock('@/features/members/hooks/useMembers', async () => {
@@ -26,6 +38,13 @@ vi.mock('@/features/members/hooks/useMembers', async () => {
     '@/features/members/hooks/useMembers'
   );
   return { ...actual, ...membersHookMock };
+});
+
+vi.mock('@/features/branding/hooks/useBranding', async () => {
+  const actual = await vi.importActual<typeof import('@/features/branding/hooks/useBranding')>(
+    '@/features/branding/hooks/useBranding'
+  );
+  return { ...actual, ...brandingHookMock };
 });
 
 vi.mock('@/features/departments/hooks/useDepartments', () => departmentsHookMock);
@@ -36,6 +55,7 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+import { ClubLogoModal } from '@/features/branding/components/ClubLogoModal';
 import { canViewerResetMemberPassword } from '@/features/members/components/MemberAdminTable';
 import { MemberAdminView } from '@/features/members/components/MemberAdminView';
 import { MemberCreateDrawer, MemberEditDrawer } from '@/features/members/components/MemberFormDrawer';
@@ -158,7 +178,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(html).toContain('Thêm thành viên');
   });
 
-  it('renders per-action buttons strictly by permission and hides PII without member.view_detail', () => {
+  it('renders per-action buttons strictly by permission, hides Reset Password and Club Logo for non-admins, and masks PII without member.view_detail', () => {
     const permissions: PermissionCode[] = ['member.view', 'member.update'];
     const html = renderWithIntl(
       <PermissionsProvider permissions={permissions}>
@@ -166,7 +186,8 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       </PermissionsProvider>
     );
     expect(html).toContain('>Sửa<');
-    expect(html).toContain('>Đặt lại mật khẩu<');
+    expect(html).not.toContain('>Đặt lại mật khẩu<');
+    expect(html).not.toContain('>Logo CLB<');
     expect(html).not.toContain('>Thêm thành viên<');
     expect(html).not.toContain('>Khóa tài khoản<');
     expect(html).not.toContain('>Mở lại tài khoản<');
@@ -174,19 +195,19 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(html).not.toContain('anh.nguyen@eiu.edu.vn');
   });
 
-  it('enforces Reset Password action visibility rule for admin targets vs non-admin viewers', () => {
+  it('enforces strict Admin-only Reset Password and Club Logo visibility rules (CR-01 / CR-02)', () => {
     expect(
       canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: false, member: DETAIL_MEMBER })
     ).toBe(false);
     expect(
       canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: true, member: DETAIL_MEMBER })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: true, member: ADMIN_DETAIL_MEMBER })
     ).toBe(false);
     expect(
       canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: true, member: PUBLIC_MEMBER })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       canViewerResetMemberPassword({ viewerIsAdmin: true, canUpdateMember: false, member: ADMIN_DETAIL_MEMBER })
     ).toBe(true);
@@ -199,17 +220,24 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       isFetchingNextPage: false,
       fetchNextPage: vi.fn(),
       refetch: vi.fn(),
-      data: { pages: [{ items: [ADMIN_DETAIL_MEMBER], meta: { nextCursor: null, limit: 20 } }] },
+      data: {
+        pages: [{ items: [DETAIL_MEMBER, ADMIN_DETAIL_MEMBER, PUBLIC_MEMBER], meta: { nextCursor: null, limit: 20 } }],
+      },
     });
 
     const nonAdminViewerHtml = renderWithIntl(
-      <PermissionsProvider isAdmin={false} permissions={['member.view', 'member.view_detail', 'member.update']}>
+      <PermissionsProvider
+        isAdmin={false}
+        permissions={['member.view', 'member.view_detail', 'member.create', 'member.update', 'member.deactivate']}
+      >
         <MemberAdminView />
       </PermissionsProvider>
     );
+    expect(nonAdminViewerHtml).toContain('Nguyen Minh Anh');
     expect(nonAdminViewerHtml).toContain('Tran Club Admin');
     expect(nonAdminViewerHtml).toContain('>Sửa<');
     expect(nonAdminViewerHtml).not.toContain('>Đặt lại mật khẩu<');
+    expect(nonAdminViewerHtml).not.toContain('>Logo CLB<');
 
     membersHookMock.useMembersInfiniteQuery.mockReturnValueOnce({
       isPending: false,
@@ -219,7 +247,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       isFetchingNextPage: false,
       fetchNextPage: vi.fn(),
       refetch: vi.fn(),
-      data: { pages: [{ items: [ADMIN_DETAIL_MEMBER], meta: { nextCursor: null, limit: 20 } }] },
+      data: { pages: [{ items: [DETAIL_MEMBER, ADMIN_DETAIL_MEMBER], meta: { nextCursor: null, limit: 20 } }] },
     });
 
     const adminViewerHtml = renderWithIntl(
@@ -229,6 +257,27 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     );
     expect(adminViewerHtml).toContain('Tran Club Admin');
     expect(adminViewerHtml).toContain('>Đặt lại mật khẩu<');
+    expect(adminViewerHtml).toContain('>Logo CLB<');
+
+    membersHookMock.useMembersInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [DETAIL_MEMBER], meta: { nextCursor: null, limit: 20 } }] },
+    });
+
+    const adminEnHtml = renderWithIntl(
+      <PermissionsProvider isAdmin permissions={[]}>
+        <MemberAdminView />
+      </PermissionsProvider>,
+      'en'
+    );
+    expect(adminEnHtml).toContain('>Reset password<');
+    expect(adminEnHtml).toContain('>Club logo<');
   });
 
   it('renders MemberCreateDrawer with initialPassword, generate button, first-login hint, and validates schema', () => {
@@ -438,5 +487,100 @@ describe('MemberAdminView & Member Forms (S09)', () => {
         new ApiClientError({ status: 401, code: 'ACCOUNT_INACTIVE', messageKey: 'errors.unauthorized', details: {} })
       )
     ).toEqual({ key: 'unauthorized' });
+    expect(
+      describeMemberError(
+        new ApiClientError({ status: 400, code: 'INVALID_IMAGE_FORMAT', messageKey: 'errors.invalidImageFormat', details: {} })
+      )
+    ).toEqual({ key: 'invalidImageFormat' });
+    expect(
+      describeMemberError(
+        new ApiClientError({ status: 400, code: 'IMAGE_TOO_LARGE', messageKey: 'errors.imageTooLarge', details: {} })
+      )
+    ).toEqual({ key: 'imageTooLarge' });
+  });
+
+  it('renders AvatarUploadControl in Edit drawer only when permitted and renders ClubLogoModal cleanly', () => {
+    const createHtml = renderWithIntl(
+      <PermissionsProvider isAdmin permissions={[]}>
+        <MemberCreateDrawer
+          departments={SAMPLE_DEPARTMENTS}
+          isSubmitting={false}
+          error={null}
+          onClose={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </PermissionsProvider>
+    );
+    expect(createHtml).not.toContain('Ảnh đại diện thành viên');
+    expect(createHtml).not.toContain('accept="image/png,image/jpeg,image/webp"');
+
+    const editPermittedHtml = renderWithIntl(
+      <PermissionsProvider permissions={['member.update']}>
+        <MemberEditDrawer
+          member={{ ...DETAIL_MEMBER, avatarUrl: '/api/v1/members/m-1/avatar?v=55' }}
+          canViewDetail
+          departments={SAMPLE_DEPARTMENTS}
+          isSubmitting={false}
+          error={null}
+          onUploadAvatar={vi.fn()}
+          onRemoveAvatar={vi.fn()}
+          onClose={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </PermissionsProvider>
+    );
+    expect(editPermittedHtml).toContain('Ảnh đại diện thành viên');
+    expect(editPermittedHtml).toContain('src="/api/v1/members/m-1/avatar?v=55"');
+    expect(editPermittedHtml).toContain('Đổi ảnh');
+    expect(editPermittedHtml).toContain('Xóa ảnh');
+
+    const editForbiddenHtml = renderWithIntl(
+      <PermissionsProvider permissions={['member.view']}>
+        <MemberEditDrawer
+          member={DETAIL_MEMBER}
+          canViewDetail={false}
+          departments={SAMPLE_DEPARTMENTS}
+          isSubmitting={false}
+          error={null}
+          onClose={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </PermissionsProvider>
+    );
+    expect(editForbiddenHtml).not.toContain('Ảnh đại diện thành viên');
+
+    brandingHookMock.useBrandingQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      data: { logoUrl: null, updatedAt: null },
+    });
+    const defaultLogoModalHtml = renderWithIntl(<ClubLogoModal onClose={vi.fn()} />);
+    expect(defaultLogoModalHtml).toContain('Logo CLB BEAM');
+    expect(defaultLogoModalHtml).toContain('Đang dùng huy hiệu BEAM mặc định');
+    expect(defaultLogoModalHtml).toContain('Tải logo mới');
+    expect(defaultLogoModalHtml).toContain('class="ui-logo is-lg"');
+
+    brandingHookMock.useBrandingQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      data: { logoUrl: '/api/v1/branding/logo?v=123', updatedAt: '2026-11-24T00:00:00Z' },
+    });
+    brandingHookMock.useUpdateClubLogoMutation.mockReturnValueOnce({
+      mutateAsync: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: new ApiClientError({
+        status: 400,
+        code: 'IMAGE_TOO_LARGE',
+        messageKey: 'errors.imageTooLarge',
+        details: {},
+      }),
+    });
+    const customLogoModalHtml = renderWithIntl(<ClubLogoModal onClose={vi.fn()} />, 'en');
+    expect(customLogoModalHtml).toContain('Custom club logo active');
+    expect(customLogoModalHtml).toContain('src="/api/v1/branding/logo?v=123"');
+    expect(customLogoModalHtml).toContain('Replace logo');
+    expect(customLogoModalHtml).toContain('Restore default');
+    expect(customLogoModalHtml).toContain('Image still exceeds 256 KB after compression');
   });
 });

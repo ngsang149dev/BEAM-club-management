@@ -177,6 +177,24 @@ describe('DrizzleAuthRepository integration', () => {
       updatedAt: touchedAt,
     });
     expect(updatedProfile?.locale).toBe('en');
+    expect(updatedProfile?.avatarUpdatedAt).toBeNull();
+
+    const avatarBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const avatarAt = new Date('2026-11-24T03:00:00.000Z');
+    const withAvatar = await repo.updateUserAvatar({
+      userId,
+      avatarData: avatarBytes,
+      avatarMime: 'image/png',
+      now: avatarAt,
+    });
+    expect(withAvatar?.avatarUpdatedAt?.toISOString()).toBe(avatarAt.toISOString());
+    expect('avatarData' in (withAvatar ?? {})).toBe(false);
+
+    const clearedAvatar = await repo.clearUserAvatar({
+      userId,
+      now: new Date('2026-11-24T04:00:00.000Z'),
+    });
+    expect(clearedAvatar?.avatarUpdatedAt).toBeNull();
 
     const rotatedHash = await hashPassword('RotatedPass#2026');
     const afterPwChange = await repo.updatePasswordAndRevokeOtherSessions({

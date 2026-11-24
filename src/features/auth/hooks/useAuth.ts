@@ -3,14 +3,18 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { apiFetch, isApiClientError, type components } from '@/features/shared/api/client';
+import { resolveImageUploadErrorKey } from '@/features/shared/image-compress';
 import { writeLocaleCookie, type AppLocale } from '@/i18n/locale';
 import { sanitizeReturnTo } from '../return-to';
+
+export { resolveImageUploadErrorKey as resolveAuthImageErrorKey };
 
 export type LoginRequest = components['schemas']['LoginRequest'];
 export type LoginResponse = components['schemas']['LoginResponse'];
 export type SessionInfoResponse = components['schemas']['SessionInfoResponse'];
 export type MeResponse = components['schemas']['MeResponse'];
 export type ChangeMyPasswordRequest = components['schemas']['ChangeMyPasswordRequest'];
+export type ImageUploadRequest = components['schemas']['ImageUploadRequest'];
 
 export const AUTH_QUERY_KEYS = {
   session: ['auth', 'session'] as const,
@@ -144,6 +148,39 @@ export function useChangeMyPasswordMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
         queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.session }),
+      ]);
+    },
+  });
+}
+
+export function useUpdateMyAvatarMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: ImageUploadRequest) =>
+      apiFetch('/me/avatar', { method: 'put', body: payload }),
+    onSuccess: async (data) => {
+      queryClient.setQueryData(AUTH_QUERY_KEYS.me, data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
+        queryClient.invalidateQueries({ queryKey: ['members'] }),
+        queryClient.invalidateQueries({ queryKey: ['auditLogs'] }),
+      ]);
+    },
+  });
+}
+
+export function useRemoveMyAvatarMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => apiFetch('/me/avatar', { method: 'delete' }),
+    onSuccess: async (data) => {
+      queryClient.setQueryData(AUTH_QUERY_KEYS.me, data);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
+        queryClient.invalidateQueries({ queryKey: ['members'] }),
+        queryClient.invalidateQueries({ queryKey: ['auditLogs'] }),
       ]);
     },
   });

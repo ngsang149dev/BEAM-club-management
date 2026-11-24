@@ -4,6 +4,142 @@
  */
 
 export interface paths {
+    "/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current club branding metadata
+         * @description Public endpoint used by top bar and login showcase to discover the custom club logo URL (`null` when default badge should render).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Current club branding metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandingResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/branding/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch the custom club logo binary asset
+         * @description Returns raw PNG/JPEG/WEBP image bytes (`X-Content-Type-Options: nosniff`) or `404` when using the default badge.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Binary logo image */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        /**
+         * Upload or replace the custom club logo (Admin-only)
+         * @description Requires `is_admin=true`. Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`), rejects SVG/unsupported formats and payloads over `262144` bytes, stores in PostgreSQL, and writes `audit_logs` (`branding.logo_updated`).
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImageUploadRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated club branding metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandingResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        post?: never;
+        /**
+         * Remove custom club logo and restore default badge (Admin-only)
+         * @description Requires `is_admin=true`. Removes `'club_logo'` from `club_assets` and records `audit_logs` (`branding.logo_removed`).
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reset club branding metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandingResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -255,6 +391,75 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload or replace the authenticated user's own avatar
+         * @description Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`) and max `256 KB`, persists into PostgreSQL, records `audit_logs` (`member.avatar_updated`), and returns updated `MeResponse`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImageUploadRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated current member profile with new `avatarUrl` */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        post?: never;
+        /**
+         * Remove the authenticated user's own avatar
+         * @description Clears avatar columns for caller, records `audit_logs` (`member.avatar_removed`), and returns updated `MeResponse`.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Updated current member profile (`avatarUrl: null`) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -584,11 +789,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Reset a member's password (admin or permitted manager)
-         * @description Requires `member.update` (or admin).
-         *     Security guard: if the target profile has `is_admin=true`, ONLY an admin (`is_admin=true`) may reset their password (`403 FORBIDDEN` otherwise).
+         * Reset a member's password (Admin-only)
+         * @description Requires `is_admin=true` (all non-admin accounts, including holders of `member.update`, receive `403 FORBIDDEN`).
          *     Sets a new `scrypt` password hash, sets `must_change_password=true`, revokes ALL active sessions for the target member, and writes `audit_logs` (`member.password_reset`) with zero plaintext password or hash.
-         *     Projection rule (FR-42): returns `MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`.
+         *     Projection rule (FR-42): returns `MemberDetail` only if caller is admin or holds `member.view_detail`, otherwise `MemberPublicSummary`.
          */
         post: {
             parameters: {
@@ -605,7 +809,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Member password reset (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`) */
+                /** @description Member password reset (`MemberDetail` when admin / `member.view_detail`, otherwise `MemberPublicSummary`) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -621,6 +825,114 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/{id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch a member's avatar image binary
+         * @description Accessible to any active authenticated user. Returns raw PNG/JPEG/WEBP bytes (`X-Content-Type-Options: nosniff`) or `404` when member or avatar does not exist.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Binary avatar image */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        /**
+         * Upload or replace a member's avatar
+         * @description Requires `member.update` (or admin). Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`) and max `256 KB`, records `audit_logs` (`member.avatar_updated`), and obeys `member.view_detail` PII masking in response.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImageUploadRequest"];
+                };
+            };
+            responses: {
+                /** @description Member avatar updated (`MemberDetail` when caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemberItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        post?: never;
+        /**
+         * Remove a member's avatar
+         * @description Requires `member.update` (or admin). Clears avatar columns for the member, records `audit_logs` (`member.avatar_removed`), and obeys `member.view_detail` PII masking in response.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Member avatar removed (`MemberDetail` when caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemberItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -2323,6 +2635,7 @@ export interface components {
             /** Format: date-time */
             leftAt: string | null;
             departments: components["schemas"]["DepartmentSummary"][];
+            avatarUrl?: string | null;
         };
         /** @description Extended member projection — returned ONLY on `/me` or to callers with `member.view_detail` / admin. */
         MemberDetail: {
@@ -2333,6 +2646,7 @@ export interface components {
             /** Format: date-time */
             leftAt: string | null;
             departments: components["schemas"]["DepartmentSummary"][];
+            avatarUrl?: string | null;
             studentId: string;
             /** Format: email */
             email: string;
@@ -2411,6 +2725,14 @@ export interface components {
         };
         ResetMemberPasswordRequest: {
             newPassword: string;
+        };
+        ImageUploadRequest: {
+            dataUrl: string;
+        };
+        BrandingResponse: {
+            logoUrl: string | null;
+            /** Format: date-time */
+            updatedAt: string | null;
         };
         PermissionDto: {
             code: components["schemas"]["PermissionCode"];

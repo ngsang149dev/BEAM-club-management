@@ -15,6 +15,11 @@ import {
   DrizzleBoardsRepository,
 } from '@/server/modules/boards';
 import {
+  type BrandingRepository,
+  BrandingService,
+  DrizzleBrandingRepository,
+} from '@/server/modules/branding';
+import {
   type DepartmentsRepository,
   DepartmentsService,
   DrizzleDepartmentsRepository,
@@ -54,6 +59,7 @@ export interface ServerContainer {
   readonly membersService: MembersService;
   readonly permissionsService: PermissionsService;
   readonly auditService: AuditService;
+  readonly brandingService: BrandingService;
   readonly tasksService: TasksService;
   readonly boardsService: BoardsService;
   dispose(): Promise<void>;
@@ -69,6 +75,8 @@ export interface ContainerOverrides {
   readonly auditWriter?: AuditLogWriter;
   readonly auditRepo?: AuditRepository;
   readonly auditService?: AuditService;
+  readonly brandingRepo?: BrandingRepository;
+  readonly brandingService?: BrandingService;
   readonly authRepo?: AuthRepository;
   readonly authService?: AuthService;
   readonly departmentsRepo?: DepartmentsRepository;
@@ -134,6 +142,8 @@ function buildDirectoryServices(infra: SharedInfra, overrides: ContainerOverride
     overrides.authService ??
     new AuthService({
       authRepo: overrides.authRepo ?? new DrizzleAuthRepository(infra.db),
+      auditWriter: infra.auditWriter,
+      transactionRunner: infra.transactionRunner,
       clock: infra.clock,
       config: infra.config,
       logger: infra.logger,
@@ -176,7 +186,16 @@ function buildGovernanceServices(infra: SharedInfra, overrides: ContainerOverrid
       auditRepo: infra.auditRepo,
       logger: infra.logger,
     });
-  return { permissionsService, auditService };
+  const brandingService =
+    overrides.brandingService ??
+    new BrandingService({
+      brandingRepo: overrides.brandingRepo ?? new DrizzleBrandingRepository(infra.db),
+      auditWriter: infra.auditWriter,
+      transactionRunner: infra.transactionRunner,
+      clock: infra.clock,
+      logger: infra.logger,
+    });
+  return { permissionsService, auditService, brandingService };
 }
 
 function buildWorkstreamServices(infra: SharedInfra, overrides: ContainerOverrides) {

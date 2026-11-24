@@ -6,6 +6,8 @@ export type AuditActionMessageKey =
   | 'memberPasswordReset'
   | 'memberDeactivated'
   | 'memberActivated'
+  | 'memberAvatarUpdated'
+  | 'memberAvatarRemoved'
   | 'departmentCreated'
   | 'departmentUpdated'
   | 'departmentDeleted'
@@ -17,7 +19,9 @@ export type AuditActionMessageKey =
   | 'remindersUpdated'
   | 'boardCreated'
   | 'boardUpdated'
-  | 'boardArchived';
+  | 'boardArchived'
+  | 'brandingLogoUpdated'
+  | 'brandingLogoRemoved';
 
 const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'member.created': 'memberCreated',
@@ -25,6 +29,8 @@ const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'member.password_reset': 'memberPasswordReset',
   'member.deactivated': 'memberDeactivated',
   'member.activated': 'memberActivated',
+  'member.avatar_updated': 'memberAvatarUpdated',
+  'member.avatar_removed': 'memberAvatarRemoved',
   'department.created': 'departmentCreated',
   'department.updated': 'departmentUpdated',
   'department.deleted': 'departmentDeleted',
@@ -42,6 +48,8 @@ const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'board.created': 'boardCreated',
   'board.updated': 'boardUpdated',
   'board.archived': 'boardArchived',
+  'branding.logo_updated': 'brandingLogoUpdated',
+  'branding.logo_removed': 'brandingLogoRemoved',
 };
 
 export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
@@ -57,6 +65,8 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'member.password_reset', key: 'memberPasswordReset' },
   { value: 'member.deactivated', key: 'memberDeactivated' },
   { value: 'member.activated', key: 'memberActivated' },
+  { value: 'member.avatar_updated', key: 'memberAvatarUpdated' },
+  { value: 'member.avatar_removed', key: 'memberAvatarRemoved' },
   { value: 'department.created', key: 'departmentCreated' },
   { value: 'department.updated', key: 'departmentUpdated' },
   { value: 'department.deleted', key: 'departmentDeleted' },
@@ -64,6 +74,8 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'board.updated', key: 'boardUpdated' },
   { value: 'board.archived', key: 'boardArchived' },
   { value: 'reminders.updated', key: 'remindersUpdated' },
+  { value: 'branding.logo_updated', key: 'brandingLogoUpdated' },
+  { value: 'branding.logo_removed', key: 'brandingLogoRemoved' },
 ];
 
 export function resolveAuditActionKey(action: string): AuditActionMessageKey | null {

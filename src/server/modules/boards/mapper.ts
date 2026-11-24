@@ -1,3 +1,4 @@
+import { toMemberAvatarUrl } from '@/lib/media';
 import { type TaskDto, type TaskRecord, toTaskDto } from '@/server/modules/tasks';
 import type { BoardMemberSummaryRecord, BoardSummaryRecord, ColumnRecord } from './repository';
 
@@ -12,6 +13,7 @@ export interface BoardMemberPublicSummaryDto {
   readonly isActive: boolean;
   readonly leftAt: string | null;
   readonly departments: BoardDepartmentSummaryDto[];
+  readonly avatarUrl: string | null;
 }
 
 export interface ColumnDto {
@@ -77,6 +79,7 @@ function toMemberSummaryDto(record: BoardMemberSummaryRecord): BoardMemberPublic
     isActive: record.isActive,
     leftAt: record.leftAt ? record.leftAt.toISOString() : null,
     departments: record.departments.map((dept) => ({ id: dept.id, name: dept.name })),
+    avatarUrl: toMemberAvatarUrl(record.id, record.avatarUpdatedAt),
   };
 }
 

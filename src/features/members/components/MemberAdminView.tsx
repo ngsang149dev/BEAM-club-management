@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
+import { ClubLogoModal } from '@/features/branding/components/ClubLogoModal';
 import type { DepartmentDto } from '@/features/departments/hooks/useDepartments';
 import { isApiClientError } from '@/features/shared/api/client';
 import { Can, usePermissions } from '@/features/shared/permissions/can';
@@ -23,6 +25,29 @@ interface MemberAdminModalHostProps {
   departments: DepartmentDto[];
 }
 
+function renderEditModal(state: ReturnType<typeof useMemberAdminState>, canViewDetail: boolean, departments: DepartmentDto[]) {
+  if (state.modalState.kind !== 'edit') return null;
+  const avatarBusy = state.updateAvatarMutation.isPending || state.removeAvatarMutation.isPending;
+  const avatarError = state.updateAvatarMutation.error ?? state.removeAvatarMutation.error;
+  return (
+    <MemberEditDrawer
+      key={state.modalState.member.id}
+      member={state.modalState.member}
+      canViewDetail={canViewDetail}
+      departments={departments}
+      isSubmitting={state.updateMutation.isPending}
+      error={state.updateMutation.error}
+      avatarBusy={avatarBusy}
+      avatarError={avatarError}
+      onUploadAvatar={state.submitUploadAvatar}
+      onRemoveAvatar={state.submitRemoveAvatar}
+      onClearAvatarError={state.clearAvatarErrors}
+      onClose={state.closeModal}
+      onSubmit={state.submitEdit}
+    />
+  );
+}
+
 function MemberAdminModalHost({ state, canViewDetail, departments }: MemberAdminModalHostProps) {
   const modal = state.modalState;
   if (modal.kind === 'create') {
@@ -37,18 +62,7 @@ function MemberAdminModalHost({ state, canViewDetail, departments }: MemberAdmin
     );
   }
   if (modal.kind === 'edit') {
-    return (
-      <MemberEditDrawer
-        key={modal.member.id}
-        member={modal.member}
-        canViewDetail={canViewDetail}
-        departments={departments}
-        isSubmitting={state.updateMutation.isPending}
-        error={state.updateMutation.error}
-        onClose={state.closeModal}
-        onSubmit={state.submitEdit}
-      />
-    );
+    return renderEditModal(state, canViewDetail, departments);
   }
   if (modal.kind === 'resetPassword') {
     return (
@@ -172,7 +186,7 @@ function MemberAdminListArea({ canView, canViewDetail, state }: MemberAdminListA
 }
 
 export function MemberAdminView() {
-  const { can, canAny } = usePermissions();
+  const { isAdmin, can, canAny } = usePermissions();
   const allowed = canAny(['member.create', 'member.update', 'member.deactivate']);
   const canView = can('member.view');
   const canViewDetail = can('member.view_detail');
@@ -180,6 +194,7 @@ export function MemberAdminView() {
   const tCommon = useTranslations('common');
   const tErr = useTranslations('errors');
   const state = useMemberAdminState(allowed, allowed && canView);
+  const [logoModalOpen, setLogoModalOpen] = useState(false);
 
   if (!allowed) {
     return (
@@ -203,7 +218,18 @@ export function MemberAdminView() {
     <div className="admin-page-stack">
       <div className="directory-header-row">
         <p className="page-subtitle">{t('subtitle')}</p>
-        {!canView ? <Can permission="member.create"><button type="button" className="ui-btn primary" onClick={openCreate}>{t('addMember')}</button></Can> : null}
+        <div className="admin-header-actions">
+          <Can adminOnly>
+            <button type="button" className="ui-btn secondary" onClick={() => setLogoModalOpen(true)}>
+              {t('clubLogoButton')}
+            </button>
+          </Can>
+          {!canView ? (
+            <Can permission="member.create">
+              <button type="button" className="ui-btn primary" onClick={openCreate}>{t('addMember')}</button>
+            </Can>
+          ) : null}
+        </div>
       </div>
       {state.toastMessage ? <div className="ui-banner" role="status"><div className="ui-banner-body"><span className="ui-banner-text">{state.toastMessage}</span></div></div> : null}
       {canView ? (
@@ -218,6 +244,7 @@ export function MemberAdminView() {
       ) : null}
       <MemberAdminListArea canView={canView} canViewDetail={canViewDetail} state={state} />
       <MemberAdminModalHost state={state} canViewDetail={canViewDetail} departments={departments} />
+      {isAdmin && logoModalOpen ? <ClubLogoModal onClose={() => setLogoModalOpen(false)} /> : null}
     </div>
   );
 }

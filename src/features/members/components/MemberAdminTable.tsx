@@ -1,24 +1,18 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { Can, usePermissions } from '@/features/shared/permissions/can';
 import { isMemberDetail, type MemberListItem } from '../hooks/useMembers';
-import { getMemberInitials } from './MembersToolbar';
 
 export function canViewerResetMemberPassword({
   viewerIsAdmin,
-  canUpdateMember,
-  member,
 }: {
   viewerIsAdmin: boolean;
-  canUpdateMember: boolean;
-  member: MemberListItem;
+  canUpdateMember?: boolean;
+  member?: MemberListItem;
 }): boolean {
-  if (!viewerIsAdmin && !canUpdateMember) {
-    return false;
-  }
-  const targetIsAdmin = isMemberDetail(member) && member.isAdmin;
-  return !(targetIsAdmin && !viewerIsAdmin);
+  return viewerIsAdmin;
 }
 
 export function MemberIdentityCell({ member }: { member: MemberListItem }) {
@@ -26,9 +20,12 @@ export function MemberIdentityCell({ member }: { member: MemberListItem }) {
 
   return (
     <div className="member-name-cell">
-      <span className={member.isActive ? 'ui-avatar' : 'ui-avatar is-out'} aria-hidden="true">
-        {getMemberInitials(member.fullName)}
-      </span>
+      <MemberAvatar
+        memberId={member.id}
+        fullName={member.fullName}
+        avatarUrl={member.avatarUrl}
+        isActive={member.isActive}
+      />
       <span className="member-name-text">
         <span>{member.fullName}</span>
         {!member.isActive ? <span className="member-left-badge">{tBadge('leftBadge')}</span> : null}
@@ -74,11 +71,9 @@ function MemberAdminRowActions({
   onStatusAction: (member: MemberListItem, action: 'deactivate' | 'activate') => void;
 }) {
   const tAdmin = useTranslations('memberAdmin');
-  const { isAdmin, can } = usePermissions();
+  const { isAdmin } = usePermissions();
   const canResetPassword = canViewerResetMemberPassword({
     viewerIsAdmin: isAdmin,
-    canUpdateMember: can('member.update'),
-    member,
   });
 
   return (

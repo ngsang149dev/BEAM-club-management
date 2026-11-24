@@ -1,4 +1,4 @@
-import { badRequest, notFound } from '@/lib/errors';
+import { badRequest, notFound, unauthorized } from '@/lib/errors';
 import type {
   CreateMemberRequestInput,
   ListMembersQueryInput,
@@ -10,6 +10,7 @@ import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
 import type { Logger } from '@/server/shared/logger';
+import { parseAndValidateImageDataUrl } from '@/server/shared/media';
 import { hashPassword } from '@/server/shared/password';
 import type { TransactionRunner } from '@/server/shared/transaction';
 import {
@@ -25,14 +26,16 @@ import {
   decodeMemberCursor,
   encodeMemberCursor,
 } from './policy';
-import type { MembersRepository } from './repository';
 import {
   persistActivation,
   persistDeactivation,
+  persistMemberAvatarRemoval,
+  persistMemberAvatarUpdate,
   persistMemberUpdate,
   persistNewMember,
   persistPasswordReset,
 } from './service-helpers';
+import type { MembersRepository } from './types';
 
 export interface MembersServiceDeps {
   readonly membersRepo: MembersRepository;
@@ -47,6 +50,17 @@ export interface ResetMemberPasswordCommand {
   readonly actor: AuthActor;
   readonly memberId: string;
   readonly input: ResetMemberPasswordRequestInput;
+}
+
+export interface UpdateMemberAvatarCommand {
+  readonly actor: AuthActor;
+  readonly memberId: string;
+  readonly dataUrl: string;
+}
+
+export interface RemoveMemberAvatarCommand {
+  readonly actor: AuthActor;
+  readonly memberId: string;
 }
 
 export class MembersService {
@@ -201,12 +215,11 @@ export class MembersService {
   async resetMemberPassword(
     command: ResetMemberPasswordCommand,
   ): Promise<MemberItemResponseDto> {
-    authorize(command.actor, 'member.update');
+    assertCanResetMemberPassword(command.actor);
     const target = await this.deps.membersRepo.findById(command.memberId);
     if (!target) {
       throw notFound('errors.notFound', {}, 'NOT_FOUND');
     }
-    assertCanResetMemberPassword(command.actor, target);
     const passwordHash = await hashPassword(command.input.newPassword);
     const now = this.deps.clock.now();
     const updated = await this.deps.transactionRunner.runInTransaction((tx) =>
@@ -221,6 +234,72 @@ export class MembersService {
       }),
     );
     this.deps.logger.info('Member password reset', {
+      actorId: command.actor.id,
+      targetUserId: updated.id,
+    });
+    return toMemberItemResponseDto(updated, canViewMemberDetail(command.actor));
+  }
+
+  async getMemberAvatar(
+    actor: AuthActor,
+    memberId: string,
+  ): Promise<{ readonly mimeType: string; readonly data: Buffer }> {
+    if (!actor.isActive) {
+      throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
+    }
+    const record = await this.deps.membersRepo.findAvatarById(memberId);
+    if (!record || !record.avatarData || !record.avatarMime) {
+      throw notFound('errors.notFound', {}, 'NOT_FOUND');
+    }
+    return {
+      mimeType: record.avatarMime,
+      data: record.avatarData,
+    };
+  }
+
+  async updateMemberAvatar(
+    command: UpdateMemberAvatarCommand,
+  ): Promise<MemberItemResponseDto> {
+    authorize(command.actor, 'member.update');
+    const parsed = parseAndValidateImageDataUrl(command.dataUrl);
+    const now = this.deps.clock.now();
+    const updated = await this.deps.transactionRunner.runInTransaction((tx) =>
+      persistMemberAvatarUpdate({
+        membersRepo: this.deps.membersRepo,
+        auditWriter: this.deps.auditWriter,
+        actor: command.actor,
+        memberId: command.memberId,
+        avatarData: parsed.buffer,
+        avatarMime: parsed.mimeType,
+        now,
+        tx,
+      }),
+    );
+    this.deps.logger.info('Member avatar updated', {
+      actorId: command.actor.id,
+      targetUserId: updated.id,
+      mimeType: parsed.mimeType,
+      byteLength: parsed.buffer.byteLength,
+    });
+    return toMemberItemResponseDto(updated, canViewMemberDetail(command.actor));
+  }
+
+  async removeMemberAvatar(
+    command: RemoveMemberAvatarCommand,
+  ): Promise<MemberItemResponseDto> {
+    authorize(command.actor, 'member.update');
+    const now = this.deps.clock.now();
+    const updated = await this.deps.transactionRunner.runInTransaction((tx) =>
+      persistMemberAvatarRemoval({
+        membersRepo: this.deps.membersRepo,
+        auditWriter: this.deps.auditWriter,
+        actor: command.actor,
+        memberId: command.memberId,
+        now,
+        tx,
+      }),
+    );
+    this.deps.logger.info('Member avatar removed', {
       actorId: command.actor.id,
       targetUserId: updated.id,
     });
