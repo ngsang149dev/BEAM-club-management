@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
-import type { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { LOCALE_COOKIE } from '@/i18n/locale';
 import { SESSION_COOKIE_NAME } from '@/lib/auth';
 import { badRequest } from '@/lib/errors';
+import type { AuthenticatedSession } from '@/server/modules/auth';
 import type { Config } from './config';
 
 const SECONDS_PER_DAY = 86_400;
@@ -171,4 +172,57 @@ export async function parseJsonBody(request: Request): Promise<unknown> {
   } catch {
     throw badRequest('errors.badRequest', {}, 'INVALID_JSON');
   }
+}
+
+export interface ApiAuthenticator {
+  readonly authService: {
+    authenticateSession(
+      rawToken: string | null | undefined,
+    ): Promise<AuthenticatedSession>;
+  };
+}
+
+export interface AuthenticatedRequestContext extends AuthenticatedSession {
+  readonly rawToken: string;
+}
+
+export async function authenticateApiRequest(
+  request: Request,
+  container: ApiAuthenticator,
+): Promise<AuthenticatedRequestContext> {
+  const rawToken = readSessionCookie(request);
+  const authenticated = await container.authService.authenticateSession(rawToken);
+  return {
+    ...authenticated,
+    rawToken: rawToken ?? '',
+  };
+}
+
+export interface AuthenticatedJsonResponseOptions {
+  readonly status?: number;
+  readonly requestId: string;
+  readonly rawToken: string;
+  readonly rememberMe: boolean;
+  readonly request: Request;
+  readonly config: Pick<Config, 'nodeEnv' | 'sessionTtlRememberDays'>;
+}
+
+export function createAuthenticatedJsonResponse<T>(
+  data: T,
+  options: AuthenticatedJsonResponseOptions,
+): NextResponse<T> {
+  const response = NextResponse.json(data, {
+    status: options.status ?? 200,
+    headers: {
+      'Cache-Control': 'no-store',
+      'x-request-id': options.requestId,
+    },
+  });
+  refreshSessionCookieIfRemembered(response, {
+    rawToken: options.rawToken,
+    rememberMe: options.rememberMe,
+    request: options.request,
+    config: options.config,
+  });
+  return response;
 }
