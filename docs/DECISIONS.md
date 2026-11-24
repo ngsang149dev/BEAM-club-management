@@ -108,3 +108,24 @@ Trạng thái: Đã duyệt bởi chủ dự án
   3. **Tinh gọn bố cục toàn hệ thống (`S03`–`S10`):** Chuyển `ActionMenu` (`⋯`) thành component dùng chung cho bảng quản trị thành viên `S09`; bỏ banner thừa và bố trí ma trận quyền `S10` thành lưới 2 cột cân đối kèm thanh lưu cô đọng; cân tỷ lệ cột và khoảng đệm đồng nhất trên `S08`, `S03`–`S06`; bổ sung invalidate query cache (`boardDetail`, `taskDetail`, `myTasks`) khi đổi ảnh đại diện và hiển thị metadata `branding`/`avatar` ở `AuditDetailPane`.
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cập nhật mô tả `PUT /members/{id}/admin` trong `docs/openapi.yaml` (cộng thêm `409 CANNOT_REVOKE_OWN_ADMIN`), không đổi schema CSDL.
 - **Trạng thái:** Đã duyệt bởi chủ dự án (`A1`–`A3`, 2026-11-24).
+
+---
+
+## Quyết định `CR-03` — Giao task cho Ban (`task_departments`) & Email/Thông báo chuông (`A2`, `A3`, `A5`) — 2026-11-24
+
+- **Ngữ cảnh:** Theo trải nghiệm thực tế của chủ CLB, giao việc theo **Ban** là luồng chính thường dùng, trong khi giao cho từng thành viên là tùy chọn phụ trợ; khi giao việc cho Ban cần có tùy chọn gửi thông báo và email tới từng thành viên thuộc ban đó.
+- **Quyết định kỹ thuật:**
+  1. **Cơ sở dữ liệu (`0005_task_departments_and_notifications.sql`):**
+     - Bảng `task_departments (task_id FK tasks CASCADE, department_id FK departments RESTRICT, created_at)` với khóa chính kép `(task_id, department_id)` và index `task_departments_department_id_idx`.
+     - Bảng `notifications (id PK, user_id FK profiles RESTRICT, type CHECK ('task.department_assigned', 'task.assigned'), task_id FK tasks CASCADE, board_id FK boards CASCADE, department_id FK departments SET NULL, actor_id FK profiles RESTRICT, is_hidden_task, payload jsonb, read_at, created_at)`.
+  2. **Chính sách quyền & hiển thị dùng chung:**
+     - `AuthActor` đọc tươi `departmentIds` của thành viên từ DB mỗi request (`authService.authenticateSession`).
+     - Thành viên đang hoạt động thuộc bất kỳ ban nào trong `task_departments` được coi là thành viên được giao task ở mọi lớp: `taskVisibilityPolicy` (xem được task `is_hidden = true` giao cho ban mình; rời ban mất quyền xem ngay -> `404`), `canEditTask` (sửa/kéo thả với `task.update_assigned`), `/me/tasks`, và lọc `departmentId` trên `/tasks` và `/me/tasks`.
+     - Ghi `department_ids` (chỉ UUID, không tên ban/PII) vào `task_events.changes` (`task.created` & `task.assignees_changed`), giữ append-only.
+     - Khi Archive purge task/board hoặc purge user (`CR-04`), dọn `task_departments` của task bị purge và `notifications` sở hữu bởi user bị purge; vẫn kiểm tra tham chiếu `notifications.actor_id` trong `hasProfileHistoryReferences`.
+  3. **Gửi Email SMTP & Thông báo in-app (`SmtpMailer` + `Mailer` port):**
+     - Bổ sung `SmtpMailer` thuần Node (`node:net` / `node:tls`, hỗ trợ SMTPS 465 / STARTTLS 587, `AUTH PLAIN`/`LOGIN`, tiêu đề RFC 2047 UTF-8 Base64, timeout `10s`) thực thi port `Mailer` sẵn có, không thêm thư viện ngoài; tự động fallback về `NoopMailer` khi chưa cấu hình `SMTP_HOST`.
+     - Khi `notifyDepartmentMembers` (mặc định `true`) bật và có ban mới được thêm vào task, gửi 1 thông báo `notifications` + 1 email song ngữ theo `profiles.locale` tới từng thành viên hoạt động của các ban vừa gán (khử trùng lặp nếu thuộc nhiều ban). Lỗi SMTP được ghi log cấu trúc qua `Logger` (không PII) và không rollback mutation task.
+     - Bảo mật `WQ-27`: Với task ẩn (`is_hidden = true`), **không đưa tiêu đề task** vào email lẫn `notifications.payload.taskTitle = null` (UI hiển thị thông báo chung về task ẩn; không bao giờ kèm MSSV/email người khác).
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm `docs/ERD.md` (21 bảng miền), `db/migrations/0005_task_departments_and_notifications.sql`, `src/lib/notifications.ts`, `docs/openapi.yaml`.
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`A2`, `A3`, `A5`, 2026-11-24); đang triển khai trên nhánh `feat/CR03-department-assign-notifications`.
