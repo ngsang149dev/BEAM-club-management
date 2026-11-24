@@ -1,25 +1,38 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, ne, or } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import { loginAttempts, permissions, profiles, sessions, userPermissions } from '@db/schema';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import viMessages from '../../messages/vi.json';
 import enMessages from '../../messages/en.json';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
 
+function assertNoSecretsInText(payload: string, secrets: readonly string[]): void {
+  expect(payload).not.toContain('passwordHash');
+  expect(payload).not.toContain('password_hash');
+  expect(payload).not.toContain('scrypt$');
+  for (const secret of secrets) {
+    expect(payload).not.toContain(secret);
+  }
+}
+
 test.describe('Auth & Session E2E (S01, S08)', () => {
   let pool: Pool;
   let db: Database;
 
   const suffix = randomUUID().slice(0, 8);
+  const adminUserId = randomUUID();
   const activeUserId = randomUUID();
   const inactiveUserId = randomUUID();
+  const adminStudentId = `MSSV-E2E-ADM-${suffix}`;
   const activeStudentId = `MSSV-E2E-${suffix}`;
   const inactiveStudentId = `MSSV-E2E-OFF-${suffix}`;
   const unknownStudentId = `MSSV-E2E-UNK-${suffix}`;
+  const adminEmail = `e2e-admin-${suffix}@eiu.edu.vn`;
   const activeEmail = `e2e-active-${suffix}@eiu.edu.vn`;
   const activeFullName = `E2E Active ${suffix}`;
 
@@ -31,6 +44,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
 
     pool = createDbPool(testDatabaseUrl);
     db = createDb(pool);
+    const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
 
     await db
       .insert(permissions)
@@ -48,10 +62,23 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
 
     await db.insert(profiles).values([
       {
+        id: adminUserId,
+        studentId: adminStudentId,
+        email: adminEmail,
+        fullName: `E2E Admin ${suffix}`,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
+        isAdmin: true,
+        isActive: true,
+        locale: 'vi',
+      },
+      {
         id: activeUserId,
         studentId: activeStudentId,
         email: activeEmail,
         fullName: activeFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',
@@ -61,6 +88,8 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
         studentId: inactiveStudentId,
         email: `e2e-inactive-${suffix}@eiu.edu.vn`,
         fullName: `E2E Inactive ${suffix}`,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: false,
         leftAt: new Date('2026-09-01T00:00:00.000Z'),
@@ -69,21 +98,26 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     ]);
 
     await db.insert(userPermissions).values([
-      { userId: activeUserId, permissionCode: 'member.view', grantedBy: null },
-      { userId: activeUserId, permissionCode: 'task.update_assigned', grantedBy: null },
-      { userId: activeUserId, permissionCode: 'comment.create', grantedBy: null },
+      { userId: activeUserId, permissionCode: 'member.view', grantedBy: adminUserId },
+      { userId: activeUserId, permissionCode: 'task.update_assigned', grantedBy: adminUserId },
+      { userId: activeUserId, permissionCode: 'comment.create', grantedBy: adminUserId },
     ]);
   });
 
   test.beforeEach(async () => {
     await db
       .delete(sessions)
-      .where(inArray(sessions.userId, [activeUserId, inactiveUserId]));
+      .where(inArray(sessions.userId, [adminUserId, activeUserId, inactiveUserId]));
     await db
       .delete(loginAttempts)
       .where(
         or(
-          inArray(loginAttempts.studentId, [activeStudentId, inactiveStudentId, unknownStudentId]),
+          inArray(loginAttempts.studentId, [
+            adminStudentId,
+            activeStudentId,
+            inactiveStudentId,
+            unknownStudentId,
+          ]),
           inArray(loginAttempts.ip, LOOPBACK_IPS),
         ),
       );
@@ -97,72 +131,121 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     if (db) {
       await db
         .delete(sessions)
-        .where(inArray(sessions.userId, [activeUserId, inactiveUserId]));
+        .where(inArray(sessions.userId, [adminUserId, activeUserId, inactiveUserId]));
       await db
         .delete(userPermissions)
-        .where(inArray(userPermissions.userId, [activeUserId, inactiveUserId]));
+        .where(inArray(userPermissions.userId, [adminUserId, activeUserId, inactiveUserId]));
       await db
         .delete(loginAttempts)
         .where(
           or(
-            inArray(loginAttempts.studentId, [activeStudentId, inactiveStudentId, unknownStudentId]),
+            inArray(loginAttempts.studentId, [
+              adminStudentId,
+              activeStudentId,
+              inactiveStudentId,
+              unknownStudentId,
+            ]),
             inArray(loginAttempts.ip, LOOPBACK_IPS),
           ),
         );
       await db
         .delete(profiles)
         .where(inArray(profiles.id, [activeUserId, inactiveUserId]));
+
+      const remainingAdmins = await db
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(and(eq(profiles.isAdmin, true), eq(profiles.isActive, true), ne(profiles.id, adminUserId)));
+      if (remainingAdmins.length > 0) {
+        await db.delete(profiles).where(eq(profiles.id, adminUserId));
+      }
     }
     await pool?.end();
   });
 
-  test('redirects unauthenticated access to /profile back to /login with expired notice and no password field (AC-05, WQ-09, WQ-20)', async ({
+  test('redirects unauthenticated access to /profile back to /login with expired notice and password field (AC-05, CR-01, WQ-09)', async ({
     page,
   }) => {
     await page.goto('/profile');
     await page.waitForURL(`${BASE_ORIGIN}/login?expired=1&returnTo=%2Fprofile`);
 
-    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    await expect(page.locator('input[type="password"]')).toHaveCount(1);
     const alert = page.locator('.login-form').getByRole('alert');
     await expect(alert).toBeVisible();
     await expect(alert).toContainText(viMessages.auth.sessionExpiredTitle);
     await expect(alert).toContainText(viMessages.auth.sessionExpiredBody);
   });
 
-  test('shows identical generic error for unknown and inactive student IDs (AC-01, AC-02)', async ({
+  test('toggles password visibility and returns identical 401 INVALID_CREDENTIALS for unknown, inactive, and wrong-password admin/member logins (AC-01, AC-02, CR-01)', async ({
     page,
   }) => {
     await page.goto('/login');
 
-    const studentInput = page.getByLabel(viMessages.auth.studentIdLabel);
-    const submitBtn = page.getByRole('button', { name: viMessages.auth.signInButton });
+    const studentInput = page.getByLabel(viMessages.auth.studentIdLabel, { exact: true });
+    const passwordInput = page.getByLabel(viMessages.auth.passwordLabel, { exact: true });
+    const submitBtn = page.getByRole('button', { name: viMessages.auth.signInButton, exact: true });
     const alert = page.locator('.login-form').getByRole('alert');
 
-    const unknownRespPromise = page.waitForResponse(
-      (res) => res.url().endsWith('/api/v1/auth/login') && res.request().method() === 'POST',
-    );
-    await studentInput.fill(unknownStudentId);
-    await submitBtn.click();
-    expect((await unknownRespPromise).status()).toBe(401);
+    // Eye toggle show/hide password behavior
+    await expect(passwordInput).toHaveAttribute('type', 'password');
+    const showBtn = page.getByRole('button', { name: viMessages.auth.showPassword, exact: true });
+    await expect(showBtn).toHaveAttribute('aria-pressed', 'false');
+    await passwordInput.fill('ToggleCheck#2026');
+    await showBtn.click();
+    await expect(passwordInput).toHaveAttribute('type', 'text');
+    await expect(passwordInput).toHaveValue('ToggleCheck#2026');
 
-    await expect(alert).toBeVisible();
-    const unknownText = (await alert.innerText()).trim();
-    expect(unknownText).toContain(viMessages.auth.invalidCredentials);
+    const hideBtn = page.getByRole('button', { name: viMessages.auth.hidePassword, exact: true });
+    await expect(hideBtn).toHaveAttribute('aria-pressed', 'true');
+    await hideBtn.click();
+    await expect(passwordInput).toHaveAttribute('type', 'password');
+    await expect(
+      page.getByRole('button', { name: viMessages.auth.showPassword, exact: true }),
+    ).toHaveAttribute('aria-pressed', 'false');
 
-    const inactiveRespPromise = page.waitForResponse(
-      (res) => res.url().endsWith('/api/v1/auth/login') && res.request().method() === 'POST',
-    );
-    await studentInput.fill(inactiveStudentId);
-    await submitBtn.click();
-    expect((await inactiveRespPromise).status()).toBe(401);
+    const submitAndAssertGeneric401 = async (
+      sid: string,
+      pwd: string,
+    ): Promise<string> => {
+      const respPromise = page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/auth/login') && res.request().method() === 'POST',
+      );
+      await studentInput.fill(sid);
+      await passwordInput.fill(pwd);
+      await submitBtn.click();
+      const resp = await respPromise;
+      expect(resp.status()).toBe(401);
+      const rawBody = await resp.text();
+      assertNoSecretsInText(rawBody, [
+        pwd,
+        DEV_SEED_PASSWORD,
+        adminStudentId,
+        activeStudentId,
+        inactiveStudentId,
+        adminEmail,
+        activeEmail,
+      ]);
+      const parsed = JSON.parse(rawBody) as { error: { code: string } };
+      expect(parsed.error.code).toBe('INVALID_CREDENTIALS');
 
-    await expect(alert).toBeVisible();
-    const inactiveText = (await alert.innerText()).trim();
+      await expect(alert).toBeVisible();
+      const alertText = (await alert.innerText()).trim();
+      expect(alertText).toContain(viMessages.auth.invalidCredentials);
+      expect(page.url()).toBe(`${BASE_ORIGIN}/login`);
+      return alertText;
+    };
+
+    const unknownText = await submitAndAssertGeneric401(unknownStudentId, DEV_SEED_PASSWORD);
+    const inactiveText = await submitAndAssertGeneric401(inactiveStudentId, DEV_SEED_PASSWORD);
+    const wrongMemberText = await submitAndAssertGeneric401(activeStudentId, 'WrongMember#2026');
+    const wrongAdminText = await submitAndAssertGeneric401(adminStudentId, 'WrongAdmin#2026');
+
     expect(inactiveText).toBe(unknownText);
-    expect(page.url()).toBe(`${BASE_ORIGIN}/login`);
+    expect(wrongMemberText).toBe(unknownText);
+    expect(wrongAdminText).toBe(unknownText);
   });
 
-  test('blocks open-redirect returnTo and issues session cookie when remember=false (AC-13, WQ-09, WQ-15)', async ({
+  test('blocks open-redirect returnTo, issues session cookie when remember=false, and leaks zero password fields in /auth/login (AC-13, WQ-09, WQ-15)', async ({
     page,
     context,
   }) => {
@@ -171,8 +254,19 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     const rememberCheckbox = page.getByRole('checkbox');
     await expect(rememberCheckbox).not.toBeChecked();
 
-    await page.getByLabel(viMessages.auth.studentIdLabel).fill(activeStudentId);
-    await page.getByRole('button', { name: viMessages.auth.signInButton }).click();
+    const loginRespPromise = page.waitForResponse(
+      (res) => res.url().endsWith('/api/v1/auth/login') && res.request().method() === 'POST',
+    );
+    await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
+    await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
+    await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
+    const loginResp = await loginRespPromise;
+    expect(loginResp.status()).toBe(200);
+    const loginText = await loginResp.text();
+    assertNoSecretsInText(loginText, [DEV_SEED_PASSWORD]);
+    expect((JSON.parse(loginText) as { user: { mustChangePassword: boolean } }).user.mustChangePassword).toBe(
+      false,
+    );
 
     await page.waitForURL(`${BASE_ORIGIN}/boards`);
     expect(new URL(page.url()).origin).toBe(BASE_ORIGIN);
@@ -185,7 +279,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     expect(sessionCookie?.expires).toBe(-1);
   });
 
-  test('supports remember=true persistent cookie, renders S08 profile details, persists locale, and signs out (AC-13, FR-50, WQ-19)', async ({
+  test('supports remember=true persistent cookie, renders S08 profile details without secrets, persists locale, and signs out (AC-13, FR-50, WQ-19)', async ({
     page,
     context,
   }) => {
@@ -195,10 +289,16 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     await rememberCheckbox.check();
     await expect(rememberCheckbox).toBeChecked();
 
-    await page.getByLabel(viMessages.auth.studentIdLabel).fill(activeStudentId);
-    await page.getByRole('button', { name: viMessages.auth.signInButton }).click();
+    const meResponsePromise = page.waitForResponse(
+      (res) => res.url().endsWith('/api/v1/me') && res.request().method() === 'GET' && res.status() === 200,
+    );
+
+    await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
+    await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
+    await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
 
     await page.waitForURL(`${BASE_ORIGIN}/profile`);
+    const mePayload = await (await meResponsePromise).text();
 
     await expect(page.getByRole('heading', { level: 1, name: viMessages.profile.title })).toBeVisible();
     await expect(page.locator('.profile-main')).toContainText(activeFullName);
@@ -207,6 +307,13 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     await expect(page.locator('.profile-perms')).toContainText('member.view');
     await expect(page.locator('.profile-perms')).toContainText('task.update_assigned');
     await expect(page.locator('.profile-perms')).toContainText('comment.create');
+
+    expect(mePayload.length).toBeGreaterThan(0);
+    assertNoSecretsInText(mePayload, [DEV_SEED_PASSWORD]);
+    expect((JSON.parse(mePayload) as { profile: { mustChangePassword: boolean } }).profile.mustChangePassword).toBe(
+      false,
+    );
+    assertNoSecretsInText(await page.locator('main').innerText(), [DEV_SEED_PASSWORD]);
 
     const cookies = await context.cookies(BASE_ORIGIN);
     const sessionCookie = cookies.find((cookie) => cookie.name === 'beam_session');

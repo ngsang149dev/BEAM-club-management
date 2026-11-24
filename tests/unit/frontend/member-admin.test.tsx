@@ -6,13 +6,15 @@ import enMessages from '../../../messages/en.json';
 import viMessages from '../../../messages/vi.json';
 import { ApiClientError, type components } from '@/features/shared/api/client';
 import { PermissionsProvider, type PermissionCode } from '@/features/shared/permissions/can';
+import { newPasswordSchema } from '@/lib/auth';
 
 const membersHookMock = vi.hoisted(() => ({
   useMembersInfiniteQuery: vi.fn(),
-  useCreateMemberMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
-  useUpdateMemberMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
-  useDeactivateMemberMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
-  useActivateMemberMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useCreateMemberMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useUpdateMemberMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useDeactivateMemberMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useActivateMemberMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useResetMemberPasswordMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
 }));
 
 const departmentsHookMock = vi.hoisted(() => ({
@@ -34,10 +36,17 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+import { canViewerResetMemberPassword } from '@/features/members/components/MemberAdminTable';
 import { MemberAdminView } from '@/features/members/components/MemberAdminView';
 import { MemberCreateDrawer, MemberEditDrawer } from '@/features/members/components/MemberFormDrawer';
 import { MemberStatusModal } from '@/features/members/components/MemberStatusModal';
-import { buildValidatedUpdatePayload, createMemberWithDomainSchema } from '@/features/members/schemas';
+import { ResetPasswordModal } from '@/features/members/components/ResetPasswordModal';
+import {
+  buildValidatedUpdatePayload,
+  createMemberWithDomainSchema,
+  generateCompliantPassword,
+  resetMemberPasswordFormSchema,
+} from '@/features/members/schemas';
 import { describeMemberError } from '@/features/members/error-mapping';
 
 type DepartmentDto = components['schemas']['DepartmentDto'];
@@ -74,6 +83,20 @@ const DETAIL_MEMBER: MemberDetail = {
   studentId: '21110001',
   email: 'anh.nguyen@eiu.edu.vn',
   locale: 'vi',
+  mustChangePassword: false,
+};
+
+const ADMIN_DETAIL_MEMBER: MemberDetail = {
+  id: '00000000-0000-4000-8000-000000000003',
+  fullName: 'Tran Club Admin',
+  isActive: true,
+  leftAt: null,
+  departments: [{ id: DEPT_TECH.id, name: DEPT_TECH.name }],
+  isAdmin: true,
+  studentId: '21110099',
+  email: 'admin.tran@eiu.edu.vn',
+  locale: 'vi',
+  mustChangePassword: false,
 };
 
 const PUBLIC_MEMBER: MemberPublicSummary = {
@@ -143,6 +166,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       </PermissionsProvider>
     );
     expect(html).toContain('>Sửa<');
+    expect(html).toContain('>Đặt lại mật khẩu<');
     expect(html).not.toContain('>Thêm thành viên<');
     expect(html).not.toContain('>Khóa tài khoản<');
     expect(html).not.toContain('>Mở lại tài khoản<');
@@ -150,7 +174,64 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(html).not.toContain('anh.nguyen@eiu.edu.vn');
   });
 
-  it('renders MemberCreateDrawer with method=post, immutable MSSV hint, and @eiu.edu.vn domain validation', () => {
+  it('enforces Reset Password action visibility rule for admin targets vs non-admin viewers', () => {
+    expect(
+      canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: false, member: DETAIL_MEMBER })
+    ).toBe(false);
+    expect(
+      canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: true, member: DETAIL_MEMBER })
+    ).toBe(true);
+    expect(
+      canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: true, member: ADMIN_DETAIL_MEMBER })
+    ).toBe(false);
+    expect(
+      canViewerResetMemberPassword({ viewerIsAdmin: false, canUpdateMember: true, member: PUBLIC_MEMBER })
+    ).toBe(true);
+    expect(
+      canViewerResetMemberPassword({ viewerIsAdmin: true, canUpdateMember: false, member: ADMIN_DETAIL_MEMBER })
+    ).toBe(true);
+
+    membersHookMock.useMembersInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [ADMIN_DETAIL_MEMBER], meta: { nextCursor: null, limit: 20 } }] },
+    });
+
+    const nonAdminViewerHtml = renderWithIntl(
+      <PermissionsProvider isAdmin={false} permissions={['member.view', 'member.view_detail', 'member.update']}>
+        <MemberAdminView />
+      </PermissionsProvider>
+    );
+    expect(nonAdminViewerHtml).toContain('Tran Club Admin');
+    expect(nonAdminViewerHtml).toContain('>Sửa<');
+    expect(nonAdminViewerHtml).not.toContain('>Đặt lại mật khẩu<');
+
+    membersHookMock.useMembersInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [ADMIN_DETAIL_MEMBER], meta: { nextCursor: null, limit: 20 } }] },
+    });
+
+    const adminViewerHtml = renderWithIntl(
+      <PermissionsProvider isAdmin permissions={[]}>
+        <MemberAdminView />
+      </PermissionsProvider>
+    );
+    expect(adminViewerHtml).toContain('Tran Club Admin');
+    expect(adminViewerHtml).toContain('>Đặt lại mật khẩu<');
+  });
+
+  it('renders MemberCreateDrawer with initialPassword, generate button, first-login hint, and validates schema', () => {
     const html = renderWithIntl(
       <MemberCreateDrawer
         departments={SAMPLE_DEPARTMENTS}
@@ -168,6 +249,18 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(html).toContain('method="post"');
     expect(html).toContain('MSSV không thể thay đổi sau khi tạo tài khoản.');
     expect(html).toContain('Email phải thuộc tên miền @eiu.edu.vn.');
+    expect(html).toContain('Mật khẩu ban đầu');
+    expect(html).toContain('Tạo mật khẩu');
+    expect(html).toContain('type="password"');
+    expect(html).toContain('đổi mật khẩu này ngay khi đăng nhập lần đầu');
+
+    const generated = generateCompliantPassword();
+    expect(generated.length).toBeGreaterThanOrEqual(12);
+    expect(newPasswordSchema.safeParse(generated).success).toBe(true);
+    expect(/[A-Z]/.test(generated)).toBe(true);
+    expect(/[a-z]/.test(generated)).toBe(true);
+    expect(/[0-9]/.test(generated)).toBe(true);
+    expect(/[!@#$%^&*]/.test(generated)).toBe(true);
 
     expect(
       createMemberWithDomainSchema.safeParse({
@@ -176,6 +269,18 @@ describe('MemberAdminView & Member Forms (S09)', () => {
         fullName: 'Bad Domain',
         departmentIds: [],
         locale: 'vi',
+        initialPassword: 'ValidPass@2026',
+      }).success
+    ).toBe(false);
+
+    expect(
+      createMemberWithDomainSchema.safeParse({
+        studentId: '21110009',
+        email: 'user@eiu.edu.vn',
+        fullName: 'Short Pass',
+        departmentIds: [],
+        locale: 'vi',
+        initialPassword: 'short',
       }).success
     ).toBe(false);
 
@@ -186,11 +291,12 @@ describe('MemberAdminView & Member Forms (S09)', () => {
         fullName: 'Good Domain',
         departmentIds: [DEPT_MEDIA.id],
         locale: 'vi',
+        initialPassword: 'ValidPass@2026',
       }).success
     ).toBe(true);
   });
 
-  it('renders MemberEditDrawer with read-only MSSV and omits studentId from validated PATCH payload', () => {
+  it('renders MemberEditDrawer without initialPassword field, with read-only MSSV and omitted studentId in PATCH', () => {
     const detailHtml = renderWithIntl(
       <MemberEditDrawer
         member={DETAIL_MEMBER}
@@ -205,6 +311,8 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(detailHtml).toContain('value="21110001"');
     expect(detailHtml).toContain('disabled=""');
     expect(detailHtml).toContain('readOnly=""');
+    expect(detailHtml).not.toContain('Mật khẩu ban đầu');
+    expect(detailHtml).not.toContain('type="password"');
 
     const maskedHtml = renderWithIntl(
       <MemberEditDrawer
@@ -250,6 +358,53 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     }
   });
 
+  it('renders ResetPasswordModal with session notice, 403 FORBIDDEN alert, and schema validation', () => {
+    const viHtml = renderWithIntl(
+      <ResetPasswordModal
+        member={DETAIL_MEMBER}
+        isPending={false}
+        error={new ApiClientError({
+          status: 403,
+          code: 'FORBIDDEN',
+          messageKey: 'errors.forbidden',
+          details: {},
+        })}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    );
+    expect(viHtml).toContain('Đặt lại mật khẩu thành viên');
+    expect(viHtml).toContain('Nguyen Minh Anh');
+    expect(viHtml).toContain('Mọi phiên đăng nhập đang hoạt động của thành viên sẽ bị đăng xuất ngay lập tức');
+    expect(viHtml).toContain('buộc đổi mật khẩu');
+    expect(viHtml).toContain('Tạo mật khẩu');
+    expect(viHtml).toContain('Bạn không có quyền thực hiện thao tác này.');
+
+    const enHtml = renderWithIntl(
+      <ResetPasswordModal
+        member={DETAIL_MEMBER}
+        isPending={false}
+        error={null}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+      'en'
+    );
+    expect(enHtml).toContain('Reset member password');
+    expect(enHtml).toContain('All active sessions for this member will be terminated immediately');
+    expect(enHtml).toContain('Generate password');
+
+    expect(
+      resetMemberPasswordFormSchema.safeParse({ newPassword: 'NewPass@2026', confirmPassword: 'NewPass@2026' }).success
+    ).toBe(true);
+    expect(
+      resetMemberPasswordFormSchema.safeParse({ newPassword: 'NewPass@2026', confirmPassword: 'Different@2026' }).success
+    ).toBe(false);
+    expect(
+      resetMemberPasswordFormSchema.safeParse({ newPassword: 'short', confirmPassword: 'short' }).success
+    ).toBe(false);
+  });
+
   it('renders MemberStatusModal preserving history notice and LAST_ACTIVE_ADMIN error', () => {
     const html = renderWithIntl(
       <MemberStatusModal
@@ -273,6 +428,11 @@ describe('MemberAdminView & Member Forms (S09)', () => {
         new ApiClientError({ status: 409, code: 'STUDENT_ID_EXISTS', messageKey: 'errors.studentIdExists', details: {} })
       )
     ).toEqual({ key: 'studentIdExists' });
+    expect(
+      describeMemberError(
+        new ApiClientError({ status: 400, code: 'INITIAL_PASSWORD_REQUIRED', messageKey: 'errors.initialPasswordRequired', details: {} })
+      )
+    ).toEqual({ key: 'initialPasswordRequired' });
     expect(
       describeMemberError(
         new ApiClientError({ status: 401, code: 'ACCOUNT_INACTIVE', messageKey: 'errors.unauthorized', details: {} })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeReturnTo } from '@/features/auth/return-to';
+import { resolveExplicitReturnTo, sanitizeReturnTo } from '@/features/auth/return-to';
 
 describe('sanitizeReturnTo', () => {
   it('allows safe internal paths with queries and hashes', () => {
@@ -41,5 +41,24 @@ describe('sanitizeReturnTo', () => {
     expect(sanitizeReturnTo('/login/callback')).toBe('/boards');
     expect(sanitizeReturnTo('/api')).toBe('/boards');
     expect(sanitizeReturnTo('/api/v1/auth/logout')).toBe('/boards');
+  });
+});
+
+describe('resolveExplicitReturnTo', () => {
+  it('returns null for absent, blank, blocked, or external URLs instead of falling back to /boards', () => {
+    expect(resolveExplicitReturnTo(undefined)).toBeNull();
+    expect(resolveExplicitReturnTo(null)).toBeNull();
+    expect(resolveExplicitReturnTo('')).toBeNull();
+    expect(resolveExplicitReturnTo('   ')).toBeNull();
+    expect(resolveExplicitReturnTo('https://evil.example/phish')).toBeNull();
+    expect(resolveExplicitReturnTo('//evil.com')).toBeNull();
+    expect(resolveExplicitReturnTo('javascript:alert(1)')).toBeNull();
+    expect(resolveExplicitReturnTo('/login')).toBeNull();
+    expect(resolveExplicitReturnTo('/api/v1/auth/logout')).toBeNull();
+  });
+
+  it('preserves safe internal paths including explicit /boards', () => {
+    expect(resolveExplicitReturnTo('/boards')).toBe('/boards');
+    expect(resolveExplicitReturnTo('  /my-tasks?priority=4  ')).toBe('/my-tasks?priority=4');
   });
 });

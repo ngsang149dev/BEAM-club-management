@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte } from 'drizzle-orm';
+import { and, asc, count, eq, gte, isNull, ne } from 'drizzle-orm';
 import {
   departments,
   loginAttempts,
@@ -20,6 +20,8 @@ export interface ProfileWithDepartmentsRecord {
   readonly studentId: string;
   readonly email: string;
   readonly fullName: string;
+  readonly passwordHash: string | null;
+  readonly mustChangePassword: boolean;
   readonly isAdmin: boolean;
   readonly isActive: boolean;
   readonly leftAt: Date | null;
@@ -73,6 +75,13 @@ export interface AuthRepository {
     readonly userId: string;
     readonly locale: 'vi' | 'en';
     readonly updatedAt: Date;
+  }): Promise<ProfileWithDepartmentsRecord | null>;
+  updatePasswordAndRevokeOtherSessions(input: {
+    readonly userId: string;
+    readonly currentSessionId: string;
+    readonly passwordHash: string;
+    readonly mustChangePassword: boolean;
+    readonly now: Date;
   }): Promise<ProfileWithDepartmentsRecord | null>;
 }
 
@@ -237,10 +246,49 @@ export class DrizzleAuthRepository implements AuthRepository {
     return updated ? this.hydrateProfile(updated) : null;
   }
 
+  async updatePasswordAndRevokeOtherSessions(input: {
+    readonly userId: string;
+    readonly currentSessionId: string;
+    readonly passwordHash: string;
+    readonly mustChangePassword: boolean;
+    readonly now: Date;
+  }): Promise<ProfileWithDepartmentsRecord | null> {
+    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(profiles)
+        .set({
+          passwordHash: input.passwordHash,
+          mustChangePassword: input.mustChangePassword,
+          updatedAt: input.now,
+        })
+        .where(eq(profiles.id, input.userId))
+        .returning();
+      const updated = rows[0];
+      if (!updated) {
+        return null;
+      }
+      await tx
+        .update(sessions)
+        .set({
+          revokedAt: input.now,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(sessions.userId, input.userId),
+            isNull(sessions.revokedAt),
+            ne(sessions.id, input.currentSessionId),
+          ),
+        );
+      return this.hydrateProfile(updated, tx);
+    });
+  }
+
   private async hydrateProfile(
     row: ProfileRow,
+    executor: DbExecutor = this.db,
   ): Promise<ProfileWithDepartmentsRecord> {
-    const deptRows = await this.db
+    const deptRows = await executor
       .select({
         id: departments.id,
         name: departments.name,
@@ -255,6 +303,8 @@ export class DrizzleAuthRepository implements AuthRepository {
       studentId: row.studentId,
       email: row.email,
       fullName: row.fullName,
+      passwordHash: row.passwordHash,
+      mustChangePassword: row.mustChangePassword,
       isAdmin: row.isAdmin,
       isActive: row.isActive,
       leftAt: row.leftAt,

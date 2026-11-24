@@ -18,6 +18,10 @@ describe('StructuredLogger PII redaction', () => {
       password: 'pw',
       token: 'raw-token',
       tokenHash: 'hash-val',
+      passwordHash: 'scrypt$16384$8$1$00$00',
+      currentPassword: 'pw1',
+      newPassword: 'pw2',
+      initialPassword: 'pw3',
       cookie: 'beam_session=abc',
       authorization: 'Bearer xyz',
       secret: 'top-secret',
@@ -44,6 +48,10 @@ describe('StructuredLogger PII redaction', () => {
     expect(parsed.meta.password).toBe('[REDACTED]');
     expect(parsed.meta.token).toBe('[REDACTED]');
     expect(parsed.meta.tokenHash).toBe('[REDACTED]');
+    expect(parsed.meta.passwordHash).toBe('[REDACTED]');
+    expect(parsed.meta.currentPassword).toBe('[REDACTED]');
+    expect(parsed.meta.newPassword).toBe('[REDACTED]');
+    expect(parsed.meta.initialPassword).toBe('[REDACTED]');
     expect(parsed.meta.cookie).toBe('[REDACTED]');
     expect(parsed.meta.authorization).toBe('[REDACTED]');
     expect(parsed.meta.secret).toBe('[REDACTED]');

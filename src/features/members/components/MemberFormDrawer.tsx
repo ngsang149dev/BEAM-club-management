@@ -13,11 +13,13 @@ import {
   buildValidatedUpdatePayload,
   createMemberWithDomainSchema,
   editMemberFormSchema,
+  generateCompliantPassword,
   type CreateMemberValues,
   type EditMemberFormValues,
 } from '../schemas';
 import {
   DepartmentCheckboxGroup,
+  InitialPasswordField,
   MemberLocaleSelect,
   ReadOnlyStudentIdField,
   formatMemberServerError,
@@ -122,6 +124,15 @@ export interface MemberCreateDrawerProps {
   onSubmit: (values: CreateMemberValues) => void;
 }
 
+const DEFAULT_CREATE_VALUES: CreateMemberValues = {
+  fullName: '',
+  studentId: '',
+  email: '',
+  departmentIds: [],
+  locale: 'vi',
+  initialPassword: '',
+};
+
 export function MemberCreateDrawer({
   departments,
   isSubmitting,
@@ -133,13 +144,12 @@ export function MemberCreateDrawer({
   const tErr = useTranslations('errors');
   const baseId = useId();
   const { register, control, setValue, handleSubmit, formState: { errors } } =
-    useForm<CreateMemberValues>({
-      resolver: zodResolver(createMemberWithDomainSchema),
-      defaultValues: { fullName: '', studentId: '', email: '', departmentIds: [], locale: 'vi' },
-    });
+    useForm<CreateMemberValues>({ resolver: zodResolver(createMemberWithDomainSchema), defaultValues: DEFAULT_CREATE_VALUES });
 
   const departmentIds = useWatch({ control, name: 'departmentIds' }) ?? [];
   const locale = useWatch({ control, name: 'locale' }) ?? 'vi';
+  const handleGenerate = () =>
+    setValue('initialPassword', generateCompliantPassword(), { shouldDirty: true, shouldValidate: true });
 
   return (
     <MemberDrawerShell
@@ -164,6 +174,7 @@ export function MemberCreateDrawer({
         emailError={Boolean(errors.email)}
         emailPlaceholder={t('emailPlaceholder')}
       />
+      <InitialPasswordField registration={register('initialPassword')} hasError={Boolean(errors.initialPassword)} disabled={isSubmitting} onGenerate={handleGenerate} />
       <DepartmentCheckboxGroup departments={departments} selectedIds={departmentIds} onToggle={(id) => setValue('departmentIds', toggleIdSelection(departmentIds, id), { shouldDirty: true })} />
       <MemberLocaleSelect value={locale} onChange={(next) => setValue('locale', next === 'en' ? 'en' : 'vi', { shouldDirty: true })} />
     </MemberDrawerShell>

@@ -15,6 +15,7 @@ import {
 } from '@db/schema';
 import { DEFAULT_MEMBER_PERMISSIONS, PERMISSIONS } from '@/lib/permissions';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import viMessages from '../../messages/vi.json';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
@@ -47,10 +48,16 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
   };
 }
 
-async function signInAs(page: Page, studentId: string, returnTo = '/boards'): Promise<void> {
+async function signInAs(
+  page: Page,
+  studentId: string,
+  returnTo = '/boards',
+  password = DEV_SEED_PASSWORD,
+): Promise<void> {
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
-  await page.getByLabel(viMessages.auth.studentIdLabel).fill(studentId);
-  await page.getByRole('button', { name: viMessages.auth.signInButton }).click();
+  await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(studentId);
+  await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(password);
+  await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
   await page.waitForURL(`${BASE_ORIGIN}${returnTo}`);
 }
 
@@ -118,6 +125,9 @@ function assertZeroPiiInStrings(
     }
     expect(body).not.toContain('"studentId"');
     expect(body).not.toContain('"email"');
+    expect(body).not.toContain('passwordHash');
+    expect(body).not.toContain('password_hash');
+    expect(body).not.toContain(DEV_SEED_PASSWORD);
   }
 }
 
@@ -161,6 +171,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
 
     pool = createDbPool(testDatabaseUrl);
     db = createDb(pool);
+    const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
 
     await db
       .insert(permissions)
@@ -185,6 +196,8 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         studentId: adminStudentId,
         email: adminEmail,
         fullName: adminFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: true,
         isActive: true,
         locale: 'vi',
@@ -194,6 +207,8 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         studentId: leadStudentId,
         email: leadEmail,
         fullName: leadFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',
@@ -203,6 +218,8 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         studentId: basicStudentId,
         email: basicEmail,
         fullName: basicFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',

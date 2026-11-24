@@ -15,6 +15,7 @@ import {
 } from '@db/schema';
 import { DrizzleAuthRepository } from '@/server/modules/auth';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 
 function loadEnvLocalIfMissing(): void {
   if (process.env.TEST_DATABASE_URL) return;
@@ -82,11 +83,14 @@ describe('DrizzleAuthRepository integration', () => {
       name: `Auth Repo Dept ${suffix}`,
     });
 
+    const initialHash = await hashPassword(DEV_SEED_PASSWORD);
     await db.insert(profiles).values({
       id: userId,
       studentId,
       email: `repo-${suffix}@eiu.edu.vn`,
       fullName: `Repo Test Member ${suffix}`,
+      passwordHash: initialHash,
+      mustChangePassword: true,
       isAdmin: false,
       isActive: true,
       locale: 'vi',
@@ -119,15 +123,18 @@ describe('DrizzleAuthRepository integration', () => {
     await pool?.end();
   });
 
-  it('reads profile with departments and live permissions, and persists sessions & locale', async () => {
+  it('reads profile with departments and live permissions, persists sessions & locale, and updates password revoking other sessions', async () => {
     const byStudent = await repo.findProfileWithDepartmentsByStudentId(studentId);
     expect(byStudent?.id).toBe(userId);
+    expect(byStudent?.mustChangePassword).toBe(true);
+    expect(byStudent?.passwordHash).toBeTruthy();
     expect(byStudent?.departments).toEqual([
       { id: deptId, name: `Auth Repo Dept ${suffix}` },
     ]);
 
     const byId = await repo.findProfileWithDepartmentsById(userId);
     expect(byId?.studentId).toBe(studentId);
+    expect(byId?.mustChangePassword).toBe(true);
 
     const perms = await repo.findUserPermissions(userId);
     expect(perms.sort()).toEqual(['board.create', 'member.view']);
@@ -135,10 +142,18 @@ describe('DrizzleAuthRepository integration', () => {
     const now = new Date('2026-11-24T01:00:00.000Z');
     const expires = new Date('2026-11-25T01:00:00.000Z');
     const tokenHash = `hash-${suffix}`;
+    const otherTokenHash = `hash-other-${suffix}`;
     const createdSession = await repo.createSession({
       userId,
       tokenHash,
       rememberMe: false,
+      expiresAt: expires,
+      now,
+    });
+    const otherSession = await repo.createSession({
+      userId,
+      tokenHash: otherTokenHash,
+      rememberMe: true,
       expiresAt: expires,
       now,
     });
@@ -162,6 +177,23 @@ describe('DrizzleAuthRepository integration', () => {
       updatedAt: touchedAt,
     });
     expect(updatedProfile?.locale).toBe('en');
+
+    const rotatedHash = await hashPassword('RotatedPass#2026');
+    const afterPwChange = await repo.updatePasswordAndRevokeOtherSessions({
+      userId,
+      currentSessionId: createdSession.id,
+      passwordHash: rotatedHash,
+      mustChangePassword: false,
+      now: touchedAt,
+    });
+    expect(afterPwChange?.mustChangePassword).toBe(false);
+    expect(afterPwChange?.passwordHash).toBe(rotatedHash);
+
+    const keptSession = await repo.findSessionByTokenHash(tokenHash);
+    const revokedOther = await repo.findSessionByTokenHash(otherTokenHash);
+    expect(keptSession?.revokedAt).toBeNull();
+    expect(revokedOther?.id).toBe(otherSession.id);
+    expect(revokedOther?.revokedAt?.toISOString()).toBe(touchedAt.toISOString());
 
     await repo.revokeSession({
       sessionId: createdSession.id,

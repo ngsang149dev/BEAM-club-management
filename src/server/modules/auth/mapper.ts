@@ -17,6 +17,7 @@ export interface MemberDetailDto {
   readonly email: string;
   readonly locale: 'vi' | 'en';
   readonly isAdmin: boolean;
+  readonly mustChangePassword: boolean;
 }
 
 export interface LoginResponseDto {
@@ -55,6 +56,7 @@ export function toMemberDetailDto(
     email: profile.email,
     locale: profile.locale,
     isAdmin: profile.isAdmin,
+    mustChangePassword: profile.mustChangePassword,
   };
 }
 

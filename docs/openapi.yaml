@@ -48,10 +48,11 @@ paths:
   /auth/login:
     post:
       tags: [Auth]
-      summary: Sign in with student ID (MSSV)
+      summary: Sign in with student ID (MSSV) and password
       description: |
         Public endpoint protected by IP rate limiting (`login_attempts`).
-        Returns a generic `401` error whether the `studentId` does not exist or the account is inactive (`is_active=false`).
+        Verifies both `studentId` and `password` (`scrypt` + timing-safe dummy verify when missing/inactive/unset).
+        Returns a generic `401` (`INVALID_CREDENTIALS`) whether the `studentId` does not exist, password mismatches, or the account is inactive (`is_active=false`).
         Sets the `beam_session` `HttpOnly`/`Secure`/`SameSite` cookie:
         - `remember=false` (default): browser session cookie with server max TTL `SESSION_TTL_DEFAULT` (24h).
         - `remember=true`: persistent cookie with sliding server TTL `SESSION_TTL_REMEMBER` (30d).
@@ -78,7 +79,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
-          description: Generic authentication failure (unknown student ID or inactive account)
+          description: Generic authentication failure (`INVALID_CREDENTIALS` — unknown student ID, wrong password, or inactive account)
           content:
             application/json:
               schema:
@@ -147,6 +148,30 @@ paths:
       responses:
         "200":
           description: Updated member profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me/password:
+    post:
+      tags: [Me]
+      summary: Change current authenticated member's password
+      description: |
+        Verifies `currentPassword` (returning `400 INVALID_CURRENT_PASSWORD` on mismatch rather than `401`), hashes and persists `newPassword` (`8..128` chars), clears `must_change_password = false`, and revokes all other active sessions for this user while keeping the current session alive.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeMyPasswordRequest"
+      responses:
+        "200":
+          description: "Password updated; returns refreshed member profile (mustChangePassword: false)"
           content:
             application/json:
               schema:
@@ -373,6 +398,39 @@ paths:
       responses:
         "200":
           description: Member re-activated (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /members/{id}/reset-password:
+    post:
+      tags: [Members]
+      summary: Reset a member's password (admin or permitted manager)
+      description: |
+        Requires `member.update` (or admin).
+        Security guard: if the target profile has `is_admin=true`, ONLY an admin (`is_admin=true`) may reset their password (`403 FORBIDDEN` otherwise).
+        Sets a new `scrypt` password hash, sets `must_change_password=true`, revokes ALL active sessions for the target member, and writes `audit_logs` (`member.password_reset`) with zero plaintext password or hash.
+        Projection rule (FR-42): returns `MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetMemberPasswordRequest"
+      responses:
+        "200":
+          description: Member password reset (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`)
           content:
             application/json:
               schema:
@@ -1736,6 +1794,7 @@ components:
         - email
         - locale
         - isAdmin
+        - mustChangePassword
       additionalProperties: false
       properties:
         id:
@@ -1761,6 +1820,8 @@ components:
           type: string
           enum: [vi, en]
         isAdmin:
+          type: boolean
+        mustChangePassword:
           type: boolean
 
     MemberListItem:
@@ -1811,6 +1872,11 @@ components:
           type: string
           enum: [vi, en]
           default: vi
+        initialPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Initial password set on account creation (optional via API; falls back to server `DEFAULT_INITIAL_PASSWORD` when omitted).
 
     UpdateMemberRequest:
       type: object
@@ -1838,12 +1904,16 @@ components:
     # -------------------------------------------------------------------------
     LoginRequest:
       type: object
-      required: [studentId]
+      required: [studentId, password]
       properties:
         studentId:
           type: string
           minLength: 1
           maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
         remember:
           type: boolean
           default: false
@@ -1902,6 +1972,30 @@ components:
         locale:
           type: string
           enum: [vi, en]
+
+    ChangeMyPasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      additionalProperties: false
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+          maxLength: 128
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    ResetMemberPasswordRequest:
+      type: object
+      required: [newPassword]
+      additionalProperties: false
+      properties:
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
 
     # -------------------------------------------------------------------------
     # Permissions & Presets

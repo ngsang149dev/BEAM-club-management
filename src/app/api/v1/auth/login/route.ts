@@ -19,6 +19,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const input = loginRequestSchema.parse(body);
     const result = await container.authService.login({
       studentId: input.studentId,
+      password: input.password,
       remember: input.remember,
       returnTo: input.returnTo,
       ip: extractClientIp(request),

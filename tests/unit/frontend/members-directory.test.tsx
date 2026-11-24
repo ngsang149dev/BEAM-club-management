@@ -58,6 +58,7 @@ const DETAIL_MEMBER: MemberDetail = {
   studentId: '21110001',
   email: 'anh.nguyen@eiu.edu.vn',
   locale: 'vi',
+  mustChangePassword: false,
 };
 
 const INACTIVE_PUBLIC_MEMBER: MemberPublicSummary = {

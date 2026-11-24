@@ -75,15 +75,22 @@ ON CONFLICT (preset_id, permission_code) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- 3. Fake Dev/Test Profiles (2 active admins, 2 active members, 1 inactive)
+--    Dev/test seed password for all accounts: BeamDev@2026
 -- ---------------------------------------------------------------------------
-INSERT INTO profiles (id, student_id, email, full_name, is_admin, is_active, left_at, locale)
+INSERT INTO profiles (id, student_id, email, full_name, password_hash, must_change_password, is_admin, is_active, left_at, locale)
 VALUES
-  ('10000000-0000-4000-8000-000000000001', 'MSSV-ADMIN-01', 'dev-admin-01@eiu.edu.vn',  'Admin One (Dev)',     true,  true,  NULL,                     'vi'),
-  ('10000000-0000-4000-8000-000000000002', 'MSSV-ADMIN-02', 'dev-admin-02@eiu.edu.vn',  'Admin Two (Dev)',     true,  true,  NULL,                     'en'),
-  ('10000000-0000-4000-8000-000000000003', 'MSSV-DEV-001',  'dev-member-01@eiu.edu.vn', 'Member Dev One',      false, true,  NULL,                     'vi'),
-  ('10000000-0000-4000-8000-000000000004', 'MSSV-DEV-002',  'dev-member-02@eiu.edu.vn', 'Member Dev Two',      false, true,  NULL,                     'en'),
-  ('10000000-0000-4000-8000-000000000005', 'MSSV-DEV-003',  'dev-member-03@eiu.edu.vn', 'Former Member (Dev)', false, false, '2026-09-01T00:00:00Z',   'vi')
-ON CONFLICT (id) DO NOTHING;
+  ('10000000-0000-4000-8000-000000000001', 'MSSV-ADMIN-01', 'dev-admin-01@eiu.edu.vn',  'Admin One (Dev)',     'scrypt$16384$8$1$7f944f8c10c877230b69b3886755f74e$ef58e4bc711e9c4dcc551a0732dc49b536c666aaaf3c9acd7ecf7970e1193f41c9289d9dd4cb9366039dc7681c7408668d78a7b34cefbdd0845621cf056bb21e', false, true,  true,  NULL,                     'vi'),
+  ('10000000-0000-4000-8000-000000000002', 'MSSV-ADMIN-02', 'dev-admin-02@eiu.edu.vn',  'Admin Two (Dev)',     'scrypt$16384$8$1$7f944f8c10c877230b69b3886755f74e$ef58e4bc711e9c4dcc551a0732dc49b536c666aaaf3c9acd7ecf7970e1193f41c9289d9dd4cb9366039dc7681c7408668d78a7b34cefbdd0845621cf056bb21e', false, true,  true,  NULL,                     'en'),
+  ('10000000-0000-4000-8000-000000000003', 'MSSV-DEV-001',  'dev-member-01@eiu.edu.vn', 'Member Dev One',      'scrypt$16384$8$1$7f944f8c10c877230b69b3886755f74e$ef58e4bc711e9c4dcc551a0732dc49b536c666aaaf3c9acd7ecf7970e1193f41c9289d9dd4cb9366039dc7681c7408668d78a7b34cefbdd0845621cf056bb21e', false, false, true,  NULL,                     'vi'),
+  ('10000000-0000-4000-8000-000000000004', 'MSSV-DEV-002',  'dev-member-02@eiu.edu.vn', 'Member Dev Two',      'scrypt$16384$8$1$7f944f8c10c877230b69b3886755f74e$ef58e4bc711e9c4dcc551a0732dc49b536c666aaaf3c9acd7ecf7970e1193f41c9289d9dd4cb9366039dc7681c7408668d78a7b34cefbdd0845621cf056bb21e', false, false, true,  NULL,                     'en'),
+  ('10000000-0000-4000-8000-000000000005', 'MSSV-DEV-003',  'dev-member-03@eiu.edu.vn', 'Former Member (Dev)', 'scrypt$16384$8$1$7f944f8c10c877230b69b3886755f74e$ef58e4bc711e9c4dcc551a0732dc49b536c666aaaf3c9acd7ecf7970e1193f41c9289d9dd4cb9366039dc7681c7408668d78a7b34cefbdd0845621cf056bb21e', false, false, false, '2026-09-01T00:00:00Z',   'vi')
+ON CONFLICT (id) DO UPDATE
+  SET password_hash = COALESCE(profiles.password_hash, EXCLUDED.password_hash);
+
+-- Backfill any pre-CR-01 dev profile rows that do not yet have a password hash
+UPDATE profiles
+SET password_hash = 'scrypt$16384$8$1$7f944f8c10c877230b69b3886755f74e$ef58e4bc711e9c4dcc551a0732dc49b536c666aaaf3c9acd7ecf7970e1193f41c9289d9dd4cb9366039dc7681c7408668d78a7b34cefbdd0845621cf056bb21e'
+WHERE password_hash IS NULL;
 
 -- Grant preset permissions to fake non-admin members for local testing
 INSERT INTO user_permissions (user_id, permission_code, granted_by)

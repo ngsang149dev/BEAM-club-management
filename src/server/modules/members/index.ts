@@ -12,6 +12,7 @@ export {
 } from './mapper';
 export {
   assertAllowedEmailDomain,
+  assertCanResetMemberPassword,
   canViewMemberDetail,
   decodeMemberCursor,
   encodeMemberCursor,
@@ -30,4 +31,5 @@ export {
 export {
   MembersService,
   type MembersServiceDeps,
+  type ResetMemberPasswordCommand,
 } from './service';

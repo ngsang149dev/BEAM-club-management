@@ -1,12 +1,13 @@
 'use client';
 
-import { useFormatter, useTranslations } from 'next-intl';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { isApiClientError, type components } from '@/features/shared/api/client';
 import type { PermissionCode } from '@/features/shared/permissions/can';
 import type { AppLocale } from '@/i18n/locale';
-import { PERMISSIONS } from '@/lib/permissions';
 import {
   useLogoutMutation,
   useMeQuery,
@@ -14,12 +15,10 @@ import {
   useUpdateLocaleMutation,
   type SessionInfoResponse,
 } from '../hooks/useAuth';
+import { ChangePasswordCard } from './ChangePasswordCard';
+import { ProfilePermissionsCard, ProfileSessionCard } from './ProfileSideCards';
 
 type MemberDetail = components['schemas']['MemberDetail'];
-
-const PERMISSION_CATALOG_SUBKEY = new Map<string, string>(
-  PERMISSIONS.map((perm) => [perm.code, perm.descriptionKey.replace(/^permissions\.catalog\./, '')])
-);
 
 export interface ProfileContentProps {
   profile: MemberDetail;
@@ -27,6 +26,10 @@ export interface ProfileContentProps {
   session?: Pick<SessionInfoResponse, 'rememberMe' | 'expiresAt'> | null;
   isSigningOut?: boolean;
   localeError?: boolean;
+  forceChangePasswordPrompt?: boolean;
+  passwordChanged?: boolean;
+  onPasswordChanged?: () => void;
+  onClearPasswordChanged?: () => void;
   onSignOut: () => void;
   onLocaleChange: (locale: AppLocale) => unknown | Promise<unknown>;
 }
@@ -36,111 +39,33 @@ function getInitial(fullName: string): string {
   return (parts[parts.length - 1] ?? '?').slice(0, 1).toUpperCase();
 }
 
-function ProfilePermissionsCard({
-  isAdmin,
-  permissions,
-}: {
-  isAdmin: boolean;
-  permissions: readonly PermissionCode[];
-}) {
-  const tProfile = useTranslations('profile');
-  const tCatalog = useTranslations('permissions.catalog');
-  return (
-    <section className="profile-card">
-      <h3>{tProfile('permissionsTitle')}</h3>
-      {isAdmin ? (
-        <div className="profile-admin-note">
-          <span className="role-badge is-admin">{tProfile('roleAdmin')}</span>
-          <p>{tProfile('adminAllPermissions')}</p>
-        </div>
-      ) : permissions.length === 0 ? (
-        <p className="profile-note">{tProfile('permissionsEmpty')}</p>
-      ) : (
-        <div className="profile-perms">
-          {permissions.map((code) => {
-            const subKey = PERMISSION_CATALOG_SUBKEY.get(code);
-            return (
-              <div key={code} className="profile-perm">
-                <svg className="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M4 12l5 5L20 6" />
-                </svg>
-                <div>
-                  <b>{code}</b>
-                  <span>{subKey ? tCatalog(subKey) : code}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <p className="profile-note">{tProfile('permissionsManagedByAdmin')}</p>
-    </section>
-  );
-}
-
-function ProfileSessionCard({
-  session,
-  isSigningOut,
-  onSignOut,
-}: {
-  session?: Pick<SessionInfoResponse, 'rememberMe' | 'expiresAt'> | null;
-  isSigningOut: boolean;
-  onSignOut: () => void;
-}) {
-  const tProfile = useTranslations('profile');
-  const formatter = useFormatter();
-  const formattedExpiry = session
-    ? formatter.dateTime(new Date(session.expiresAt), {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Ho_Chi_Minh',
-      })
-    : null;
-
-  return (
-    <section className="profile-card">
-      <h3>{tProfile('sessionTitle')}</h3>
-      {session ? (
-        <>
-          <div className="profile-kv">
-            <span>{tProfile('rememberLabel')}</span>
-            <b>{session.rememberMe ? tProfile('rememberOn') : tProfile('rememberOff')}</b>
-          </div>
-          <div className="profile-kv">
-            <span>{tProfile('expiresAtLabel')}</span>
-            <b>{formattedExpiry}</b>
-          </div>
-        </>
-      ) : null}
-      <button type="button" className="ui-btn danger is-sm profile-signout" disabled={isSigningOut} onClick={onSignOut}>
-        {isSigningOut ? tProfile('signingOut') : tProfile('signOutButton')}
-      </button>
-    </section>
-  );
-}
-
-function ProfileMainColumn({ profile }: { profile: MemberDetail }) {
+function ProfileHeroSection({ profile }: { profile: MemberDetail }) {
   const tProfile = useTranslations('profile');
   const tMember = useTranslations('member');
   return (
-    <section className="profile-main">
-      <div className="profile-hero">
-        <span className={`ui-avatar profile-avatar${profile.isActive ? '' : ' is-out'}`} aria-hidden="true">
-          {getInitial(profile.fullName)}
-        </span>
-        <div>
-          <h2>
-            {profile.fullName}
-            {profile.isActive ? null : <span className="app-user-left"> {tMember('leftBadge')}</span>}
-          </h2>
-          <div className="profile-hero-meta">
-            <span className={`role-badge${profile.isAdmin ? ' is-admin' : ''}`}>
-              {profile.isAdmin ? tProfile('roleAdmin') : tProfile('roleMember')}
-            </span>
-          </div>
+    <div className="profile-hero">
+      <span className={`ui-avatar profile-avatar${profile.isActive ? '' : ' is-out'}`} aria-hidden="true">
+        {getInitial(profile.fullName)}
+      </span>
+      <div>
+        <h2>
+          {profile.fullName}
+          {profile.isActive ? null : <span className="app-user-left"> {tMember('leftBadge')}</span>}
+        </h2>
+        <div className="profile-hero-meta">
+          <span className={`role-badge${profile.isAdmin ? ' is-admin' : ''}`}>
+            {profile.isAdmin ? tProfile('roleAdmin') : tProfile('roleMember')}
+          </span>
         </div>
       </div>
+    </div>
+  );
+}
 
+function ProfileContactAndDepartments({ profile }: { profile: MemberDetail }) {
+  const tProfile = useTranslations('profile');
+  return (
+    <>
       <div className="profile-section">
         <h3>{tProfile('contactTitle')}</h3>
         <div className="profile-fields">
@@ -156,7 +81,6 @@ function ProfileMainColumn({ profile }: { profile: MemberDetail }) {
           </div>
         </div>
       </div>
-
       <div className="profile-section">
         <h3>{tProfile('departmentsTitle')}</h3>
         {profile.departments.length > 0 ? (
@@ -170,6 +94,37 @@ function ProfileMainColumn({ profile }: { profile: MemberDetail }) {
         )}
         <p className="profile-note">{tProfile('departmentsManagedByAdmin')}</p>
       </div>
+    </>
+  );
+}
+
+function ProfileMainColumn({
+  profile,
+  forceChangePasswordPrompt = false,
+  passwordChanged,
+  onPasswordChanged,
+  onClearPasswordChanged,
+}: {
+  profile: MemberDetail;
+  forceChangePasswordPrompt?: boolean;
+  passwordChanged?: boolean;
+  onPasswordChanged?: () => void;
+  onClearPasswordChanged?: () => void;
+}) {
+  const isPasswordPriority =
+    profile.mustChangePassword || forceChangePasswordPrompt || Boolean(passwordChanged);
+
+  return (
+    <section className={`profile-main${isPasswordPriority ? ' is-password-priority' : ''}`}>
+      <ProfileHeroSection profile={profile} />
+      <ProfileContactAndDepartments profile={profile} />
+      <ChangePasswordCard
+        mustChangePassword={profile.mustChangePassword}
+        forcePrompt={forceChangePasswordPrompt}
+        passwordChanged={passwordChanged}
+        onPasswordChanged={onPasswordChanged}
+        onClearPasswordChanged={onClearPasswordChanged}
+      />
     </section>
   );
 }
@@ -180,6 +135,10 @@ export function ProfileContent({
   session,
   isSigningOut = false,
   localeError = false,
+  forceChangePasswordPrompt = false,
+  passwordChanged,
+  onPasswordChanged,
+  onClearPasswordChanged,
   onSignOut,
   onLocaleChange,
 }: ProfileContentProps) {
@@ -191,7 +150,13 @@ export function ProfileContent({
         <p>{tProfile('subtitle')}</p>
       </header>
       <div className="profile-grid">
-        <ProfileMainColumn profile={profile} />
+        <ProfileMainColumn
+          profile={profile}
+          forceChangePasswordPrompt={forceChangePasswordPrompt}
+          passwordChanged={passwordChanged}
+          onPasswordChanged={onPasswordChanged}
+          onClearPasswordChanged={onClearPasswordChanged}
+        />
         <aside className="profile-side">
           <ProfilePermissionsCard isAdmin={profile.isAdmin} permissions={permissions} />
           <section className="profile-card">
@@ -229,8 +194,34 @@ function ProfileLoadError({ error, onRetry }: { error: unknown; onRetry: () => v
   );
 }
 
+function ProfileContentWithSearchParams(props: ProfileContentProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const hasChangePasswordQuery = searchParams?.get('changePassword') === '1';
+
+  const handlePasswordChanged = () => {
+    props.onPasswordChanged?.();
+    if (!hasChangePasswordQuery || !searchParams) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('changePassword');
+    const query = nextParams.toString();
+    router.replace(query ? `/profile?${query}` : '/profile');
+  };
+
+  return (
+    <ProfileContent
+      {...props}
+      forceChangePasswordPrompt={hasChangePasswordQuery}
+      onPasswordChanged={handlePasswordChanged}
+    />
+  );
+}
+
 export function ProfileView() {
   const tCommon = useTranslations('common');
+  const [passwordChanged, setPasswordChanged] = useState(false);
   const meQuery = useMeQuery();
   const sessionQuery = useSessionQuery();
   const logoutMutation = useLogoutMutation();
@@ -245,15 +236,22 @@ export function ProfileView() {
     return <ProfileLoadError error={meQuery.error} onRetry={() => void meQuery.refetch()} />;
   }
 
+  const contentProps: ProfileContentProps = {
+    profile: meQuery.data.profile,
+    permissions: meQuery.data.permissions,
+    session: sessionQuery.data ?? null,
+    isSigningOut: logoutMutation.isPending,
+    localeError: updateLocaleMutation.isError,
+    passwordChanged,
+    onPasswordChanged: () => setPasswordChanged(true),
+    onClearPasswordChanged: () => setPasswordChanged(false),
+    onSignOut: () => logoutMutation.mutate(),
+    onLocaleChange: (locale) => updateLocaleMutation.mutateAsync(locale),
+  };
+
   return (
-    <ProfileContent
-      profile={meQuery.data.profile}
-      permissions={meQuery.data.permissions}
-      session={sessionQuery.data ?? null}
-      isSigningOut={logoutMutation.isPending}
-      localeError={updateLocaleMutation.isError}
-      onSignOut={() => logoutMutation.mutate()}
-      onLocaleChange={(locale) => updateLocaleMutation.mutateAsync(locale)}
-    />
+    <Suspense fallback={<ProfileContent {...contentProps} />}>
+      <ProfileContentWithSearchParams {...contentProps} />
+    </Suspense>
   );
 }

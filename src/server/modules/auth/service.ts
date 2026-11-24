@@ -1,8 +1,13 @@
-import { tooManyRequests, unauthorized } from '@/lib/errors';
+import { badRequest, tooManyRequests, unauthorized } from '@/lib/errors';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
 import type { Logger } from '@/server/shared/logger';
+import {
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  verifyPassword,
+} from '@/server/shared/password';
 import {
   type LoginResponseDto,
   type MeResponseDto,
@@ -19,13 +24,14 @@ import {
   isRateLimited,
   isSessionExpired,
   RATE_LIMIT_WINDOW_MINUTES,
+  resolveLoginRedirect,
 } from './policy';
 import type {
   AuthRepository,
   ProfileWithDepartmentsRecord,
   SessionRecord,
 } from './repository';
-import { DEFAULT_LOGIN_REDIRECT, sanitizeReturnTo } from './schemas';
+import type { ChangeMyPasswordRequestInput } from './schemas';
 
 export interface AuthServiceDeps {
   readonly authRepo: AuthRepository;
@@ -36,9 +42,16 @@ export interface AuthServiceDeps {
 
 export interface LoginCommand {
   readonly studentId: string;
+  readonly password: string;
   readonly remember?: boolean;
   readonly returnTo?: string | null;
   readonly ip: string;
+}
+
+export interface ChangeMyPasswordCommand {
+  readonly actor: AuthActor;
+  readonly currentSessionId: string;
+  readonly input: ChangeMyPasswordRequestInput;
 }
 
 export interface LoginResult {
@@ -68,14 +81,7 @@ export class AuthService {
     const now = this.deps.clock.now();
     await this.assertIpWithinRateLimit(input.ip, now);
 
-    const profile = await this.deps.authRepo.findProfileWithDepartmentsByStudentId(
-      input.studentId,
-    );
-    if (!profile || !profile.isActive) {
-      await this.recordFailedLogin(input.studentId, input.ip, now);
-      throw unauthorized('auth.invalidCredentials', {}, 'INVALID_CREDENTIALS');
-    }
-
+    const profile = await this.verifyLoginProfile(input, now);
     await this.deps.authRepo.recordLoginAttempt({
       studentId: profile.studentId,
       ip: input.ip,
@@ -95,7 +101,10 @@ export class AuthService {
       now,
     });
 
-    const redirectTo = sanitizeReturnTo(input.returnTo, DEFAULT_LOGIN_REDIRECT);
+    const redirectTo = resolveLoginRedirect(
+      input.returnTo,
+      profile.mustChangePassword,
+    );
     this.deps.logger.info('User authenticated', { userId: profile.id, rememberMe });
     return {
       rawToken,
@@ -195,6 +204,65 @@ export class AuthService {
       response: toMeResponseDto(updated, actor.permissions),
       rememberMe: session.rememberMe,
     };
+  }
+
+  async changeMyPassword(
+    command: ChangeMyPasswordCommand,
+  ): Promise<MeResponseDto> {
+    if (!command.actor.isActive) {
+      throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
+    }
+    const profile = await this.deps.authRepo.findProfileWithDepartmentsById(
+      command.actor.id,
+    );
+    if (!profile || !profile.isActive) {
+      throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
+    }
+    const currentValid = await verifyPassword(
+      command.input.currentPassword,
+      profile.passwordHash ?? DUMMY_PASSWORD_HASH,
+    );
+    if (!currentValid) {
+      throw badRequest(
+        'errors.invalidCurrentPassword',
+        {},
+        'INVALID_CURRENT_PASSWORD',
+      );
+    }
+    const passwordHash = await hashPassword(command.input.newPassword);
+    const updated =
+      await this.deps.authRepo.updatePasswordAndRevokeOtherSessions({
+        userId: profile.id,
+        currentSessionId: command.currentSessionId,
+        passwordHash,
+        mustChangePassword: false,
+        now: this.deps.clock.now(),
+      });
+    if (!updated) {
+      throw unauthorized('errors.sessionExpired', {}, 'SESSION_EXPIRED');
+    }
+    this.deps.logger.info('User password changed', { userId: profile.id });
+    return toMeResponseDto(updated, command.actor.permissions);
+  }
+
+  private async verifyLoginProfile(
+    input: LoginCommand,
+    now: Date,
+  ): Promise<ProfileWithDepartmentsRecord> {
+    const profile = await this.deps.authRepo.findProfileWithDepartmentsByStudentId(
+      input.studentId,
+    );
+    const activeHash =
+      profile?.isActive && profile.passwordHash ? profile.passwordHash : null;
+    const passwordMatches = await verifyPassword(
+      input.password,
+      activeHash ?? DUMMY_PASSWORD_HASH,
+    );
+    if (!profile || !activeHash || !passwordMatches) {
+      await this.recordFailedLogin(input.studentId, input.ip, now);
+      throw unauthorized('auth.invalidCredentials', {}, 'INVALID_CREDENTIALS');
+    }
+    return profile;
   }
 
   private async assertIpWithinRateLimit(ip: string, now: Date): Promise<void> {

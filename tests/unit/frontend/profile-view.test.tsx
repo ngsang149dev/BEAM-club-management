@@ -4,24 +4,40 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import enMessages from '../../../messages/en.json';
 import viMessages from '../../../messages/vi.json';
 import { ApiClientError, type components } from '@/features/shared/api/client';
+import { changeMyPasswordFormSchema } from '@/lib/auth';
 
 const hooksMock = vi.hoisted(() => ({
   useMeQuery: vi.fn(),
   useSessionQuery: vi.fn(),
   useLogoutMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useUpdateLocaleMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isError: false })),
+  useChangeMyPasswordMutation: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    error: null as ApiClientError | null,
+  })),
+}));
+
+const navMock = vi.hoisted(() => ({
+  searchParams: new URLSearchParams(),
+  replace: vi.fn(),
+  refresh: vi.fn(),
+  push: vi.fn(),
 }));
 
 vi.mock('@/features/auth/hooks/useAuth', () => hooksMock);
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    refresh: vi.fn(),
-    replace: vi.fn(),
-    push: vi.fn(),
+    refresh: navMock.refresh,
+    replace: navMock.replace,
+    push: navMock.push,
   }),
+  useSearchParams: () => navMock.searchParams,
 }));
 
+import { ChangePasswordCard, resolveChangePasswordErrorKey } from '@/features/auth/components/ChangePasswordCard';
 import { ProfileContent, ProfileView } from '@/features/auth/components/ProfileView';
 
 type MemberDetail = components['schemas']['MemberDetail'];
@@ -39,16 +55,24 @@ const BASE_PROFILE: MemberDetail = {
   email: 'nguyenvana@eiu.edu.vn',
   locale: 'vi',
   isAdmin: false,
+  mustChangePassword: false,
 };
 
-describe('ProfileContent & ProfileView (S08)', () => {
+describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
   beforeEach(() => {
+    navMock.searchParams = new URLSearchParams();
     hooksMock.useSessionQuery.mockReturnValue({ data: null });
     hooksMock.useLogoutMutation.mockReturnValue({ mutate: vi.fn(), isPending: false });
     hooksMock.useUpdateLocaleMutation.mockReturnValue({ mutateAsync: vi.fn(), isError: false });
+    hooksMock.useChangeMyPasswordMutation.mockReturnValue({
+      mutateAsync: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: null,
+    });
   });
 
-  it('renders own MSSV, email, privacy note, department chips, permission labels, and no change-password control', () => {
+  it('renders own MSSV, email, privacy note, department chips, permission labels, and ChangePasswordCard', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
         <ProfileContent
@@ -72,12 +96,12 @@ describe('ProfileContent & ProfileView (S08)', () => {
     expect(html).toContain('comment.create');
     expect(html).toContain('Tắt (phiên 24 giờ)');
     expect(html).toContain('15:30');
-    expect(html).not.toContain('Đổi mật khẩu');
-    expect(html).not.toContain('Change password');
-    expect(html).not.toContain('type="password"');
+    expect(html).toContain('Đổi mật khẩu');
+    expect(html).toContain('type="password"');
+    expect(html).not.toContain('Cần đổi mật khẩu ngay');
   });
 
-  it('renders admin all-permissions state, remember-on state, and locale error alert', () => {
+  it('renders admin all-permissions state, remember-on state, locale error, and English ChangePasswordCard', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
         <ProfileContent
@@ -97,8 +121,170 @@ describe('ProfileContent & ProfileView (S08)', () => {
     expect(html).toContain('Sign out');
     expect(html).toContain('role="alert"');
     expect(html).toContain('Could not save language preference');
-    expect(html).not.toContain('Change password');
-    expect(html).not.toContain('Đổi mật khẩu');
+    expect(html).toContain('Change password');
+    expect(html).not.toContain('Password change required');
+  });
+
+  it('renders forced password-change banner when mustChangePassword is true or changePassword=1 query param is set', () => {
+    const forcedProfileHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileContent
+          profile={{ ...BASE_PROFILE, mustChangePassword: true }}
+          permissions={[]}
+          onSignOut={vi.fn()}
+          onLocaleChange={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+    expect(forcedProfileHtml).toContain('Cần đổi mật khẩu ngay');
+    expect(forcedProfileHtml).toContain('is-highlighted');
+
+    navMock.searchParams = new URLSearchParams('changePassword=1');
+    hooksMock.useMeQuery.mockReturnValue({
+      isPending: false,
+      isError: false,
+      data: {
+        profile: BASE_PROFILE,
+        permissions: ['member.view'],
+      },
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const queryHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileView />
+      </NextIntlClientProvider>
+    );
+    expect(queryHtml).toContain('Password change required');
+  });
+
+  it('keeps ChangePasswordCard in one stable JSX slot and preserves .ui-banner.is-success when mustChangePassword flips true -> false', () => {
+    const forcedBeforeSubmitHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileContent
+          profile={{ ...BASE_PROFILE, mustChangePassword: true }}
+          permissions={['member.view']}
+          forceChangePasswordPrompt
+          passwordChanged={false}
+          onSignOut={vi.fn()}
+          onLocaleChange={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+    expect(forcedBeforeSubmitHtml).toContain('profile-main is-password-priority');
+    expect(forcedBeforeSubmitHtml).toContain('ui-banner is-warn');
+    expect(forcedBeforeSubmitHtml).not.toContain('ui-banner is-success');
+    const contactIdxBefore = forcedBeforeSubmitHtml.indexOf('Thông tin liên hệ');
+    const changePwIdxBefore = forcedBeforeSubmitHtml.indexOf('id="change-password"');
+    expect(contactIdxBefore).toBeGreaterThan(-1);
+    expect(changePwIdxBefore).toBeGreaterThan(contactIdxBefore);
+
+    const postSubmitHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileContent
+          profile={{ ...BASE_PROFILE, mustChangePassword: false }}
+          permissions={['member.view']}
+          forceChangePasswordPrompt={false}
+          passwordChanged
+          onSignOut={vi.fn()}
+          onLocaleChange={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+    expect(postSubmitHtml).toContain('profile-main is-password-priority');
+    expect(postSubmitHtml).not.toContain('ui-banner is-warn');
+    expect(postSubmitHtml).toContain('ui-banner is-success');
+    expect(postSubmitHtml).toContain('Mật khẩu của bạn đã được cập nhật và các phiên đăng nhập khác đã bị thu hồi.');
+
+    const contactIdxAfter = postSubmitHtml.indexOf('Thông tin liên hệ');
+    const changePwIdxAfter = postSubmitHtml.indexOf('id="change-password"');
+    expect(contactIdxAfter).toBeGreaterThan(-1);
+    expect(changePwIdxAfter).toBeGreaterThan(contactIdxAfter);
+
+    const changeCardSlice = postSubmitHtml.slice(changePwIdxAfter);
+    expect(changeCardSlice).toContain('ui-banner is-success');
+
+    const enPostSubmitHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileContent
+          profile={{ ...BASE_PROFILE, mustChangePassword: false }}
+          permissions={['member.view']}
+          forceChangePasswordPrompt={false}
+          passwordChanged
+          onSignOut={vi.fn()}
+          onLocaleChange={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+    expect(enPostSubmitHtml).toContain('ui-banner is-success');
+    expect(enPostSubmitHtml).toContain('Your password has been updated and other active sessions have been signed out.');
+    expect(enPostSubmitHtml).not.toContain('ui-banner is-warn');
+  });
+
+  it('maps INVALID_CURRENT_PASSWORD cleanly and validates changeMyPasswordFormSchema', () => {
+    const invalidCurrentErr = new ApiClientError({
+      status: 400,
+      code: 'INVALID_CURRENT_PASSWORD',
+      messageKey: 'errors.invalidCurrentPassword',
+      details: {},
+    });
+    expect(resolveChangePasswordErrorKey(invalidCurrentErr)).toBe('invalidCurrentPassword');
+    expect(
+      resolveChangePasswordErrorKey(
+        new ApiClientError({ status: 0, code: 'NETWORK_ERROR', messageKey: 'errors.network', details: {} })
+      )
+    ).toBe('network');
+
+    hooksMock.useChangeMyPasswordMutation.mockReturnValue({
+      mutateAsync: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: invalidCurrentErr,
+    });
+
+    const viErrorHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ChangePasswordCard />
+      </NextIntlClientProvider>
+    );
+    expect(viErrorHtml).toContain('Mật khẩu hiện tại không đúng.');
+
+    const enErrorHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ChangePasswordCard />
+      </NextIntlClientProvider>
+    );
+    expect(enErrorHtml).toContain('Current password is incorrect.');
+
+    expect(
+      changeMyPasswordFormSchema.safeParse({
+        currentPassword: 'oldPassword1!',
+        newPassword: 'newPassword1!',
+        confirmPassword: 'newPassword1!',
+      }).success
+    ).toBe(true);
+    expect(
+      changeMyPasswordFormSchema.safeParse({
+        currentPassword: 'oldPassword1!',
+        newPassword: 'short',
+        confirmPassword: 'short',
+      }).success
+    ).toBe(false);
+    expect(
+      changeMyPasswordFormSchema.safeParse({
+        currentPassword: 'oldPassword1!',
+        newPassword: '        ',
+        confirmPassword: '        ',
+      }).success
+    ).toBe(false);
+    expect(
+      changeMyPasswordFormSchema.safeParse({
+        currentPassword: 'oldPassword1!',
+        newPassword: 'newPassword1!',
+        confirmPassword: 'differentPassword1!',
+      }).success
+    ).toBe(false);
   });
 
   it('renders loading instead of 500 ErrorState when meQuery returns 401, and renders ErrorState on non-401 errors', () => {

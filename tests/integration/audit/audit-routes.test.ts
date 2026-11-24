@@ -23,6 +23,7 @@ import { createContainer, setContainerForTesting } from '@/server/shared/composi
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
 
 class TestRollbackSentinel extends Error {}
@@ -146,12 +147,14 @@ describe('Audit Logs Route Handler integration', () => {
         .onConflictDoNothing();
 
       await tx.insert(departments).values({ id: deptId, name: `Audit Dept ${suffix}` });
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
       await tx.insert(profiles).values([
         {
           id: adminId,
           studentId: adminSid,
           email: adminEmail,
           fullName: `Audit Admin ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: true,
           isActive: true,
           locale: 'vi',
@@ -161,6 +164,7 @@ describe('Audit Logs Route Handler integration', () => {
           studentId: viewerSid,
           email: viewerEmail,
           fullName: `Audit Viewer ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'en',
@@ -170,6 +174,7 @@ describe('Audit Logs Route Handler integration', () => {
           studentId: noPermSid,
           email: `a-none-${suffix}@eiu.edu.vn`,
           fullName: `Audit NoPerm ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'vi',
@@ -179,6 +184,7 @@ describe('Audit Logs Route Handler integration', () => {
           studentId: leftSid,
           email: leftEmail,
           fullName: `Audit Left ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: false,
           leftAt: new Date('2026-11-10T00:00:00.000Z'),
@@ -203,7 +209,7 @@ describe('Audit Logs Route Handler integration', () => {
                 'content-type': 'application/json',
                 'x-forwarded-for': `198.51.100.${baseHost + hostOffset}`,
               },
-              body: JSON.stringify({ studentId }),
+              body: JSON.stringify({ studentId, password: DEV_SEED_PASSWORD }),
             }),
           ),
         );

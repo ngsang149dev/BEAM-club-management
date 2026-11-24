@@ -14,6 +14,7 @@ import {
 import { POST as loginPost } from '@/app/api/v1/auth/login/route';
 import { POST as logoutPost } from '@/app/api/v1/auth/logout/route';
 import { GET as sessionGet } from '@/app/api/v1/auth/session/route';
+import { POST as mePasswordPost } from '@/app/api/v1/me/password/route';
 import { GET as meGet, PATCH as mePatch } from '@/app/api/v1/me/route';
 import { SESSION_COOKIE_NAME } from '@/lib/auth';
 import {
@@ -24,6 +25,7 @@ import {
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 
 function loadEnvLocalIfMissing(): void {
   if (process.env.TEST_DATABASE_URL) return;
@@ -68,12 +70,19 @@ describe('Auth & /me Route Handlers integration', () => {
   const activeUserId = randomUUID();
   const disposableUserId = randomUUID();
   const inactiveUserId = randomUUID();
+  const firstLoginUserId = randomUUID();
+  const nullHashUserId = randomUUID();
   const activeStudentId = `MSSV-RT-${suffix}`;
   const disposableStudentId = `MSSV-RT-DISP-${suffix}`;
   const inactiveStudentId = `MSSV-RT-OFF-${suffix}`;
+  const firstLoginStudentId = `MSSV-RT-FIRST-${suffix}`;
+  const nullHashStudentId = `MSSV-RT-NULL-${suffix}`;
   const activeEmail = `rt-active-${suffix}@eiu.edu.vn`;
   const disposableEmail = `rt-disp-${suffix}@eiu.edu.vn`;
   const inactiveEmail = `rt-inactive-${suffix}@eiu.edu.vn`;
+  const firstLoginEmail = `rt-first-${suffix}@eiu.edu.vn`;
+  const nullHashEmail = `rt-null-${suffix}@eiu.edu.vn`;
+  let seedPasswordHash = '';
   const testIp = `203.0.113.${Math.floor(Math.random() * 200) + 1}`;
   const rateLimitIp = `203.0.113.${Math.floor(Math.random() * 40) + 210}`;
 
@@ -129,12 +138,15 @@ describe('Auth & /me Route Handlers integration', () => {
       ])
       .onConflictDoNothing();
 
+    seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
     await db.insert(profiles).values([
       {
         id: activeUserId,
         studentId: activeStudentId,
         email: activeEmail,
         fullName: `Route Active ${suffix}`,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',
@@ -144,6 +156,8 @@ describe('Auth & /me Route Handlers integration', () => {
         studentId: disposableStudentId,
         email: disposableEmail,
         fullName: `Route Disposable ${suffix}`,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: true,
         locale: 'vi',
@@ -153,9 +167,33 @@ describe('Auth & /me Route Handlers integration', () => {
         studentId: inactiveStudentId,
         email: inactiveEmail,
         fullName: `Route Inactive ${suffix}`,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
         isAdmin: false,
         isActive: false,
         leftAt: new Date('2026-10-01T00:00:00.000Z'),
+        locale: 'vi',
+      },
+      {
+        id: firstLoginUserId,
+        studentId: firstLoginStudentId,
+        email: firstLoginEmail,
+        fullName: `Route FirstLogin ${suffix}`,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: true,
+        isAdmin: false,
+        isActive: true,
+        locale: 'vi',
+      },
+      {
+        id: nullHashUserId,
+        studentId: nullHashStudentId,
+        email: nullHashEmail,
+        fullName: `Route NullHash ${suffix}`,
+        passwordHash: null,
+        mustChangePassword: false,
+        isAdmin: false,
+        isActive: true,
         locale: 'vi',
       },
     ]);
@@ -163,12 +201,19 @@ describe('Auth & /me Route Handlers integration', () => {
     await db.insert(userPermissions).values([
       { userId: activeUserId, permissionCode: 'member.view', grantedBy: null },
       { userId: activeUserId, permissionCode: 'board.create', grantedBy: null },
+      { userId: firstLoginUserId, permissionCode: 'member.view', grantedBy: null },
     ]);
   });
 
   afterAll(async () => {
     setContainerForTesting(undefined);
-    const createdUsers = [activeUserId, disposableUserId, inactiveUserId];
+    const createdUsers = [
+      activeUserId,
+      disposableUserId,
+      inactiveUserId,
+      firstLoginUserId,
+      nullHashUserId,
+    ];
     if (db) {
       await db.delete(sessions).where(inArray(sessions.userId, createdUsers));
       await db
@@ -182,7 +227,7 @@ describe('Auth & /me Route Handlers integration', () => {
     await pool?.end();
   });
 
-  it('rejects unknown and inactive MSSV with identical generic 401 without creating profiles (AC-01, AC-02)', async () => {
+  it('rejects unknown MSSV, inactive MSSV, wrong password, and null passwordHash with identical generic 401 without creating profiles (AC-01, AC-02)', async () => {
     const profileCountBefore = Number(
       (await db.select({ value: count() }).from(profiles))[0]?.value ?? 0,
     );
@@ -203,7 +248,10 @@ describe('Auth & /me Route Handlers integration', () => {
           'x-forwarded-for': testIp,
           'x-request-id': 'req-unknown-01',
         },
-        body: JSON.stringify({ studentId: 'MSSV-UNKNOWN-999' }),
+        body: JSON.stringify({
+          studentId: 'MSSV-UNKNOWN-999',
+          password: DEV_SEED_PASSWORD,
+        }),
       }),
     );
     const inactiveRes = await loginPost(
@@ -214,12 +262,45 @@ describe('Auth & /me Route Handlers integration', () => {
           'x-forwarded-for': testIp,
           'x-request-id': 'req-inactive-01',
         },
-        body: JSON.stringify({ studentId: inactiveStudentId }),
+        body: JSON.stringify({
+          studentId: inactiveStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
+      }),
+    );
+    const wrongPassRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': testIp,
+          'x-request-id': 'req-wrongpass-01',
+        },
+        body: JSON.stringify({
+          studentId: activeStudentId,
+          password: 'WrongPassword#99',
+        }),
+      }),
+    );
+    const nullHashRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': testIp,
+          'x-request-id': 'req-nullhash-01',
+        },
+        body: JSON.stringify({
+          studentId: nullHashStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
       }),
     );
 
     expect(unknownRes.status).toBe(401);
     expect(inactiveRes.status).toBe(401);
+    expect(wrongPassRes.status).toBe(401);
+    expect(nullHashRes.status).toBe(401);
     expect(unknownRes.headers.get('cache-control')).toBe('no-store');
     expect(unknownRes.headers.get('x-request-id')).toBe('req-unknown-01');
     expect(inactiveRes.headers.get('cache-control')).toBe('no-store');
@@ -231,10 +312,20 @@ describe('Auth & /me Route Handlers integration', () => {
     const inactiveBody = (await inactiveRes.json()) as {
       error: { code: string; messageKey: string; details: Record<string, unknown> };
     };
+    const wrongPassBody = (await wrongPassRes.json()) as {
+      error: { code: string; messageKey: string; details: Record<string, unknown> };
+    };
+    const nullHashBody = (await nullHashRes.json()) as {
+      error: { code: string; messageKey: string; details: Record<string, unknown> };
+    };
     expect(unknownBody.error.code).toBe('INVALID_CREDENTIALS');
     expect(unknownBody.error.messageKey).toBe('auth.invalidCredentials');
     expect(inactiveBody.error.code).toBe(unknownBody.error.code);
     expect(inactiveBody.error.messageKey).toBe(unknownBody.error.messageKey);
+    expect(wrongPassBody.error.code).toBe(unknownBody.error.code);
+    expect(wrongPassBody.error.messageKey).toBe(unknownBody.error.messageKey);
+    expect(nullHashBody.error.code).toBe(unknownBody.error.code);
+    expect(nullHashBody.error.messageKey).toBe(unknownBody.error.messageKey);
 
     const profileCountAfter = Number(
       (await db.select({ value: count() }).from(profiles))[0]?.value ?? 0,
@@ -248,7 +339,7 @@ describe('Auth & /me Route Handlers integration', () => {
       )[0]?.value ?? 0,
     );
     expect(profileCountAfter).toBe(profileCountBefore);
-    expect(attemptCountAfter).toBe(attemptCountBefore + 2);
+    expect(attemptCountAfter).toBe(attemptCountBefore + 4);
   });
 
   it('handles AC-13 cookie persistence & sliding cookie refresh across /auth/session and /me', async () => {
@@ -258,6 +349,7 @@ describe('Auth & /me Route Handlers integration', () => {
         headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
         body: JSON.stringify({
           studentId: activeStudentId,
+          password: DEV_SEED_PASSWORD,
           remember: false,
           returnTo: 'https://evil.example/steal',
         }),
@@ -308,6 +400,7 @@ describe('Auth & /me Route Handlers integration', () => {
         headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
         body: JSON.stringify({
           studentId: activeStudentId,
+          password: DEV_SEED_PASSWORD,
           remember: true,
           returnTo: '/my-tasks',
         }),
@@ -362,7 +455,10 @@ describe('Auth & /me Route Handlers integration', () => {
       new Request('http://localhost:3000/api/v1/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
-        body: JSON.stringify({ studentId: activeStudentId }),
+        body: JSON.stringify({
+          studentId: activeStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
       }),
     );
     const sessionCookiePair = extractCookiePair(
@@ -499,7 +595,10 @@ describe('Auth & /me Route Handlers integration', () => {
       new Request('http://localhost:3000/api/v1/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
-        body: JSON.stringify({ studentId: disposableStudentId }),
+        body: JSON.stringify({
+          studentId: disposableStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
       }),
     );
     const dispCookie = extractCookiePair(
@@ -526,7 +625,10 @@ describe('Auth & /me Route Handlers integration', () => {
       new Request('http://localhost:3000/api/v1/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
-        body: JSON.stringify({ studentId: disposableStudentId }),
+        body: JSON.stringify({
+          studentId: disposableStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
       }),
     );
     const freshCookie = extractCookiePair(
@@ -576,7 +678,10 @@ describe('Auth & /me Route Handlers integration', () => {
             'content-type': 'application/json',
             'x-forwarded-for': rateLimitIp,
           },
-          body: JSON.stringify({ studentId: 'MSSV-UNKNOWN-RATE' }),
+          body: JSON.stringify({
+            studentId: 'MSSV-UNKNOWN-RATE',
+            password: DEV_SEED_PASSWORD,
+          }),
         }),
       );
       expect(res.status).toBe(401);
@@ -589,7 +694,10 @@ describe('Auth & /me Route Handlers integration', () => {
           'content-type': 'application/json',
           'x-forwarded-for': rateLimitIp,
         },
-        body: JSON.stringify({ studentId: activeStudentId }),
+        body: JSON.stringify({
+          studentId: activeStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
       }),
     );
     expect(blockedRes.status).toBe(429);
@@ -605,5 +713,188 @@ describe('Auth & /me Route Handlers integration', () => {
     expect(joinedLogs).not.toContain(activeEmail);
     expect(joinedLogs).not.toContain(disposableEmail);
     expect(joinedLogs).not.toContain(inactiveEmail);
+    expect(joinedLogs).not.toContain(DEV_SEED_PASSWORD);
+    expect(joinedLogs).not.toContain(seedPasswordHash);
+  });
+
+  it('redirects first-login mustChangePassword=true to /profile?changePassword=1, enforces POST /api/v1/me/password 400 vs 200, keeps current session, revokes other sessions, and leaks zero secrets', async () => {
+    // 1. Unauthenticated /me/password -> 401
+    const unauthPwRes = await mePasswordPost(
+      new Request('http://localhost:3000/api/v1/me/password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: DEV_SEED_PASSWORD,
+          newPassword: 'ChangedPass#2026',
+        }),
+      }),
+    );
+    expect(unauthPwRes.status).toBe(401);
+    expect(unauthPwRes.headers.get('cache-control')).toBe('no-store');
+
+    // 2. First login without returnTo -> /profile?changePassword=1 + mustChangePassword=true
+    const sessionOneRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
+        body: JSON.stringify({
+          studentId: firstLoginStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
+      }),
+    );
+    expect(sessionOneRes.status).toBe(200);
+    const sessionOneCookie = extractCookiePair(
+      findSetCookie(sessionOneRes.headers.getSetCookie(), SESSION_COOKIE_NAME),
+    );
+    const sessionOneBody = (await sessionOneRes.json()) as {
+      redirectTo: string;
+      user: Record<string, unknown> & { mustChangePassword: boolean };
+    };
+    expect(sessionOneBody.redirectTo).toBe('/profile?changePassword=1');
+    expect(sessionOneBody.user.mustChangePassword).toBe(true);
+    expect('passwordHash' in sessionOneBody.user).toBe(false);
+
+    // Concurrent second session for same user
+    const sessionTwoRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
+        body: JSON.stringify({
+          studentId: firstLoginStudentId,
+          password: DEV_SEED_PASSWORD,
+          returnTo: '/my-tasks',
+        }),
+      }),
+    );
+    expect(sessionTwoRes.status).toBe(200);
+    expect(((await sessionTwoRes.json()) as { redirectTo: string }).redirectTo).toBe(
+      '/my-tasks',
+    );
+    const sessionTwoCookie = extractCookiePair(
+      findSetCookie(sessionTwoRes.headers.getSetCookie(), SESSION_COOKIE_NAME),
+    );
+
+    // 3. Invalid body -> 400 VALIDATION_ERROR
+    const badBodyRes = await mePasswordPost(
+      new Request('http://localhost:3000/api/v1/me/password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: sessionOneCookie },
+        body: JSON.stringify({
+          currentPassword: DEV_SEED_PASSWORD,
+          newPassword: 'short',
+        }),
+      }),
+    );
+    expect(badBodyRes.status).toBe(400);
+    expect(((await badBodyRes.json()) as { error: { code: string } }).error.code).toBe(
+      'VALIDATION_ERROR',
+    );
+
+    // 4. Wrong currentPassword -> 400 INVALID_CURRENT_PASSWORD (NOT 401!)
+    const wrongCurrentRes = await mePasswordPost(
+      new Request('http://localhost:3000/api/v1/me/password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: sessionOneCookie },
+        body: JSON.stringify({
+          currentPassword: 'WrongCurrent#2026',
+          newPassword: 'ChangedPass#2026',
+        }),
+      }),
+    );
+    expect(wrongCurrentRes.status).toBe(400);
+    expect(wrongCurrentRes.headers.get('cache-control')).toBe('no-store');
+    expect(
+      ((await wrongCurrentRes.json()) as { error: { code: string; messageKey: string } })
+        .error,
+    ).toMatchObject({
+      code: 'INVALID_CURRENT_PASSWORD',
+      messageKey: 'errors.invalidCurrentPassword',
+    });
+
+    // Session one still valid after wrong currentPassword
+    const stillValidMe = await meGet(
+      new Request('http://localhost:3000/api/v1/me', {
+        headers: { cookie: sessionOneCookie },
+      }),
+    );
+    expect(stillValidMe.status).toBe(200);
+
+    // 5. Successful password change -> 200, mustChangePassword: false, keeps sessionOne, revokes sessionTwo
+    const newSecret = 'ChangedPass#2026';
+    const changeOkRes = await mePasswordPost(
+      new Request('http://localhost:3000/api/v1/me/password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: sessionOneCookie },
+        body: JSON.stringify({
+          currentPassword: DEV_SEED_PASSWORD,
+          newPassword: newSecret,
+        }),
+      }),
+    );
+    expect(changeOkRes.status).toBe(200);
+    expect(changeOkRes.headers.get('cache-control')).toBe('no-store');
+    const changeOkBody = (await changeOkRes.json()) as {
+      profile: Record<string, unknown> & { mustChangePassword: boolean };
+      permissions: string[];
+    };
+    expect(changeOkBody.profile.mustChangePassword).toBe(false);
+    expect('passwordHash' in changeOkBody.profile).toBe(false);
+    expect(changeOkBody.permissions).toEqual(['member.view']);
+
+    const meAfterChange = await meGet(
+      new Request('http://localhost:3000/api/v1/me', {
+        headers: { cookie: sessionOneCookie },
+      }),
+    );
+    expect(meAfterChange.status).toBe(200);
+    expect(
+      ((await meAfterChange.json()) as { profile: { mustChangePassword: boolean } })
+        .profile.mustChangePassword,
+    ).toBe(false);
+
+    const otherSessionAfterChange = await meGet(
+      new Request('http://localhost:3000/api/v1/me', {
+        headers: { cookie: sessionTwoCookie },
+      }),
+    );
+    expect(otherSessionAfterChange.status).toBe(401);
+
+    // 6. Old password fails, new password succeeds and redirects to /boards
+    const oldLoginRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
+        body: JSON.stringify({
+          studentId: firstLoginStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
+      }),
+    );
+    expect(oldLoginRes.status).toBe(401);
+
+    const newLoginRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
+        body: JSON.stringify({
+          studentId: firstLoginStudentId,
+          password: newSecret,
+        }),
+      }),
+    );
+    expect(newLoginRes.status).toBe(200);
+    const newLoginBody = (await newLoginRes.json()) as {
+      redirectTo: string;
+      user: { mustChangePassword: boolean };
+    };
+    expect(newLoginBody.redirectTo).toBe('/boards');
+    expect(newLoginBody.user.mustChangePassword).toBe(false);
+
+    const serializedLogs = capturedLogs.join('\n');
+    expect(serializedLogs).not.toContain(newSecret);
+    expect(serializedLogs).not.toContain('WrongCurrent#2026');
+    expect(serializedLogs).not.toContain(DEV_SEED_PASSWORD);
+    expect(serializedLogs).not.toContain(seedPasswordHash);
   });
 });

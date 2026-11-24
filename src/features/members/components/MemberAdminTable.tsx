@@ -1,9 +1,25 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Can } from '@/features/shared/permissions/can';
+import { Can, usePermissions } from '@/features/shared/permissions/can';
 import { isMemberDetail, type MemberListItem } from '../hooks/useMembers';
 import { getMemberInitials } from './MembersToolbar';
+
+export function canViewerResetMemberPassword({
+  viewerIsAdmin,
+  canUpdateMember,
+  member,
+}: {
+  viewerIsAdmin: boolean;
+  canUpdateMember: boolean;
+  member: MemberListItem;
+}): boolean {
+  if (!viewerIsAdmin && !canUpdateMember) {
+    return false;
+  }
+  const targetIsAdmin = isMemberDetail(member) && member.isAdmin;
+  return !(targetIsAdmin && !viewerIsAdmin);
+}
 
 export function MemberIdentityCell({ member }: { member: MemberListItem }) {
   const tBadge = useTranslations('member');
@@ -49,13 +65,21 @@ export function MemberDepartmentsCell({ member }: { member: MemberListItem }) {
 function MemberAdminRowActions({
   member,
   onEdit,
+  onResetPassword,
   onStatusAction,
 }: {
   member: MemberListItem;
   onEdit: (member: MemberListItem) => void;
+  onResetPassword: (member: MemberListItem) => void;
   onStatusAction: (member: MemberListItem, action: 'deactivate' | 'activate') => void;
 }) {
   const tAdmin = useTranslations('memberAdmin');
+  const { isAdmin, can } = usePermissions();
+  const canResetPassword = canViewerResetMemberPassword({
+    viewerIsAdmin: isAdmin,
+    canUpdateMember: can('member.update'),
+    member,
+  });
 
   return (
     <div className="admin-row-actions">
@@ -64,6 +88,11 @@ function MemberAdminRowActions({
           {tAdmin('editAction')}
         </button>
       </Can>
+      {canResetPassword ? (
+        <button type="button" className="ui-btn ghost is-sm" onClick={() => onResetPassword(member)}>
+          {tAdmin('resetPasswordAction')}
+        </button>
+      ) : null}
       <Can permission="member.deactivate">
         <button
           type="button"
@@ -81,11 +110,13 @@ function MemberAdminRow({
   member,
   canViewDetail,
   onEdit,
+  onResetPassword,
   onStatusAction,
 }: {
   member: MemberListItem;
   canViewDetail: boolean;
   onEdit: (member: MemberListItem) => void;
+  onResetPassword: (member: MemberListItem) => void;
   onStatusAction: (member: MemberListItem, action: 'deactivate' | 'activate') => void;
 }) {
   const detail = canViewDetail && isMemberDetail(member) ? member : null;
@@ -98,7 +129,12 @@ function MemberAdminRow({
       <td><MemberDepartmentsCell member={member} /></td>
       <td><MemberStatusPill isActive={member.isActive} /></td>
       <td className="ui-col-right">
-        <MemberAdminRowActions member={member} onEdit={onEdit} onStatusAction={onStatusAction} />
+        <MemberAdminRowActions
+          member={member}
+          onEdit={onEdit}
+          onResetPassword={onResetPassword}
+          onStatusAction={onStatusAction}
+        />
       </td>
     </tr>
   );
@@ -108,11 +144,13 @@ function MemberAdminMobileCard({
   member,
   canViewDetail,
   onEdit,
+  onResetPassword,
   onStatusAction,
 }: {
   member: MemberListItem;
   canViewDetail: boolean;
   onEdit: (member: MemberListItem) => void;
+  onResetPassword: (member: MemberListItem) => void;
   onStatusAction: (member: MemberListItem, action: 'deactivate' | 'activate') => void;
 }) {
   const detail = canViewDetail && isMemberDetail(member) ? member : null;
@@ -131,7 +169,12 @@ function MemberAdminMobileCard({
       ) : null}
       <div className="directory-mobile-meta">
         <MemberDepartmentsCell member={member} />
-        <MemberAdminRowActions member={member} onEdit={onEdit} onStatusAction={onStatusAction} />
+        <MemberAdminRowActions
+          member={member}
+          onEdit={onEdit}
+          onResetPassword={onResetPassword}
+          onStatusAction={onStatusAction}
+        />
       </div>
     </li>
   );
@@ -141,11 +184,13 @@ export function MemberAdminTable({
   members,
   canViewDetail,
   onEdit,
+  onResetPassword,
   onStatusAction,
 }: {
   members: MemberListItem[];
   canViewDetail: boolean;
   onEdit: (member: MemberListItem) => void;
+  onResetPassword: (member: MemberListItem) => void;
   onStatusAction: (member: MemberListItem, action: 'deactivate' | 'activate') => void;
 }) {
   const tDir = useTranslations('members');
@@ -172,6 +217,7 @@ export function MemberAdminTable({
                 member={member}
                 canViewDetail={canViewDetail}
                 onEdit={onEdit}
+                onResetPassword={onResetPassword}
                 onStatusAction={onStatusAction}
               />
             ))}
@@ -185,6 +231,7 @@ export function MemberAdminTable({
             member={member}
             canViewDetail={canViewDetail}
             onEdit={onEdit}
+            onResetPassword={onResetPassword}
             onStatusAction={onStatusAction}
           />
         ))}

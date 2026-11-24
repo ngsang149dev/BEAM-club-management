@@ -33,6 +33,7 @@ import {
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
 
 class TestRollbackSentinel extends Error {}
@@ -160,12 +161,14 @@ describe('Departments Route Handlers integration', () => {
         ])
         .onConflictDoNothing();
 
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
       await tx.insert(profiles).values([
         {
           id: basicUserId,
           studentId: basicSid,
           email: `dept-basic-${suffix}@eiu.edu.vn`,
           fullName: `Dept Basic ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'vi',
@@ -175,6 +178,7 @@ describe('Departments Route Handlers integration', () => {
           studentId: mgrSid,
           email: `dept-mgr-${suffix}@eiu.edu.vn`,
           fullName: `Dept Manager ${suffix}`,
+          passwordHash: seedPasswordHash,
           isAdmin: false,
           isActive: true,
           locale: 'en',
@@ -191,7 +195,7 @@ describe('Departments Route Handlers integration', () => {
           new Request('http://localhost:3000/api/v1/auth/login', {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
-            body: JSON.stringify({ studentId: basicSid }),
+            body: JSON.stringify({ studentId: basicSid, password: DEV_SEED_PASSWORD }),
           }),
         ),
       );
@@ -200,7 +204,7 @@ describe('Departments Route Handlers integration', () => {
           new Request('http://localhost:3000/api/v1/auth/login', {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'x-forwarded-for': testIp },
-            body: JSON.stringify({ studentId: mgrSid }),
+            body: JSON.stringify({ studentId: mgrSid, password: DEV_SEED_PASSWORD }),
           }),
         ),
       );

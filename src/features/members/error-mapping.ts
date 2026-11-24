@@ -9,6 +9,7 @@ export interface MemberErrorDescriptor {
     | 'lastActiveAdmin'
     | 'invalidDepartmentIds'
     | 'studentIdImmutable'
+    | 'initialPasswordRequired'
     | 'invalidCursor'
     | 'validation'
     | 'unauthorized'
@@ -28,6 +29,7 @@ const CODE_TO_KEY: Record<string, Exclude<MemberErrorDescriptor['key'], 'invalid
   LAST_ACTIVE_ADMIN: 'lastActiveAdmin',
   INVALID_DEPARTMENT_IDS: 'invalidDepartmentIds',
   STUDENT_ID_IMMUTABLE: 'studentIdImmutable',
+  INITIAL_PASSWORD_REQUIRED: 'initialPasswordRequired',
   INVALID_CURSOR: 'invalidCursor',
   VALIDATION_ERROR: 'validation',
   UNAUTHORIZED: 'unauthorized',

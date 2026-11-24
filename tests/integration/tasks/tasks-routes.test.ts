@@ -34,6 +34,7 @@ import { createContainer, setContainerForTesting } from '@/server/shared/composi
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { StructuredLogger } from '@/server/shared/logger';
+import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
 
 class TestRollbackSentinel extends Error {}
@@ -152,14 +153,15 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
         { code: 'task.delete', groupName: 'tasks', description: 'TD', scopable: false },
       ]).onConflictDoNothing();
 
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
       await tx.insert(profiles).values([
-        { id: adminId, studentId: adminSid, email: `t-adm-${suffix}@eiu.edu.vn`, fullName: `Task Admin ${suffix}`, isAdmin: true, isActive: true, locale: 'vi' },
-        { id: creatorOnlyId, studentId: creatorSid, email: `t-cre-${suffix}@eiu.edu.vn`, fullName: `Task Creator ${suffix}`, isAdmin: false, isActive: true, locale: 'vi' },
-        { id: assignedOnlyId, studentId: assignedSid, email: `t-ass-${suffix}@eiu.edu.vn`, fullName: `Task Assignee ${suffix}`, isAdmin: false, isActive: true, locale: 'en' },
-        { id: anyEditorId, studentId: anyEditorSid, email: `t-any-${suffix}@eiu.edu.vn`, fullName: `Task AnyEditor ${suffix}`, isAdmin: false, isActive: true, locale: 'vi' },
-        { id: deleterId, studentId: deleterSid, email: `t-del-${suffix}@eiu.edu.vn`, fullName: `Task Deleter ${suffix}`, isAdmin: false, isActive: true, locale: 'vi' },
-        { id: assignerId, studentId: assignerSid, email: `t-asg-${suffix}@eiu.edu.vn`, fullName: `Task Assigner ${suffix}`, isAdmin: false, isActive: true, locale: 'vi' },
-        { id: inactiveUserId, studentId: inactiveSid, email: `t-ina-${suffix}@eiu.edu.vn`, fullName: `Task Left ${suffix}`, isAdmin: false, isActive: false, leftAt: new Date('2026-10-01T00:00:00.000Z'), locale: 'vi' },
+        { id: adminId, studentId: adminSid, email: `t-adm-${suffix}@eiu.edu.vn`, fullName: `Task Admin ${suffix}`, passwordHash: seedPasswordHash, isAdmin: true, isActive: true, locale: 'vi' },
+        { id: creatorOnlyId, studentId: creatorSid, email: `t-cre-${suffix}@eiu.edu.vn`, fullName: `Task Creator ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'vi' },
+        { id: assignedOnlyId, studentId: assignedSid, email: `t-ass-${suffix}@eiu.edu.vn`, fullName: `Task Assignee ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'en' },
+        { id: anyEditorId, studentId: anyEditorSid, email: `t-any-${suffix}@eiu.edu.vn`, fullName: `Task AnyEditor ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'vi' },
+        { id: deleterId, studentId: deleterSid, email: `t-del-${suffix}@eiu.edu.vn`, fullName: `Task Deleter ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'vi' },
+        { id: assignerId, studentId: assignerSid, email: `t-asg-${suffix}@eiu.edu.vn`, fullName: `Task Assigner ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: true, locale: 'vi' },
+        { id: inactiveUserId, studentId: inactiveSid, email: `t-ina-${suffix}@eiu.edu.vn`, fullName: `Task Left ${suffix}`, passwordHash: seedPasswordHash, isAdmin: false, isActive: false, leftAt: new Date('2026-10-01T00:00:00.000Z'), locale: 'vi' },
       ]);
       await tx.insert(userPermissions).values([
         { userId: creatorOnlyId, permissionCode: 'task.create', grantedBy: null },
@@ -188,7 +190,7 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
         cookiePairFromLogin(await loginPost(new Request('http://localhost:3000/api/v1/auth/login', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.51.100.${baseHost + hostOffset}` },
-          body: JSON.stringify({ studentId }),
+          body: JSON.stringify({ studentId, password: DEV_SEED_PASSWORD }),
         })));
 
       const adminCookie = await loginAs(adminSid, 0);

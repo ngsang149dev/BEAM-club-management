@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { apiFetch, type components } from '@/features/shared/api/client';
+import { AUDIT_QUERY_KEYS } from '@/features/audit/hooks/useAuditLogs';
 import { AUTH_QUERY_KEYS } from '@/features/auth/hooks/useAuth';
 import { DEPARTMENT_QUERY_KEYS } from '@/features/departments/hooks/useDepartments';
 
@@ -16,6 +17,7 @@ export type MemberPageResponse = components['schemas']['MemberPageResponse'];
 export type MemberItemResponse = components['schemas']['MemberItemResponse'];
 export type CreateMemberRequest = components['schemas']['CreateMemberRequest'];
 export type UpdateMemberRequest = components['schemas']['UpdateMemberRequest'];
+export type ResetMemberPasswordRequest = components['schemas']['ResetMemberPasswordRequest'];
 
 export type MemberStatusFilter = 'active' | 'inactive' | 'all';
 
@@ -130,6 +132,21 @@ export function useActivateMemberMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
         queryClient.invalidateQueries({ queryKey: DEPARTMENT_QUERY_KEYS.all }),
+      ]);
+    },
+  });
+}
+
+export function useResetMemberPasswordMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: ResetMemberPasswordRequest }) =>
+      apiFetch('/members/{id}/reset-password', { method: 'post', params: { id }, body: payload }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
+        queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
       ]);
     },
   });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEV_SEED_PASSWORD } from './password';
 
 export interface SmtpConfig {
   readonly host?: string;
@@ -16,6 +17,7 @@ export interface Config {
   readonly sessionTtlDefaultHours: number;
   readonly sessionTtlRememberDays: number;
   readonly allowedEmailDomain: string;
+  readonly defaultInitialPassword?: string;
   readonly cronSecret: string;
   readonly smtp: SmtpConfig;
   readonly appUrl: string;
@@ -64,6 +66,10 @@ const envSchema = z.object({
       .default('eiu.edu.vn')
       .transform((domain) => domain.toLowerCase().replace(/^@+/, '')),
   ),
+  DEFAULT_INITIAL_PASSWORD: z.preprocess(
+    emptyToUndefined,
+    z.string().min(8).max(128).optional(),
+  ),
   CRON_SECRET: z.string().min(8),
   SMTP_HOST: optionalNonEmptyString,
   SMTP_PORT: optionalPort,
@@ -103,6 +109,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionTtlDefaultHours: data.SESSION_TTL_DEFAULT_HOURS,
     sessionTtlRememberDays: data.SESSION_TTL_REMEMBER_DAYS,
     allowedEmailDomain: data.ALLOWED_EMAIL_DOMAIN,
+    defaultInitialPassword:
+      data.DEFAULT_INITIAL_PASSWORD ??
+      (data.NODE_ENV === 'production' ? undefined : DEV_SEED_PASSWORD),
     cronSecret: data.CRON_SECRET,
     smtp: {
       host: data.SMTP_HOST,

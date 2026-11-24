@@ -14,9 +14,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Sign in with student ID (MSSV)
+         * Sign in with student ID (MSSV) and password
          * @description Public endpoint protected by IP rate limiting (`login_attempts`).
-         *     Returns a generic `401` error whether the `studentId` does not exist or the account is inactive (`is_active=false`).
+         *     Verifies both `studentId` and `password` (`scrypt` + timing-safe dummy verify when missing/inactive/unset).
+         *     Returns a generic `401` (`INVALID_CREDENTIALS`) whether the `studentId` does not exist, password mismatches, or the account is inactive (`is_active=false`).
          *     Sets the `beam_session` `HttpOnly`/`Secure`/`SameSite` cookie:
          *     - `remember=false` (default): browser session cookie with server max TTL `SESSION_TTL_DEFAULT` (24h).
          *     - `remember=true`: persistent cookie with sliding server TTL `SESSION_TTL_REMEMBER` (30d).
@@ -47,7 +48,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description Generic authentication failure (unknown student ID or inactive account) */
+                /** @description Generic authentication failure (`INVALID_CREDENTIALS` — unknown student ID, wrong password, or inactive account) */
                 401: {
                     headers: {
                         [name: string]: unknown;
@@ -212,6 +213,51 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
             };
         };
+        trace?: never;
+    };
+    "/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change current authenticated member's password
+         * @description Verifies `currentPassword` (returning `400 INVALID_CURRENT_PASSWORD` on mismatch rather than `401`), hashes and persists `newPassword` (`8..128` chars), clears `must_change_password = false`, and revokes all other active sessions for this user while keeping the current session alive.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ChangeMyPasswordRequest"];
+                };
+            };
+            responses: {
+                /** @description Password updated; returns refreshed member profile (mustChangePassword: false) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/me/tasks": {
@@ -508,6 +554,58 @@ export interface paths {
             requestBody?: never;
             responses: {
                 /** @description Member re-activated (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemberItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a member's password (admin or permitted manager)
+         * @description Requires `member.update` (or admin).
+         *     Security guard: if the target profile has `is_admin=true`, ONLY an admin (`is_admin=true`) may reset their password (`403 FORBIDDEN` otherwise).
+         *     Sets a new `scrypt` password hash, sets `must_change_password=true`, revokes ALL active sessions for the target member, and writes `audit_logs` (`member.password_reset`) with zero plaintext password or hash.
+         *     Projection rule (FR-42): returns `MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ResetMemberPasswordRequest"];
+                };
+            };
+            responses: {
+                /** @description Member password reset (`MemberDetail` only if caller holds `member.view_detail` or `is_admin`, otherwise `MemberPublicSummary` without `studentId` or `email`) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2241,6 +2339,7 @@ export interface components {
             /** @enum {string} */
             locale: "vi" | "en";
             isAdmin: boolean;
+            mustChangePassword: boolean;
         };
         MemberListItem: components["schemas"]["MemberDetail"] | components["schemas"]["MemberPublicSummary"];
         MemberPageResponse: {
@@ -2262,6 +2361,8 @@ export interface components {
              * @enum {string}
              */
             locale: "vi" | "en";
+            /** @description Initial password set on account creation (optional via API; falls back to server `DEFAULT_INITIAL_PASSWORD` when omitted). */
+            initialPassword?: string;
         };
         /** @description `studentId` is immutable (`WQ-21`) and intentionally omitted. */
         UpdateMemberRequest: {
@@ -2274,6 +2375,7 @@ export interface components {
         };
         LoginRequest: {
             studentId: string;
+            password: string;
             /** @default false */
             remember: boolean;
             returnTo?: string | null;
@@ -2302,6 +2404,13 @@ export interface components {
         UpdateMeRequest: {
             /** @enum {string} */
             locale: "vi" | "en";
+        };
+        ChangeMyPasswordRequest: {
+            currentPassword: string;
+            newPassword: string;
+        };
+        ResetMemberPasswordRequest: {
+            newPassword: string;
         };
         PermissionDto: {
             code: components["schemas"]["PermissionCode"];
