@@ -146,7 +146,7 @@ Trạng thái: Đã duyệt bởi chủ dự án
   3. **Bố cục UI `S04`/`S05`:**
      - Mở rộng `TaskDetailDrawer` thành 2 cột thoáng trên desktop (`~900px`: cột trái chi tiết & form chỉnh sửa, cột phải tóm tắt giao việc + khối phân công + thẻ độc lập `TaskNotificationOptions` + nút `Cập nhật giao việc`), và nới rộng `CreateTaskModal` (`720px` desktop).
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cập nhật cộng thêm `docs/openapi.yaml` (`src/features/shared/api/schema.d.ts`) và `src/lib/tasks.ts`; không đổi schema PostgreSQL.
-- **Trạng thái:** Đã duyệt bởi chủ dự án (`A1`–`A3`, 2026-11-25); đã hoàn tất & đạt QA độc lập (`PASS`) trên nhánh `feat/CR05-CR06-unified`.
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`A1`–`A3`, 2026-11-25); đã hoàn tất, đạt QA độc lập (`PASS`) & merge vào `main`.
 
 ---
 
