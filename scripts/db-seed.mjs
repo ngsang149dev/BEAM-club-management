@@ -1,35 +1,40 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
-
-function loadEnvLocal() {
-  const envPath = path.resolve(process.cwd(), '.env.local');
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eqIdx = trimmed.indexOf('=');
-    if (eqIdx <= 0) continue;
-    const key = trimmed.slice(0, eqIdx).trim();
-    let val = trimmed.slice(eqIdx + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    if (!process.env[key]) {
-      process.env[key] = val;
-    }
-  }
-}
+import {
+  formatSafeDbTarget,
+  isLocalDatabaseUrl,
+  loadEnvFiles,
+} from './load-env.mjs';
 
 async function main() {
-  loadEnvLocal();
-  const useTest = process.argv.includes('--test');
-  const connectionString = useTest ? process.env.TEST_DATABASE_URL : process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error(useTest ? 'TEST_DATABASE_URL is required' : 'DATABASE_URL is required');
+  loadEnvFiles();
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Refusing to run db:seed when NODE_ENV=production.');
   }
 
-  const seedSql = fs.readFileSync(path.resolve(process.cwd(), 'db/seed.sql'), 'utf8');
+  const useTest = process.argv.includes('--test');
+  const allowRemote = process.argv.includes('--allow-remote');
+  const connectionString = useTest
+    ? process.env.TEST_DATABASE_URL
+    : process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error(
+      useTest ? 'TEST_DATABASE_URL is required' : 'DATABASE_URL is required',
+    );
+  }
+
+  if (!isLocalDatabaseUrl(connectionString) && !allowRemote) {
+    throw new Error(
+      `Refusing to seed non-local database (${formatSafeDbTarget(connectionString)}) without --allow-remote.`,
+    );
+  }
+
+  const seedSql = fs.readFileSync(
+    path.resolve(process.cwd(), 'db/seed.sql'),
+    'utf8',
+  );
   const client = new pg.Client({ connectionString });
   await client.connect();
   try {
