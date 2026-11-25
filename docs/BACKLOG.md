@@ -19,7 +19,7 @@
 | **CR-06** | Thiết kế lại trình chỉnh sửa Task 2 cột (`~900px` / modal `720px`) & tách riêng tùy chọn Thông báo trên web / Email cho cả Ban & thành viên lẻ (`A1`–`A3`, `[RỦI RO CAO]`) | Nâng cấp `S04`, `S05`, `CR-03` | Done |
 | **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Done |
 | **CR-07** | Trang Quản trị Giao diện CLB (`/admin/branding`) & Khung treo ảnh Polaroid động trang Login Desktop (`A1`–`A4`, `[RỦI RO CAO]`) | Nâng cấp `S01`/`CR-02` | Done |
-| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog (chờ duyệt danh sách item) |
+| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Done (chờ duyệt merge vào main) |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Backlog |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Backlog |
@@ -386,7 +386,7 @@
 
 ---
 
-## Epic E7 — Bình luận & Cờ ẩn task (`FR-07`, `FR-24`, `FR-26`) *(Chờ chủ dự án duyệt danh sách item)*
+## Epic E7 — Bình luận & Cờ ẩn task (`FR-07`, `FR-24`, `FR-26`) *(Done trên `feat/E7-comments-and-hidden` — chờ duyệt merge vào main)*
 
 ### E7-01
 - **ID:** `E7-01`
@@ -404,7 +404,7 @@
 - **Kiểm thử bắt buộc:** Unit test policy/service & PostgreSQL integration test trên `beam_test` đủ allow/deny `comment.create`, `comment.delete_any`, `canToggleTaskHidden` (creator/admin vs assignee/`task.update_any` `403` vs non-viewer `404`), `409` version conflict, `404` task ẩn ở mọi đường bình luận, `task_events` append-only không PII.
 - **Ngoài phạm vi:** Hoàn tác (`E7A`), sửa bình luận, file đính kèm, `@mention`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Done (chờ duyệt merge vào main)`
 
 ### E7-02
 - **ID:** `E7-02`
@@ -422,7 +422,7 @@
 - **Kiểm thử bắt buộc:** Unit test `task-comments`, `task-hidden-toggle`, `task-detail-drawer`, `i18n-parity`.
 - **Ngoài phạm vi:** Tab lịch sử & nút Hoàn tác (`E7A`), sửa bình luận, đổi API.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Done (chờ duyệt merge vào main)`
 
 ### E7-03
 - **ID:** `E7-03`
@@ -436,7 +436,7 @@
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Backlog (chờ duyệt)`
+- **Trạng thái:** `Done (chờ duyệt merge vào main — 8/8 cổng CI, 276 unit / 53 tệp, 28 integration / 16 tệp, 37/37 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
 
 ---
 
