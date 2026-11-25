@@ -19,6 +19,7 @@
     "memberAdmin": "Quản trị thành viên",
     "permissions": "Phân quyền",
     "departments": "Ban",
+    "branding": "Giao diện CLB",
     "reminders": "Nhắc deadline",
     "auditLog": "Nhật ký",
     "signOut": "Đăng xuất",
@@ -99,22 +100,34 @@
     "sessionExpiredBody": "Vui lòng đăng nhập lại để tiếp tục.",
     "networkErrorTitle": "Không có kết nối",
     "networkError": "Không thể kết nối đến máy chủ. Kiểm tra mạng rồi thử lại.",
+    "collabLabel": "Make with",
     "showcase": {
-      "tag": "Bảng task của CLB",
-      "kicker": "Một chỗ cho mọi việc của CLB",
-      "headline": "Việc rõ người, rõ hạn, rõ ưu tiên.",
-      "columns": {
-        "todo": "Cần làm",
-        "doing": "Đang làm",
-        "done": "Hoàn thành"
-      },
-      "sampleTasks": {
-        "t1": "Chốt danh sách nhà tài trợ",
-        "t2": "Mượn thiết bị âm thanh",
-        "t3": "Viết kịch bản MC",
-        "t4": "Chuẩn bị slide giới thiệu CLB",
-        "t5": "Hoàn thiện poster A3",
-        "t6": "Lên ý tưởng chủ đề Open Day"
+      "showcaseLabel": "Khoảnh khắc CLB BEAM",
+      "tag": "Khoảnh khắc CLB",
+      "kicker": "Nhịp sống CLB BEAM",
+      "headline": "Gắn kết thành viên, lưu giữ từng dấu ấn.",
+      "galleryLabel": "Khung ảnh kỷ niệm CLB",
+      "galleryTrackLabel": "Dãy ảnh kỷ niệm có thể kéo ngang",
+      "prevPhoto": "Ảnh trước",
+      "nextPhoto": "Ảnh tiếp theo",
+      "frameCount": "{count} khung ảnh",
+      "samples": {
+        "kickoff": {
+          "title": "Gặp mặt đầu kỳ",
+          "caption": "Kết nối thành viên mới và lên kế hoạch học kỳ."
+        },
+        "workshop": {
+          "title": "Workshop Thiết kế",
+          "caption": "Chia sẻ kỹ năng truyền thông và sáng tạo nội dung."
+        },
+        "hackathon": {
+          "title": "Build Sprint CLB",
+          "caption": "Cùng nhau dựng sản phẩm thực tế cho sinh viên."
+        },
+        "community": {
+          "title": "Ngày hội BEAM",
+          "caption": "Lan tỏa tinh thần gắn kết và hoạt động cộng đồng."
+        }
       }
     }
   },
@@ -169,19 +182,70 @@
     "avatarHint": "PNG, JPEG hoặc WEBP · tối đa 256 KB."
   },
   "branding": {
+    "kicker": "Quản trị",
+    "pageTitle": "Giao diện CLB",
+    "loadErrorTitle": "Không tải được cấu hình giao diện",
     "modalTitle": "Logo CLB BEAM",
     "modalSubtitle": "Hiển thị trên thanh điều hướng và trang đăng nhập.",
     "logoAlt": "Logo CLB BEAM",
     "customLogoActive": "Đang dùng logo tùy chỉnh",
     "defaultBadgeActive": "Đang dùng huy hiệu BEAM mặc định",
-    "uploadHint": "PNG, JPEG hoặc WEBP · tối đa 256 KB.",
+    "uploadHint": "PNG, JPEG, WEBP hoặc SVG · tự nén <= 256 KB.",
     "uploadButton": "Tải logo mới",
     "replaceButton": "Thay logo khác",
     "uploading": "Đang cập nhật...",
     "restoreDefaultButton": "Khôi phục mặc định",
     "restoring": "Đang khôi phục...",
     "updatedToast": "Đã cập nhật logo CLB.",
-    "removedToast": "Đã khôi phục logo mặc định của CLB."
+    "removedToast": "Đã khôi phục logo mặc định của CLB.",
+    "wordmarkTitle": "Ảnh chữ thương hiệu",
+    "wordmarkSubtitle": "Thay thế chữ BEAM mặc định bên cạnh logo.",
+    "wordmarkAlt": "Chữ thương hiệu CLB BEAM",
+    "customWordmarkActive": "Đã có ảnh chữ",
+    "defaultWordmarkActive": "Mặc định",
+    "wordmarkUploadHint": "PNG, JPEG, WEBP hoặc SVG, tự nén <= 256 KB.",
+    "wordmarkUploadButton": "Tải ảnh chữ mới",
+    "wordmarkReplaceButton": "Thay ảnh chữ khác",
+    "wordmarkUpdatedToast": "Đã cập nhật ảnh chữ thương hiệu.",
+    "wordmarkRemovedToast": "Đã khôi phục chữ thương hiệu mặc định.",
+    "gallery": {
+      "sectionTitle": "Khung ảnh trang đăng nhập",
+      "sectionSubtitle": "Hiển thị dạng Polaroid bên trái trang đăng nhập trên máy tính. PNG, JPEG hoặc WEBP · tối đa 512 KB.",
+      "countBadge": "{count} / {max}",
+      "addButton": "Thêm ảnh",
+      "limitReachedHint": "Đã đạt giới hạn tối đa {max} ảnh. Hãy xóa hoặc sửa ảnh hiện có.",
+      "emptyTitle": "Chưa có ảnh nào được tải lên",
+      "emptyDescription": "Trang đăng nhập đang dùng 4 khung minh họa mặc định của BEAM. Tải ảnh đầu tiên để thay thế.",
+      "moveLeftLabel": "Chuyển \"{title}\" sang trái",
+      "moveRightLabel": "Chuyển \"{title}\" sang phải",
+      "editAction": "Sửa",
+      "deleteAction": "Xóa",
+      "createModalTitle": "Thêm ảnh Polaroid",
+      "editModalTitle": "Chỉnh sửa ảnh Polaroid",
+      "selectImageButton": "Chọn ảnh",
+      "replaceImageButton": "Đổi ảnh khác",
+      "noImageSelected": "Chưa chọn ảnh",
+      "previewAlt": "Xem trước ảnh",
+      "imageHint": "PNG, JPEG hoặc WEBP · tối đa 512 KB.",
+      "titleLabel": "Tiêu đề",
+      "titlePlaceholder": "Ví dụ: Ngày hội CLB BEAM 2026",
+      "captionLabel": "Chú thích (tùy chọn)",
+      "captionPlaceholder": "Mô tả ngắn hiển thị dưới khung ảnh...",
+      "validationTitle": "Tiêu đề cần từ 1 đến 80 ký tự.",
+      "validationCaption": "Chú thích tối đa 240 ký tự.",
+      "validationImageRequired": "Vui lòng chọn một ảnh.",
+      "createSubmit": "Thêm ảnh",
+      "editSubmit": "Lưu thay đổi",
+      "saving": "Đang lưu...",
+      "deleteModalTitle": "Xóa ảnh khỏi trang đăng nhập",
+      "deleteModalBody": "Xóa khung ảnh \"{title}\"? Thao tác này không thể hoàn tác.",
+      "deleteConfirm": "Xóa ảnh",
+      "deleting": "Đang xóa...",
+      "createdToast": "Đã thêm ảnh vào trang đăng nhập.",
+      "updatedToast": "Đã cập nhật khung ảnh.",
+      "deletedToast": "Đã xóa ảnh khỏi trang đăng nhập.",
+      "reorderedToast": "Đã cập nhật thứ tự ảnh."
+    }
   },
   "permissions": {
     "catalog": {
@@ -252,6 +316,9 @@
     "boardColumnMismatch": "Cột được chọn không thuộc board này.",
     "invalidImageFormat": "Định dạng ảnh không được hỗ trợ. Chỉ chấp nhận PNG, JPEG hoặc WEBP (không nhận SVG).",
     "imageTooLarge": "Ảnh vẫn vượt quá 256 KB sau khi nén. Vui lòng chọn ảnh nhỏ hơn.",
+    "galleryImageTooLarge": "Ảnh vẫn vượt quá 512 KB sau khi nén. Vui lòng chọn ảnh nhỏ hơn.",
+    "galleryLimitReached": "Đã đạt tối đa 12 khung ảnh trang đăng nhập.",
+    "invalidGalleryOrder": "Danh sách thứ tự ảnh không hợp lệ. Vui lòng tải lại trang.",
     "boardArchived": "Board cha của task này hiện đang bị lưu trữ. Hãy khôi phục board trước khi khôi phục task.",
     "boardHasNoColumns": "Board không còn cột nào để đặt task khôi phục. Hãy tạo ít nhất một cột trước.",
     "taskNotDeleted": "Task này hiện đang hoạt động, không nằm trong Lưu trữ.",
@@ -398,7 +465,6 @@
     "resetPasswordSubmit": "Đặt lại mật khẩu",
     "resettingPassword": "Đang đặt lại...",
     "passwordResetToast": "Đã đặt lại mật khẩu cho {name}.",
-    "clubLogoButton": "Logo CLB",
     "memberAvatarTitle": "Ảnh đại diện thành viên",
     "avatarUpdatedToast": "Đã cập nhật ảnh đại diện của {name}.",
     "avatarRemovedToast": "Đã xóa ảnh đại diện của {name}."
@@ -574,6 +640,12 @@
       "boardArchived": "Lưu trữ board",
       "brandingLogoUpdated": "Cập nhật logo CLB",
       "brandingLogoRemoved": "Khôi phục logo CLB mặc định",
+      "brandingWordmarkUpdated": "Cập nhật ảnh chữ CLB",
+      "brandingWordmarkRemoved": "Khôi phục chữ CLB mặc định",
+      "brandingGalleryCreated": "Thêm ảnh trang đăng nhập",
+      "brandingGalleryUpdated": "Cập nhật ảnh trang đăng nhập",
+      "brandingGalleryDeleted": "Xóa ảnh trang đăng nhập",
+      "brandingGalleryReordered": "Sắp xếp lại ảnh trang đăng nhập",
       "archiveMemberRestored": "Khôi phục thành viên từ Lưu trữ",
       "archiveBoardRestored": "Khôi phục board từ Lưu trữ",
       "archiveTaskPurged": "Xóa vĩnh viễn task",

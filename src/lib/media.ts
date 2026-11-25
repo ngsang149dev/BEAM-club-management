@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 export const MAX_IMAGE_BYTES = 262_144;
 export const MAX_IMAGE_DATA_URL_LENGTH = 400_000;
+export const MAX_GALLERY_IMAGE_BYTES = 524_288;
+export const MAX_GALLERY_DATA_URL_LENGTH = 760_000;
+export const MAX_LOGIN_GALLERY_ITEMS = 12;
+export const LOGIN_GALLERY_TITLE_MAX = 80;
+export const LOGIN_GALLERY_CAPTION_MAX = 240;
 
 export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/png',
@@ -20,6 +25,66 @@ export const imageUploadRequestSchema = z
   .strict();
 
 export type ImageUploadRequestInput = z.infer<typeof imageUploadRequestSchema>;
+
+export const galleryTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(LOGIN_GALLERY_TITLE_MAX);
+
+export const galleryCaptionSchema = z
+  .string()
+  .trim()
+  .max(LOGIN_GALLERY_CAPTION_MAX)
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable();
+
+export const galleryImageDataUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_GALLERY_DATA_URL_LENGTH);
+
+export const createLoginGalleryItemRequestSchema = z
+  .object({
+    title: galleryTitleSchema,
+    caption: galleryCaptionSchema.optional(),
+    dataUrl: galleryImageDataUrlSchema,
+  })
+  .strict();
+
+export type CreateLoginGalleryItemRequestInput = z.infer<
+  typeof createLoginGalleryItemRequestSchema
+>;
+
+export const updateLoginGalleryItemRequestSchema = z
+  .object({
+    title: galleryTitleSchema.optional(),
+    caption: galleryCaptionSchema.optional(),
+    dataUrl: galleryImageDataUrlSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.caption !== undefined ||
+      value.dataUrl !== undefined,
+    { message: 'At least one field must be provided' },
+  );
+
+export type UpdateLoginGalleryItemRequestInput = z.infer<
+  typeof updateLoginGalleryItemRequestSchema
+>;
+
+export const reorderLoginGalleryRequestSchema = z
+  .object({
+    itemIds: z.array(z.uuid()).min(1).max(MAX_LOGIN_GALLERY_ITEMS),
+  })
+  .strict();
+
+export type ReorderLoginGalleryRequestInput = z.infer<
+  typeof reorderLoginGalleryRequestSchema
+>;
 
 export interface AvatarTone {
   readonly bg: string;
@@ -101,4 +166,22 @@ export function toClubLogoUrl(
     return null;
   }
   return `/api/v1/branding/logo?v=${version}`;
+}
+
+export function toClubWordmarkUrl(
+  updatedAt: Date | string | null | undefined,
+): string | null {
+  const version = toEpochVersion(updatedAt);
+  if (version === null) {
+    return null;
+  }
+  return `/api/v1/branding/wordmark?v=${version}`;
+}
+
+export function toLoginGalleryImageUrl(
+  itemId: string,
+  updatedAt: Date | string,
+): string {
+  const version = toEpochVersion(updatedAt) ?? 0;
+  return `/api/v1/branding/gallery/${encodeURIComponent(itemId)}/image?v=${version}`;
 }

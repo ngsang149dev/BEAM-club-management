@@ -161,3 +161,25 @@ Trạng thái: Đã duyệt bởi chủ dự án
   3. **Nguồn sự thật SQL cho quyền xem task (`taskAccessSqlCondition`):** Tách hàm dùng chung `taskAccessSqlCondition` tại `src/server/modules/tasks/repository.ts` (export qua `src/server/modules/tasks/index.ts`) để cả `tasks/repository.ts` và `archive/repository.ts` dùng chung một biểu thức (xử lý ghi chú Minor từ QA `CR-03`).
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cập nhật cộng thêm `docs/openapi.yaml` (`GET /boards?q`, `BoardSummaryDto`, `BoardDetailDto`, mô tả `GET /tasks`), sinh lại `src/features/shared/api/schema.d.ts`; không thay đổi schema CSDL PostgreSQL.
 - **Trạng thái:** Đã duyệt bởi chủ dự án (2026-11-25).
+
+---
+
+## Quyết định `CR-07` (`[RỦI RO CAO]`) — Trang Quản trị Giao diện CLB (`/admin/branding`) & Khung treo ảnh động trang Login (`A1`–`A4`) — 2026-11-26
+
+- **Ngữ cảnh:** Nút chỉnh sửa Logo CLB đang đặt lẻ trong `/admin/members` nên Admin dễ bỏ sót, và chủ CLB muốn thay bảng Kanban minh họa ở cột trái trang `/login` (riêng trên **Desktop**, ẩn trên Mobile) thành khu **khung treo ảnh Polaroid động** có thể rê/kéo chuột ngang và bấm mũi tên xem thêm, cho phép Admin chỉnh sửa ảnh và nội dung đi kèm.
+- **Quyết định kỹ thuật (`A1`–`A4` đã chốt cùng chủ dự án):**
+  1. **CSDL cộng thêm (`db/migrations/0006_login_gallery.sql`):**
+     - Thêm bảng `login_gallery_items` (`id uuid PK`, `title` `1..80` ký tự, `caption` tùy chọn `<= 240` ký tự, `mime_type` `image/png|jpeg|webp`, `data bytea` `<= 512 KB`, `order_index >= 0`, `updated_by` `ON DELETE SET NULL`, `created_at`, `updated_at` kèm trigger).
+     - Giới hạn tối đa **12 khung ảnh** (kiểm tra với lock trong transaction, vượt giới hạn trả `409 GALLERY_LIMIT_REACHED`). Giữ nguyên kiểm tra magic bytes, chặn SVG, gắn header `X-Content-Type-Options: nosniff` + `CSP: default-src 'none'; sandbox`.
+  2. **OpenAPI cộng thêm (`docs/openapi.yaml` + `schema.d.ts`):**
+     - `GET /api/v1/branding` *(công khai)* giữ nguyên `logoUrl`/`updatedAt` và bổ sung `galleryItems` (chỉ metadata, không SELECT `bytea` ở danh sách).
+     - `GET /api/v1/branding/gallery/{id}/image` *(công khai)* trả nhị phân ảnh theo ID (`404` nếu không tồn tại).
+     - Chỉ Admin (`authorizeAdmin`, ghi `audit_logs` `branding.gallery_*` không nhị phân/PII): `POST /api/v1/branding/gallery`, `PATCH /api/v1/branding/gallery/{id}`, `DELETE /api/v1/branding/gallery/{id}`, `PUT /api/v1/branding/gallery/order`.
+  3. **Giao diện `/admin/branding` & Khung treo ảnh Polaroid Desktop (`A1`, `A3`, `A4`):**
+     - Bổ sung mục **Giao diện CLB** (`/admin/branding`, chỉ Admin) trong `ADMIN_NAV` để quản lý chung Logo CLB (`<= 256 KB`) và bộ sưu tập ảnh Login (`<= 512 KB`, tối đa 12 khung, sắp xếp/sửa/xóa), đồng thời gỡ nút `Logo CLB` lẻ khỏi `/admin/members`.
+     - Bên trái trang `/login` (ẩn dưới `900px`, chỉ hiện trên Desktop) hiển thị dãy **khung Polaroid treo nghiêng nhẹ** (tone Hồng–Trắng–Đen BEAM), tự trôi chậm mượt (tạm dừng khi rê chuột, focus, đang kéo, hoặc `prefers-reduced-motion`) + kéo chuột ngang + nút mũi tên `<`/`>`. Mặc định hiển thị **4 khung minh họa mẫu BEAM** song ngữ khi Admin chưa tải ảnh thật nào, và chuyển ngay sang ảnh thật khi có ảnh đầu tiên.
+- **Bổ sung theo phản hồi chủ dự án (2026-11-26 — Chữ ảnh `club_wordmark`, Tường gạch trưng bày & Footer `BEAM CLUB × Sang`):**
+  1. **Ảnh chữ thương hiệu tùy chỉnh (`club_wordmark` — không thêm migration CSDL):** Dùng lại bảng `club_assets` với khóa `'club_wordmark'` (`<= 256 KB`, PNG/JPEG/WEBP). Cộng thêm `wordmarkUrl` (nullable) trên `BrandingResponse` (`GET /api/v1/branding`) và thêm `/api/v1/branding/wordmark` (`GET` công khai với `nosniff` + `CSP sandbox`, `PUT`/`DELETE` chỉ Admin kèm `audit_logs` `branding.wordmark_*`). Phía client hỗ trợ chọn cả file `.svg` (như `5.svg`) và rasterize thành PNG/WEBP trong suốt trước khi gửi lên server, giúp Admin tự chỉnh chữ ảnh toàn hệ thống (`AppShell` sidebar & `/login` Desktop/Mobile) tương tự Logo CLB.
+  2. **Nền tường triển lãm & chữ ký collab (`/login`):** Tường gạch/thạch cao sáng có ánh đèn rọi & bóng khung Polaroid nổi bật trên Desktop (`>= 900px`), và chân trang `/login` hiển thị chữ ký `BEAM CLUB × Sang` gắn link Facebook chính thức (`target="_blank"`, `rel="noopener noreferrer"`).
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Migration `0006_login_gallery.sql`, `db/schema/identity.ts`, `docs/ERD.md` (22 bảng), `docs/openapi.yaml` (`src/features/shared/api/schema.d.ts`).
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`A1`–`A4` + bổ sung 2026-11-26); đã hoàn tất & đạt QA độc lập (`VERDICT: PASS`) trên nhánh `feat/CR07-branding-and-login-gallery`, chờ duyệt merge vào `main`.

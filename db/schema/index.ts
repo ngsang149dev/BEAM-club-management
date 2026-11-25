@@ -3,6 +3,7 @@ import {
   appSettings,
   clubAssets,
   loginAttempts,
+  loginGalleryItems,
   profiles,
   sessions,
 } from './identity';
@@ -34,6 +35,7 @@ export {
   comments,
   departments,
   loginAttempts,
+  loginGalleryItems,
   memberDepartments,
   notifications,
   permissionPresets,
@@ -58,6 +60,7 @@ export const schema = {
   comments,
   departments,
   loginAttempts,
+  loginGalleryItems,
   memberDepartments,
   notifications,
   permissionPresets,

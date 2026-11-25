@@ -23,28 +23,11 @@ const departmentsHookMock = vi.hoisted(() => ({
   useDepartmentsQuery: vi.fn(),
 }));
 
-const brandingHookMock = vi.hoisted(() => ({
-  useBrandingQuery: vi.fn(() => ({
-    isPending: false,
-    isError: false,
-    data: { logoUrl: null as string | null, updatedAt: null as string | null },
-  })),
-  useUpdateClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
-  useRemoveClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
-}));
-
 vi.mock('@/features/members/hooks/useMembers', async () => {
   const actual = await vi.importActual<typeof import('@/features/members/hooks/useMembers')>(
     '@/features/members/hooks/useMembers'
   );
   return { ...actual, ...membersHookMock };
-});
-
-vi.mock('@/features/branding/hooks/useBranding', async () => {
-  const actual = await vi.importActual<typeof import('@/features/branding/hooks/useBranding')>(
-    '@/features/branding/hooks/useBranding'
-  );
-  return { ...actual, ...brandingHookMock };
 });
 
 vi.mock('@/features/departments/hooks/useDepartments', () => departmentsHookMock);
@@ -55,7 +38,6 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-import { ClubLogoModal } from '@/features/branding/components/ClubLogoModal';
 import { canViewerResetMemberPassword } from '@/features/members/components/MemberAdminTable';
 import { MemberAdminView } from '@/features/members/components/MemberAdminView';
 import { MemberCreateDrawer, MemberEditDrawer } from '@/features/members/components/MemberFormDrawer';
@@ -269,7 +251,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(adminViewerHtml).toContain('Tran Club Admin');
     expect(adminViewerHtml).toContain('aria-label="Thao tác thành viên"');
     expect(adminViewerHtml).toContain('>Đặt lại mật khẩu<');
-    expect(adminViewerHtml).toContain('>Logo CLB<');
+    expect(adminViewerHtml).not.toContain('>Logo CLB<');
 
     membersHookMock.useMembersInfiniteQuery.mockReturnValueOnce({
       isPending: false,
@@ -290,7 +272,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     );
     expect(adminEnHtml).toContain('aria-label="Member actions"');
     expect(adminEnHtml).toContain('>Reset password<');
-    expect(adminEnHtml).toContain('>Club logo<');
+    expect(adminEnHtml).not.toContain('>Club logo<');
   });
 
   it('renders MemberCreateDrawer with initialPassword, generate button, first-login hint, and validates schema', () => {
@@ -511,7 +493,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     ).toEqual({ key: 'imageTooLarge' });
   });
 
-  it('renders AvatarUploadControl in Edit drawer only when permitted and renders ClubLogoModal cleanly', () => {
+  it('renders AvatarUploadControl in Edit drawer only when permitted', () => {
     const createHtml = renderWithIntl(
       <PermissionsProvider isAdmin permissions={[]}>
         <MemberCreateDrawer
@@ -560,39 +542,5 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       </PermissionsProvider>
     );
     expect(editForbiddenHtml).not.toContain('Ảnh đại diện thành viên');
-
-    brandingHookMock.useBrandingQuery.mockReturnValueOnce({
-      isPending: false,
-      isError: false,
-      data: { logoUrl: null, updatedAt: null },
-    });
-    const defaultLogoModalHtml = renderWithIntl(<ClubLogoModal onClose={vi.fn()} />);
-    expect(defaultLogoModalHtml).toContain('Logo CLB BEAM');
-    expect(defaultLogoModalHtml).toContain('Đang dùng huy hiệu BEAM mặc định');
-    expect(defaultLogoModalHtml).toContain('Tải logo mới');
-    expect(defaultLogoModalHtml).toContain('class="ui-logo is-lg"');
-
-    brandingHookMock.useBrandingQuery.mockReturnValueOnce({
-      isPending: false,
-      isError: false,
-      data: { logoUrl: '/api/v1/branding/logo?v=123', updatedAt: '2026-11-24T00:00:00Z' },
-    });
-    brandingHookMock.useUpdateClubLogoMutation.mockReturnValueOnce({
-      mutateAsync: vi.fn(),
-      reset: vi.fn(),
-      isPending: false,
-      error: new ApiClientError({
-        status: 400,
-        code: 'IMAGE_TOO_LARGE',
-        messageKey: 'errors.imageTooLarge',
-        details: {},
-      }),
-    });
-    const customLogoModalHtml = renderWithIntl(<ClubLogoModal onClose={vi.fn()} />, 'en');
-    expect(customLogoModalHtml).toContain('Custom club logo active');
-    expect(customLogoModalHtml).toContain('src="/api/v1/branding/logo?v=123"');
-    expect(customLogoModalHtml).toContain('Replace logo');
-    expect(customLogoModalHtml).toContain('Restore default');
-    expect(customLogoModalHtml).toContain('Image still exceeds 256 KB after compression');
   });
 });

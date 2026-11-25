@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   AVATAR_PALETTE,
+  LOGIN_GALLERY_CAPTION_MAX,
+  LOGIN_GALLERY_TITLE_MAX,
+  MAX_GALLERY_IMAGE_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_LOGIN_GALLERY_ITEMS,
+  createLoginGalleryItemRequestSchema,
+  galleryCaptionSchema,
+  galleryTitleSchema,
   getAvatarTone,
   getMemberInitials,
+  reorderLoginGalleryRequestSchema,
   toClubLogoUrl,
+  toClubWordmarkUrl,
+  toLoginGalleryImageUrl,
   toMemberAvatarUrl,
+  updateLoginGalleryItemRequestSchema,
 } from '@/lib/media';
 import {
   buildBinaryImageResponse,
@@ -48,8 +59,10 @@ describe('shared media helpers', () => {
     expect(parsedWebp.mimeType).toBe('image/webp');
   });
 
-  it('rejects SVG, mismatched spoofed MIME headers, and payloads larger than 256 KB', () => {
-    const svgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64');
+  it('rejects SVG, mismatched spoofed MIME headers, and payloads exceeding maxBytes', () => {
+    const svgBase64 = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    ).toString('base64');
 
     expect(() =>
       parseAndValidateImageDataUrl(`data:image/svg+xml;base64,${svgBase64}`),
@@ -65,18 +78,41 @@ describe('shared media helpers', () => {
       ),
     ).toThrow(/invalidImageFormat/);
 
-    const oversized = Buffer.concat([
+    const overDefault = Buffer.concat([
       SAMPLE_PNG_BYTES,
       Buffer.alloc(MAX_IMAGE_BYTES + 1 - SAMPLE_PNG_BYTES.length, 0x01),
     ]);
     expect(() =>
       parseAndValidateImageDataUrl(
-        `data:image/png;base64,${oversized.toString('base64')}`,
+        `data:image/png;base64,${overDefault.toString('base64')}`,
       ),
     ).toThrow(/imageTooLarge/);
+
+    const galleryValid = parseAndValidateImageDataUrl(
+      `data:image/png;base64,${overDefault.toString('base64')}`,
+      MAX_GALLERY_IMAGE_BYTES,
+    );
+    expect(galleryValid.buffer.length).toBe(MAX_IMAGE_BYTES + 1);
+
+    const overGallery = Buffer.concat([
+      SAMPLE_PNG_BYTES,
+      Buffer.alloc(MAX_GALLERY_IMAGE_BYTES + 1 - SAMPLE_PNG_BYTES.length, 0x01),
+    ]);
+    try {
+      parseAndValidateImageDataUrl(
+        `data:image/png;base64,${overGallery.toString('base64')}`,
+        MAX_GALLERY_IMAGE_BYTES,
+      );
+      expect.fail('Expected gallery payload > 512 KB to throw');
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'IMAGE_TOO_LARGE',
+        details: { maxBytes: MAX_GALLERY_IMAGE_BYTES },
+      });
+    }
   });
 
-  it('builds safe binary headers and deterministic avatar/logo helpers', () => {
+  it('builds safe binary headers and deterministic avatar/logo/gallery helpers', () => {
     const res = buildBinaryImageResponse({
       data: SAMPLE_PNG_BYTES,
       mimeType: 'image/png',
@@ -97,5 +133,62 @@ describe('shared media helpers', () => {
     expect(toMemberAvatarUrl('user-1', ts)).toBe(`/api/v1/members/user-1/avatar?v=${ts.getTime()}`);
     expect(toClubLogoUrl(null)).toBeNull();
     expect(toClubLogoUrl(ts)).toBe(`/api/v1/branding/logo?v=${ts.getTime()}`);
+    expect(toClubWordmarkUrl(null)).toBeNull();
+    expect(toClubWordmarkUrl(undefined)).toBeNull();
+    expect(toClubWordmarkUrl(ts)).toBe(`/api/v1/branding/wordmark?v=${ts.getTime()}`);
+    expect(toLoginGalleryImageUrl('item-1', ts)).toBe(
+      `/api/v1/branding/gallery/item-1/image?v=${ts.getTime()}`,
+    );
+  });
+
+  it('validates login gallery Zod schemas cleanly', () => {
+    expect(galleryTitleSchema.parse('  BEAM Workshop  ')).toBe('BEAM Workshop');
+    expect(() => galleryTitleSchema.parse('   ')).toThrow();
+    expect(() =>
+      galleryTitleSchema.parse('a'.repeat(LOGIN_GALLERY_TITLE_MAX + 1)),
+    ).toThrow();
+
+    expect(galleryCaptionSchema.parse('   ')).toBeNull();
+    expect(galleryCaptionSchema.parse(null)).toBeNull();
+    expect(galleryCaptionSchema.parse('  Spring event  ')).toBe('Spring event');
+    expect(() =>
+      galleryCaptionSchema.parse('a'.repeat(LOGIN_GALLERY_CAPTION_MAX + 1)),
+    ).toThrow();
+
+    const sampleDataUrl = `data:image/png;base64,${SAMPLE_PNG_BYTES.toString('base64')}`;
+    expect(
+      createLoginGalleryItemRequestSchema.parse({
+        title: '  Hackathon  ',
+        caption: '   ',
+        dataUrl: sampleDataUrl,
+      }),
+    ).toEqual({
+      title: 'Hackathon',
+      caption: null,
+      dataUrl: sampleDataUrl,
+    });
+    expect(() =>
+      createLoginGalleryItemRequestSchema.parse({
+        title: 'Hackathon',
+        dataUrl: sampleDataUrl,
+        extra: true,
+      }),
+    ).toThrow();
+
+    expect(() => updateLoginGalleryItemRequestSchema.parse({})).toThrow();
+    expect(updateLoginGalleryItemRequestSchema.parse({ caption: '  ' })).toEqual({
+      caption: null,
+    });
+
+    const id1 = '10000000-0000-4000-8000-000000000001';
+    expect(reorderLoginGalleryRequestSchema.parse({ itemIds: [id1] })).toEqual({
+      itemIds: [id1],
+    });
+    expect(() => reorderLoginGalleryRequestSchema.parse({ itemIds: [] })).toThrow();
+    expect(() =>
+      reorderLoginGalleryRequestSchema.parse({
+        itemIds: Array.from({ length: MAX_LOGIN_GALLERY_ITEMS + 1 }, () => id1),
+      }),
+    ).toThrow();
   });
 });

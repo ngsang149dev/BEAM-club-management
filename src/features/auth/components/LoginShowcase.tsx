@@ -2,55 +2,20 @@
 
 import { useTranslations } from 'next-intl';
 import { ClubLogo } from '@/components/ClubLogo';
-
-function PriorityBars({ level, label }: { level: 1 | 2 | 3 | 4; label: string }) {
-  return (
-    <span className={`ui-prio p${level}`}>
-      <span className="ui-prio-bars" aria-hidden="true">
-        {[1, 2, 3, 4].map((bar) => (
-          <i key={bar} className={bar <= level ? 'on' : undefined} />
-        ))}
-      </span>
-      <span>{label}</span>
-    </span>
-  );
-}
-
-function ShowcaseColumn({
-  title,
-  cards,
-}: {
-  title: string;
-  cards: readonly { title: string; level: 1 | 2 | 3 | 4; levelLabel: string; hidden?: boolean }[];
-}) {
-  return (
-    <div className="login-mini-col">
-      <div className="login-mini-head">
-        <span>{title}</span>
-        <b>{cards.length}</b>
-      </div>
-      {cards.map((card) => (
-        <div key={card.title} className={`login-mini-card${card.hidden ? ' is-hidden' : ''}`}>
-          <span className="login-mini-title">{card.title}</span>
-          <span className="login-mini-meta">
-            <PriorityBars level={card.level} label={card.levelLabel} />
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
+import { ClubWordmark } from '@/components/ClubWordmark';
+import { useOptionalBranding } from '@/features/branding/hooks/useBranding';
+import { LoginPhotoWall } from './LoginPhotoWall';
 
 export function LoginShowcase() {
-  const tApp = useTranslations('app');
   const tAuth = useTranslations('auth.showcase');
-  const tPrio = useTranslations('priority');
+  const branding = useOptionalBranding();
+
   return (
-    <section className="login-left" aria-hidden="true">
+    <section className="login-left" aria-label={tAuth('showcaseLabel')}>
       <div className="login-brand-row">
         <div className="login-word">
-          <ClubLogo alt="" />
-          <span className="login-word-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
+          <ClubLogo logoUrl={branding?.logoUrl} alt="" />
+          <ClubWordmark wordmarkUrl={branding?.wordmarkUrl} className="login-word-text" />
         </div>
         <span className="login-left-tag">{tAuth('tag')}</span>
       </div>
@@ -58,31 +23,7 @@ export function LoginShowcase() {
         <span className="login-copy-kicker">{tAuth('kicker')}</span>
         <h2>{tAuth('headline')}</h2>
       </div>
-      <div className="login-board-wrap">
-        <div className="login-mini">
-          <ShowcaseColumn
-            title={tAuth('columns.todo')}
-            cards={[
-              { title: tAuth('sampleTasks.t1'), level: 3, levelLabel: tPrio('high') },
-              { title: tAuth('sampleTasks.t2'), level: 1, levelLabel: tPrio('low') },
-            ]}
-          />
-          <ShowcaseColumn
-            title={tAuth('columns.doing')}
-            cards={[
-              { title: tAuth('sampleTasks.t3'), level: 4, levelLabel: tPrio('urgent') },
-              { title: tAuth('sampleTasks.t4'), level: 4, levelLabel: tPrio('urgent'), hidden: true },
-            ]}
-          />
-          <ShowcaseColumn
-            title={tAuth('columns.done')}
-            cards={[
-              { title: tAuth('sampleTasks.t5'), level: 3, levelLabel: tPrio('high') },
-              { title: tAuth('sampleTasks.t6'), level: 2, levelLabel: tPrio('medium') },
-            ]}
-          />
-        </div>
-      </div>
+      <LoginPhotoWall items={branding?.galleryItems ?? []} />
     </section>
   );
 }

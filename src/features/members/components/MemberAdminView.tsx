@@ -1,10 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
-import { ClubLogoModal } from '@/features/branding/components/ClubLogoModal';
 import type { DepartmentDto } from '@/features/departments/hooks/useDepartments';
 import { isApiClientError } from '@/features/shared/api/client';
 import { Can, usePermissions } from '@/features/shared/permissions/can';
@@ -186,41 +184,30 @@ function MemberAdminListArea({ canView, canViewDetail, state }: MemberAdminListA
 }
 
 function MemberAdminTopActions({
-  isAdmin,
   canView,
-  onOpenLogo,
   onOpenCreate,
 }: {
-  isAdmin: boolean;
   canView: boolean;
-  onOpenLogo: () => void;
   onOpenCreate: () => void;
 }) {
   const t = useTranslations('memberAdmin');
-  if (!isAdmin && canView) {
+  if (canView) {
     return null;
   }
 
   return (
     <div className="directory-header-row is-end">
       <div className="admin-header-actions">
-        <Can adminOnly>
-          <button type="button" className="ui-btn secondary" onClick={onOpenLogo}>
-            {t('clubLogoButton')}
-          </button>
+        <Can permission="member.create">
+          <button type="button" className="ui-btn primary" onClick={onOpenCreate}>{t('addMember')}</button>
         </Can>
-        {!canView ? (
-          <Can permission="member.create">
-            <button type="button" className="ui-btn primary" onClick={onOpenCreate}>{t('addMember')}</button>
-          </Can>
-        ) : null}
       </div>
     </div>
   );
 }
 
 export function MemberAdminView() {
-  const { isAdmin, can, canAny } = usePermissions();
+  const { can, canAny } = usePermissions();
   const allowed = canAny(['member.create', 'member.update', 'member.deactivate']);
   const canView = can('member.view');
   const canViewDetail = can('member.view_detail');
@@ -228,7 +215,6 @@ export function MemberAdminView() {
   const tCommon = useTranslations('common');
   const tErr = useTranslations('errors');
   const state = useMemberAdminState(allowed, allowed && canView);
-  const [logoModalOpen, setLogoModalOpen] = useState(false);
 
   if (!allowed) {
     return (
@@ -250,12 +236,7 @@ export function MemberAdminView() {
 
   return (
     <div className="admin-page-stack">
-      <MemberAdminTopActions
-        isAdmin={isAdmin}
-        canView={canView}
-        onOpenLogo={() => setLogoModalOpen(true)}
-        onOpenCreate={openCreate}
-      />
+      <MemberAdminTopActions canView={canView} onOpenCreate={openCreate} />
       {state.toastMessage ? <div className="ui-banner" role="status"><div className="ui-banner-body"><span className="ui-banner-text">{state.toastMessage}</span></div></div> : null}
       {canView ? (
         <MembersToolbar
@@ -269,7 +250,6 @@ export function MemberAdminView() {
       ) : null}
       <MemberAdminListArea canView={canView} canViewDetail={canViewDetail} state={state} />
       <MemberAdminModalHost state={state} canViewDetail={canViewDetail} departments={departments} />
-      {isAdmin && logoModalOpen ? <ClubLogoModal onClose={() => setLogoModalOpen(false)} /> : null}
     </div>
   );
 }

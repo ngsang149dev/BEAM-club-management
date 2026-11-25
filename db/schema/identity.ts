@@ -4,6 +4,7 @@ import {
   check,
   customType,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -149,5 +150,49 @@ export const clubAssets = pgTable(
       'club_assets_data_size_chk',
       sql`octet_length(${table.data}) BETWEEN 1 AND 262144`,
     ),
+  ],
+);
+
+export const loginGalleryItems = pgTable(
+  'login_gallery_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    title: text('title').notNull(),
+    caption: text('caption'),
+    mimeType: text('mime_type').notNull(),
+    data: bytea('data').notNull(),
+    orderIndex: integer('order_index').notNull(),
+    updatedBy: uuid('updated_by').references(() => profiles.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      'login_gallery_items_title_chk',
+      sql`char_length(btrim(${table.title})) BETWEEN 1 AND 80`,
+    ),
+    check(
+      'login_gallery_items_caption_chk',
+      sql`${table.caption} IS NULL OR char_length(${table.caption}) <= 240`,
+    ),
+    check(
+      'login_gallery_items_mime_type_chk',
+      sql`${table.mimeType} IN ('image/png', 'image/jpeg', 'image/webp')`,
+    ),
+    check(
+      'login_gallery_items_data_size_chk',
+      sql`octet_length(${table.data}) BETWEEN 1 AND 524288`,
+    ),
+    check(
+      'login_gallery_items_order_index_chk',
+      sql`${table.orderIndex} >= 0`,
+    ),
+    index('idx_login_gallery_items_order').on(table.orderIndex, table.id),
   ],
 );

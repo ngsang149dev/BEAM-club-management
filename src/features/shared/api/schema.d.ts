@@ -140,6 +140,323 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/branding/wordmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch the custom club wordmark binary asset
+         * @description Returns raw PNG/JPEG/WEBP image bytes (`X-Content-Type-Options: nosniff`) or `404` when using the default wordmark text.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Binary wordmark image */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        /**
+         * Upload or replace the custom club wordmark (Admin-only)
+         * @description Requires `is_admin=true`. Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`), rejects SVG/unsupported formats and payloads over `262144` bytes, stores `'club_wordmark'` in PostgreSQL, and writes `audit_logs` (`branding.wordmark_updated`).
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImageUploadRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated club branding metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandingResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        post?: never;
+        /**
+         * Remove custom club wordmark and restore default text (Admin-only)
+         * @description Requires `is_admin=true`. Removes `'club_wordmark'` from `club_assets` and records `audit_logs` (`branding.wordmark_removed`).
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reset club branding metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandingResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/branding/gallery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a login gallery item (Admin-only)
+         * @description Requires `is_admin=true`. Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`), rejects SVG/unsupported formats and payloads over `524288` bytes, enforces max `12` gallery items (`409 GALLERY_LIMIT_REACHED`), stores in PostgreSQL, and writes `audit_logs` (`branding.gallery_item_created`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateLoginGalleryItemRequest"];
+                };
+            };
+            responses: {
+                /** @description Created login gallery item metadata */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LoginGalleryItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/branding/gallery/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder login gallery items (Admin-only)
+         * @description Requires `is_admin=true`. Replaces `order_index` across all current gallery items atomically (rejects duplicate or mismatched IDs with `400 INVALID_GALLERY_ORDER`) and writes `audit_logs` (`branding.gallery_reordered`).
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReorderLoginGalleryRequest"];
+                };
+            };
+            responses: {
+                /** @description Reordered login gallery items metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LoginGalleryListResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/branding/gallery/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a login gallery item (Admin-only)
+         * @description Requires `is_admin=true`. Deletes the item, re-normalizes remaining `order_index` values (`0..n-1`), and writes `audit_logs` (`branding.gallery_item_deleted`).
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted login gallery item confirmation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeleteLoginGalleryItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /**
+         * Update a login gallery item (Admin-only)
+         * @description Requires `is_admin=true`. Updates `title`, `caption`, and/or replaces image (`<= 524288` bytes PNG/JPEG/WEBP) and writes `audit_logs` (`branding.gallery_item_updated`).
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateLoginGalleryItemRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated login gallery item metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LoginGalleryItemResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
+    "/branding/gallery/{id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Fetch login gallery item binary image
+         * @description Public endpoint returning raw PNG/JPEG/WEBP image bytes with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Binary login gallery image */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -3217,8 +3534,44 @@ export interface components {
         };
         BrandingResponse: {
             logoUrl: string | null;
+            wordmarkUrl: string | null;
             /** Format: date-time */
             updatedAt: string | null;
+            galleryItems: components["schemas"]["LoginGalleryItemDto"][];
+        };
+        LoginGalleryItemDto: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            caption: string | null;
+            imageUrl: string;
+            orderIndex: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateLoginGalleryItemRequest: {
+            title: string;
+            caption?: string | null;
+            dataUrl: string;
+        };
+        UpdateLoginGalleryItemRequest: {
+            title?: string;
+            caption?: string | null;
+            dataUrl?: string;
+        };
+        ReorderLoginGalleryRequest: {
+            itemIds: string[];
+        };
+        LoginGalleryItemResponse: {
+            item: components["schemas"]["LoginGalleryItemDto"];
+        };
+        LoginGalleryListResponse: {
+            items: components["schemas"]["LoginGalleryItemDto"][];
+        };
+        DeleteLoginGalleryItemResponse: {
+            deleted: boolean;
+            /** Format: uuid */
+            id: string;
         };
         PermissionDto: {
             code: components["schemas"]["PermissionCode"];

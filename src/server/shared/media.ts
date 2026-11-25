@@ -52,26 +52,35 @@ export function detectImageMimeFromMagicBytes(
   return null;
 }
 
-export function parseAndValidateImageDataUrl(dataUrl: string): ParsedImageAsset {
+function extractBase64ImageParts(dataUrl: string): {
+  readonly claimedMime: AllowedImageMimeType;
+  readonly base64Body: string;
+} {
   const match = DATA_URL_PATTERN.exec(dataUrl.trim());
   if (!match) {
     throw badRequest('errors.invalidImageFormat', {}, 'INVALID_IMAGE_FORMAT');
   }
-
   const claimedMime = (match[1] ?? '').toLowerCase();
   const base64Body = (match[2] ?? '').replace(/\s+/g, '');
   if (!isAllowedImageMimeType(claimedMime) || base64Body.length === 0) {
     throw badRequest('errors.invalidImageFormat', {}, 'INVALID_IMAGE_FORMAT');
   }
+  return { claimedMime, base64Body };
+}
 
+export function parseAndValidateImageDataUrl(
+  dataUrl: string,
+  maxBytes: number = MAX_IMAGE_BYTES,
+): ParsedImageAsset {
+  const { claimedMime, base64Body } = extractBase64ImageParts(dataUrl);
   const buffer = Buffer.from(base64Body, 'base64');
   if (buffer.length === 0) {
     throw badRequest('errors.invalidImageFormat', {}, 'INVALID_IMAGE_FORMAT');
   }
-  if (buffer.length > MAX_IMAGE_BYTES) {
+  if (buffer.length > maxBytes) {
     throw badRequest(
       'errors.imageTooLarge',
-      { maxBytes: MAX_IMAGE_BYTES },
+      { maxBytes },
       'IMAGE_TOO_LARGE',
     );
   }
