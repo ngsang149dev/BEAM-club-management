@@ -386,7 +386,7 @@
 
 ---
 
-## Epic E7 — Bình luận & Cờ ẩn task (`FR-07`, `FR-24`, `FR-26`) *(Done trên `feat/E7-comments-and-hidden` — chờ duyệt merge vào main)*
+## Epic E7 — Bình luận & Cờ ẩn task (`FR-07`, `FR-24`, `FR-26`) *(Done — đã duyệt & merge vào main)*
 
 ### E7-01
 - **ID:** `E7-01`
@@ -404,7 +404,7 @@
 - **Kiểm thử bắt buộc:** Unit test policy/service & PostgreSQL integration test trên `beam_test` đủ allow/deny `comment.create`, `comment.delete_any`, `canToggleTaskHidden` (creator/admin vs assignee/`task.update_any` `403` vs non-viewer `404`), `409` version conflict, `404` task ẩn ở mọi đường bình luận, `task_events` append-only không PII.
 - **Ngoài phạm vi:** Hoàn tác (`E7A`), sửa bình luận, file đính kèm, `@mention`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ duyệt merge vào main)`
+- **Trạng thái:** `Done`
 
 ### E7-02
 - **ID:** `E7-02`
@@ -415,28 +415,28 @@
 - **Mục tài liệu cần đọc:** `wireframes/s05-task-detail.html` (`s04-board.html`), `docs/openapi.yaml`, `HANDOFF` (`FR-07`, `FR-24`, `FR-26`, `S05`)
 - **Phạm vi file được sửa:** `src/features/comments/*`, `src/features/tasks/*`, `src/features/boards/components/BoardTaskCard.tsx`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
 - **Tiêu chí chấp nhận:**
-  1. `S05` (`TaskDetailDrawer`): khu vực **Bình luận** dùng TanStack Query (`useTaskCommentsInfiniteQuery`, `useCreateCommentMutation`, `useDeleteCommentMutation`), hiển thị danh sách bình luận (tên tác giả + avatar + nhãn `(đã rời)` nếu inactive + thời gian `Asia/Ho_Chi_Minh`, tải thêm cursor, 0 MSSV/email); ô nhập chỉ hiện khi có `comment.create` (`1..4000` ký tự); nút xóa chỉ hiện cho tác giả comment / `comment.delete_any` / admin kèm xác nhận nhẹ; cập nhật tức thì `commentCount` trên `S04`/`S05`.
+  1. `S05` (`TaskDetailDrawer`): tách tab **`Chi tiết` | `Bình luận (N)`**, bình luận mới nhất ở trên (`created_at DESC`), ghim ô nhập ở đầu (gửi nhanh `Ctrl/Cmd+Enter`), khung cuộn độc lập tải gọn `10` bình luận/lần kèm `"Xem thêm bình luận cũ hơn"` & thu gọn bình luận dài (`Xem thêm`/`Thu gọn`); hiển thị tác giả + avatar + `(đã rời)` nếu inactive + giờ `Asia/Ho_Chi_Minh`, 0 MSSV/email; composer theo `comment.create`; xóa inline theo tác giả/`comment.delete_any`/admin; cập nhật tức thì `commentCount`.
   2. `S05` (`TaskDetailDrawer`): công tắc **Cờ ẩn task** (`PUT /tasks/{id}/hidden`) chỉ hiện cho người tạo task hoặc admin (kèm cảnh báo khi bật ẩn mà chưa giao ai theo `WQ-27`, xử lý `409` version conflict); đồng bộ cache board/task/my-tasks/archive.
   3. `S04` (`CreateTaskModal` & `BoardTaskCard`): đảm bảo tùy chọn tạo task ẩn + badge ẩn rõ ràng cho người được xem; giữ đồng nhất bỏ cảnh báo quá hạn cột `Done`.
   4. 100% chuỗi UI qua `messages/{vi,en}.json`.
-- **Kiểm thử bắt buộc:** Unit test `task-comments`, `task-hidden-toggle`, `task-detail-drawer`, `i18n-parity`.
+- **Kiểm thử bắt buộc:** Unit test `task-comments`, `task-hidden-toggle`, `board-detail`, `i18n-parity`.
 - **Ngoài phạm vi:** Tab lịch sử & nút Hoàn tác (`E7A`), sửa bình luận, đổi API.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Done (chờ duyệt merge vào main)`
+- **Trạng thái:** `Done`
 
 ### E7-03
 - **ID:** `E7-03`
 - **Tiêu đề:** Kiểm thử E2E & kiểm định kiến trúc/bảo mật độc lập Epic `E7` `[RỦI RO CAO]`
-- **Sub-agent phụ trách:** `qa-engineer` (ngữ cảnh sạch)
+- **Sub-agent phụ trách:** `qa-engineer` + `qa-reviewer` (ngữ cảnh sạch)
 - **Liên quan:** `FR-07`, `FR-24`, `FR-26`, `AC-04`, `AC-05`, `AC-15`, `WQ-27`, `AGENTS.md` (§6A.8, §7, §8)
 - **Phụ thuộc:** `E7-01`, `E7-02`
 - **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `HANDOFF` (`FR-07`, `FR-24`, `FR-26`, `AC-15`), `docs/openapi.yaml`
 - **Phạm vi file được sửa:** `tests/e2e/comments-hidden-tasks.spec.ts` (và bổ sung test trong `tests/*` nếu cần phủ AC)
-- **Tiêu chí chấp nhận:** Chrome E2E xác minh tạo/xem/xóa bình luận theo quyền (`comment.create`, tác giả, `comment.delete_any`, non-holder `403`), bật/tắt cờ ẩn (creator/admin được, assignee/`task.update_any` `403`, non-viewer `404` trên board/search/count/task detail/comments/delete comment), ghi `task_events` (`task.hidden_changed`, `comment.added`, `comment.deleted`) không PII; đạt đủ 8 cổng CI và audit §6A.8/§7/§8 `VERDICT: PASS`.
+- **Tiêu chí chấp nhận:** Chrome E2E xác minh tạo/xem/xóa bình luận trong tab Bình luận (mới nhất trước, phân trang 10/lần, thu gọn bình luận dài) theo quyền (`comment.create`, tác giả, `comment.delete_any`, non-holder `403`), bật/tắt cờ ẩn (creator/admin được, assignee/`task.update_any` `403`, non-viewer `404` trên board/search/count/task detail/comments/delete comment), ghi `task_events` (`task.hidden_changed`, `comment.added`, `comment.deleted`) không PII; đạt đủ 8 cổng CI và audit §6A.8/§7/§8 `VERDICT: PASS`.
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ duyệt merge vào main — 8/8 cổng CI, 276 unit / 53 tệp, 28 integration / 16 tệp, 37/37 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
+- **Trạng thái:** `Done (8/8 cổng CI, 277 unit / 53 tệp, 28 integration / 16 tệp, 38/38 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
 
 ---
 
@@ -475,3 +475,56 @@
 - **Tiêu chí chấp nhận:** Đủ 8 cổng CI + Chrome E2E xác minh Admin CRUD/reorder/giới hạn 12, `.svg` wordmark upload -> raster an toàn + hiển thị toàn site, non-admin `403`, `/login` Desktop kéo ngang/mũi tên/4 khung mẫu & Mobile ẩn, footer `BEAM CLUB × Sang`, `audit_logs` không nhị phân/PII, và audit `6A.8`/`§7`/`§8` đạt `VERDICT: PASS`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
 - **Trạng thái:** `Done (8/8 cổng CI, 266 unit / 50 tệp, 27 integration / 15 tệp, 35/35 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
+
+---
+
+## Epic E7A — Lịch sử hoạt động `task_events`, Hoàn tác (Undo) & Thùng rác theo Board (`FR-60`, `FR-61`, `FR-62`) *(Chờ chủ dự án duyệt danh sách item)*
+
+### E7A-01
+- **ID:** `E7A-01`
+- **Tiêu đề:** Backend `GET /tasks/{id}/events`, `POST /tasks/{id}/events/{eventId}/revert` (Command + Registry) & `GET /boards/{id}/trash` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `FR-60`, `FR-61`, `FR-62`, `AC-16`, `AC-17`, `AC-18`, `AC-19`, `AC-20`, `AC-22`, `WQ-17`, `WQ-33`
+- **Phụ thuộc:** `E7` (`Done`, merged `main`); schema `task_events` / `tasks` & `docs/openapi.yaml` đã khóa (0 migration, 0 thay đổi OpenAPI)
+- **Mục tài liệu cần đọc:** `HANDOFF` (mục 8.7–8.8 `FR-60`–`FR-62`, `AC-16`–`AC-20`, `AC-22`), `docs/openapi.yaml` (`/tasks/{id}/events`, `/tasks/{id}/events/{eventId}/revert`, `/boards/{id}/trash`), `AGENTS.md` (§6A.4, §7)
+- **Phạm vi file được sửa:** `src/lib/task-events.ts` (hoặc `src/lib/tasks.ts`), `src/server/modules/task-events/*` (hoặc `src/server/modules/tasks/*`), `src/server/modules/boards/*`, `src/server/shared/composition*.ts`, `src/app/api/v1/tasks/[id]/events/route.ts`, `src/app/api/v1/tasks/[id]/events/[eventId]/revert/route.ts`, `src/app/api/v1/boards/[id]/trash/route.ts`, `tests/unit/*`, `tests/integration/*`
+- **Tiêu chí chấp nhận:**
+  1. `GET /api/v1/tasks/{id}/events`: trả lịch sử mới nhất trước với phân trang cursor, áp dụng `taskVisibilityPolicy` (`404` nếu task ẩn không được xem theo `AC-20`, hỗ trợ xem lịch sử khi task đã xóa mềm nếu caller có `task.delete`/admin hoặc mở theo quyền xem task chưa purge), `actor` qua `MemberPublicSummary` (0 MSSV/email), `changes` chỉ chứa ID/giá trị miền, gắn cờ `revertable` chính xác theo loại sự kiện.
+  2. `POST /api/v1/tasks/{id}/events/{eventId}/revert`: cài mẫu **Command (`apply`/`invert`) + Registry** cho mọi sự kiện hoàn tác được (`task.updated`, `task.moved`, `task.assignees_changed` [cả thành viên & ban], `task.hidden_changed`, `task.deleted`, `task.restored`); `task.created`, `comment.added`, `comment.deleted` trả `400`; kiểm tra `taskVisibilityPolicy` (`404` trước `403`) rồi kiểm tra quyền khớp thao tác gốc (`AC-19` `403` nếu thiếu); đối chiếu giá trị hiện tại với `to` của sự kiện (`409` kèm `details.conflictingFields` nếu đã thay đổi, trừ khi `force=true` `AC-18`); ghi sự kiện bù mới (`reverts_event_id`, `forced`) trong cùng transaction (`AC-17`, `AC-22`).
+  3. `GET /api/v1/boards/{id}/trash`: yêu cầu `task.delete` hoặc admin (`403` nếu thiếu), liệt kê task đã xóa mềm chưa purge của board theo cursor, lọc bỏ task ẩn mà người gọi không có quyền xem (`WQ-17`).
+- **Kiểm thử bắt buộc:** Unit test Command Registry & service (đủ từng loại sự kiện, `400`, `403`, `404`, `409` conflict + `force=true`, 0 PII) & integration test PostgreSQL trên `beam_test` (cả append-only trigger `task_events` `AC-22` và `/boards/{id}/trash` `WQ-17`).
+- **Ngoài phạm vi:** Sửa/xóa `task_events` (bị khóa), xóa vĩnh viễn ngoài Archive (`CR-04`), sửa `docs/openapi.yaml`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Chờ chủ dự án duyệt`
+
+### E7A-02
+- **ID:** `E7A-02`
+- **Tiêu đề:** Tab **`Lịch sử`** trong Drawer Task `S05`, Toast **Hoàn tác `10s`** (`S04`/`S05`) & Lối Thùng rác Board (`S04`)
+- **Sub-agent phụ trách:** `frontend`
+- **Liên quan:** `FR-60`, `FR-61`, `FR-62`, `AC-16`, `AC-17`, `AC-18`, `WQ-17`, `S04`, `S05`
+- **Phụ thuộc:** `E7` (`Done`), `docs/openapi.yaml` đã khóa (có thể chạy song song `E7A-01` sau khi duyệt do không trùng vùng file)
+- **Mục tài liệu cần đọc:** `HANDOFF` (mục 8.8 `FR-60`–`FR-62`, `S04`, `S05`), `wireframes/s05-task.html` (trạng thái Tab Lịch sử), `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `src/features/tasks/*`, `src/features/boards/*`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:**
+  1. `S05` (`TaskDetailDrawer`): thêm tab **`Lịch sử`** trên thanh tab sẵn có, tải phân trang cursor mới nhất trước (`GET /tasks/{id}/events`), hiển thị câu mô tả song ngữ dễ đọc theo loại sự kiện (tên cột, độ ưu tiên, hạn, assignee/ban, cờ ẩn, xóa/khôi phục — 0 PII, `(đã rời)`, giờ `Asia/Ho_Chi_Minh`), hiện nút **`Khôi phục giá trị này`** cho sự kiện `revertable` nếu đủ quyền và hộp thoại xác nhận **`force`** khi nhận `409` kèm danh sách trường xung đột.
+  2. **Toast Hoàn tác (`10s`):** sau các thao tác có `eventId` trên `S04`/`S05` (kéo/chuyển cột, sửa chi tiết, đổi giao việc, bật/tắt ẩn, xóa mềm), hiện `sonner` toast kèm nút **`Hoàn tác`** (`duration` theo cấu hình `10s`) gọi `POST /tasks/{id}/events/{eventId}/revert` và đồng bộ lại UI ngay lập tức.
+  3. **Thùng rác Board (`S04`):** bổ sung lối xem/khôi phục nhanh task đã xóa trong board (`GET /boards/{id}/trash`) cho người có `task.delete`/admin, không lộ task ẩn không được xem (`WQ-17`).
+  4. 100% chuỗi UI qua `messages/{vi,en}.json`.
+- **Kiểm thử bắt buộc:** Unit test tab Lịch sử, formatter loại sự kiện `vi`/`en`, hộp thoại xung đột `409`, toast Hoàn tác, kiểm tra `i18n-parity`.
+- **Ngoài phạm vi:** Đổi API, sửa mã backend `src/server/*`.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Chờ chủ dự án duyệt`
+
+### E7A-03
+- **ID:** `E7A-03`
+- **Tiêu đề:** Kiểm thử E2E Chrome & kiểm định kiến trúc/bảo mật độc lập Epic `E7A` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-engineer` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-60`, `FR-61`, `FR-62`, `AC-16`, `AC-17`, `AC-18`, `AC-19`, `AC-20`, `AC-22`, `WQ-17`, `AGENTS.md` (§6A.8, §7, §8)
+- **Phụ thuộc:** `E7A-01`, `E7A-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `HANDOFF` (`FR-60`–`FR-62`, `AC-16`–`AC-20`, `AC-22`), `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `tests/e2e/task-history-undo.spec.ts` (và bổ sung test trong `tests/*` nếu cần phủ AC)
+- **Tiêu chí chấp nhận:** Chrome E2E xác minh toàn bộ vòng đời lịch sử & hoàn tác (`AC-16` ghi event khi kéo cột/sửa, `AC-17` bấm toast Hoàn tác `10s` tạo sự kiện bù mới, `AC-18` sửa đè gây `409` `conflictingFields` và xác nhận `force=true`, `AC-19` thiếu quyền gốc bị `403`, `AC-20` task ẩn trả `404` ở `/events` & `/revert`, `AC-22` append-only `task_events`, `WQ-17` `/boards/{id}/trash` che task ẩn, 0 PII); vượt 8/8 cổng CI và audit §6A.8/§7/§8 `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
+- **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Chờ chủ dự án duyệt`
