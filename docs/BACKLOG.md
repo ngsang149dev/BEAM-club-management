@@ -17,7 +17,7 @@
 | **CR-03** | Giao task cho Ban (`task_departments`) + Email & Thông báo chuông (`A2`, `A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-20`–`23` | Done |
 | **CR-05** | Tinh gọn UX: bỏ chọn ngôn ngữ ở Hồ sơ, ẩn thành viên đã rời ở Phân quyền, gọn lời giải thích tự nhiên, làm đẹp ô `select` | Hoàn thiện UX & UI | Done |
 | **CR-06** | Thiết kế lại trình chỉnh sửa Task 2 cột (`~900px` / modal `720px`) & tách riêng tùy chọn Thông báo trên web / Email cho cả Ban & thành viên lẻ (`A1`–`A3`, `[RỦI RO CAO]`) | Nâng cấp `S04`, `S05`, `CR-03` | Done |
-| **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Ready (đã duyệt đặc tả) |
+| **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Done (chờ duyệt merge vào main) |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Backlog |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
@@ -332,7 +332,7 @@
 
 ---
 
-## Epic E6 — Lọc, tìm kiếm & sắp xếp board/task nâng cao; thay thế kéo thả *(Ready — đã chốt đặc tả từ máy Mac)*
+## Epic E6 — Lọc, tìm kiếm & sắp xếp board/task nâng cao; thay thế kéo thả *(Done trên `feat/E6-board-filters-and-move` — chờ duyệt merge vào main)*
 
 ### E6-01
 - **ID:** `E6-01`
@@ -349,7 +349,7 @@
 - **Kiểm thử bắt buộc:** Unit test policy/service & integration test trên `beam_test` cho `GET /boards?q=`, đếm `visibleTaskCount`/`overdueTaskCount` theo quyền xem & cột `Done`, và `GET /tasks?dueStatus=overdue` + filter/sort kết hợp; `openapi:generate` + `openapi:check`.
 - **Ngoài phạm vi:** Full-text search ngoài `q`, nhãn (label), lưu preset bộ lọc trên DB.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done (chờ duyệt merge vào main)`
 
 ### E6-02
 - **ID:** `E6-02`
@@ -367,7 +367,7 @@
 - **Kiểm thử bắt buộc:** Unit test `board-filters`, `boards-view`, `board-detail`, `i18n-parity`.
 - **Ngoài phạm vi:** Đổi hợp đồng API hoặc sửa file ngoài phạm vi `frontend`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done (chờ duyệt merge vào main)`
 
 ### E6-03
 - **ID:** `E6-03`
@@ -381,4 +381,4 @@
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready`
+- **Trạng thái:** `Done (chờ duyệt merge vào main — 8/8 cổng CI, 253 unit / 48 tệp, 24 integration / 15 tệp, 31/31 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
