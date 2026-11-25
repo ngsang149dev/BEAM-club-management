@@ -49,7 +49,7 @@ Epic hiện tại: Sẵn sàng triển khai **`E6`** (`E6-01` -> `E6-02` -> `E6-
 - **Đồng bộ đặc tả Epic `E6` từ máy Mac (`1f5ecb69`):** Đã gộp nguyên vẹn quyết định OpenAPI `E6` vào [DECISIONS.md](DECISIONS.md) và danh sách item `E6-01..E6-03` vào [BACKLOG.md](BACKLOG.md) để cả hai máy dùng chung một nguồn sự thật.
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Không có vướng mắc chặn tiến độ. (Đề xuất `/learn` ở phiên trước giữ nguyên chờ chủ dự án phản hồi khi thuận tiện.)
+- Không có vướng mắc chặn tiến độ.
 
 ## Việc tiếp theo
 - Triển khai mã **`E6-01` -> `E6-02` -> `E6-03`** trên nhánh `feat/E6-board-filters-and-move` -> nối tiếp **`E7–E9`**.
