@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
+import { TaskCommentsSection } from '@/features/comments/components/TaskCommentsSection';
 import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { describeTaskError } from '../error-mapping';
@@ -14,6 +15,7 @@ import {
   TaskDeleteSection,
   TaskEditFormSection,
 } from './TaskDrawerSections';
+import { canToggleTaskHidden, TaskHiddenSection } from './TaskHiddenSection';
 import {
   MemberInlineName,
   TaskAssigneeChips,
@@ -66,7 +68,8 @@ function TaskDrawerHiddenBanner({ isHidden }: { isHidden: boolean }) {
   return (
     <div className="ui-banner is-warn" role="status">
       <div className="ui-banner-body">
-        <span className="ui-banner-text">{tTasks('hiddenBadge')}</span>
+        <span className="ui-banner-title">{tTasks('hiddenBannerTitle')}</span>
+        <span className="ui-banner-text">{tTasks('hiddenBannerBody')}</span>
       </div>
     </div>
   );
@@ -85,15 +88,17 @@ function TaskDrawerLoaded({
   const tTasks = useTranslations('tasks');
   const { isAdmin, can } = usePermissions();
   const meQuery = useMeQuery(true);
+  const currentUserId = meQuery.data?.profile.id;
   const currentDepartmentIds = meQuery.data?.profile.departments?.map((dept) => dept.id) ?? [];
   const canEdit = resolveCanEditTask({
     isAdmin,
     can,
-    currentUserId: meQuery.data?.profile.id,
+    currentUserId,
     currentDepartmentIds,
     assignees: task.assignees,
     assignedDepartments: task.assignedDepartments,
   });
+  const canToggleHidden = canToggleTaskHidden({ isAdmin, creatorId: task.creator.id, currentUserId });
 
   return (
     <div className="ui-drawer-body">
@@ -110,6 +115,7 @@ function TaskDrawerLoaded({
             <div><span>{tTasks('createdAtLabel')}</span><b className="mono">{formatTaskDateTime(task.createdAt, locale)}</b></div>
           </div>
           {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
+          <TaskCommentsSection taskId={task.id} boardId={task.boardId} commentCount={task.commentCount} />
         </div>
         <div className="task-drawer-col-side">
           <section className="task-assigned-summary">
@@ -123,6 +129,7 @@ function TaskDrawerLoaded({
             </div>
           </section>
           {can('task.assign') ? <TaskAssigneesSection task={task} onReload={onReload} /> : null}
+          {canToggleHidden ? <TaskHiddenSection task={task} onReload={onReload} /> : null}
           {can('task.delete') ? <TaskDeleteSection task={task} onDeleted={onClose} /> : null}
         </div>
       </div>

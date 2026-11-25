@@ -94,6 +94,17 @@ export type ReplaceTaskAssigneesRequestInput = z.infer<
   typeof replaceTaskAssigneesRequestSchema
 >;
 
+export const updateTaskHiddenRequestSchema = z
+  .object({
+    isHidden: z.boolean(),
+    version: z.number().int().min(1).optional(),
+  })
+  .strict();
+
+export type UpdateTaskHiddenRequestInput = z.infer<
+  typeof updateTaskHiddenRequestSchema
+>;
+
 export interface TaskNotificationChannels {
   readonly notifyInApp: boolean;
   readonly notifyEmail: boolean;

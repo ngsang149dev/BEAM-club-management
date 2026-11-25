@@ -1,9 +1,10 @@
-import { conflict, notFound } from '@/lib/errors';
+import { conflict, forbidden, notFound } from '@/lib/errors';
 import {
   dedupeSortedUuids,
   type MoveTaskRequestInput,
   type ReplaceTaskAssigneesRequestInput,
   type TaskSortBy,
+  type UpdateTaskHiddenRequestInput,
   type UpdateTaskRequestInput,
 } from '@/lib/tasks';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
@@ -12,6 +13,7 @@ import {
   assertCanEditTask,
   assertCanViewTask,
   buildTaskUpdateChanges,
+  canToggleTaskHidden,
   hasTaskChanges,
   type TaskVisibilitySubject,
 } from './policy';
@@ -174,6 +176,44 @@ export async function runTaskMoveInTx(params: {
       destinationColumnId: params.input.columnId,
       beforeId: params.input.beforeId,
       afterId: params.input.afterId,
+      expectedVersion: params.input.version,
+      now: params.now,
+    },
+    params.tx,
+  );
+}
+
+export async function runTaskHiddenInTx(params: {
+  readonly tasksRepo: TasksRepository;
+  readonly actor: AuthActor;
+  readonly taskId: string;
+  readonly input: UpdateTaskHiddenRequestInput;
+  readonly now: Date;
+  readonly tx: TransactionContext;
+}): Promise<TaskOptionalEventMutationResult> {
+  const target = await params.tasksRepo.findActiveById(params.taskId, params.tx);
+  if (!target) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+  assertCanViewTask(params.actor, toTaskVisibilitySubject(target));
+  if (!canToggleTaskHidden(params.actor, target)) {
+    throw forbidden('errors.forbidden', { requiredRole: 'creator_or_admin' });
+  }
+  if (params.input.version !== undefined && target.version !== params.input.version) {
+    throw conflict(
+      'errors.taskVersionConflict',
+      { expectedVersion: params.input.version, currentVersion: target.version },
+      'TASK_VERSION_CONFLICT',
+    );
+  }
+  if (target.isHidden === params.input.isHidden) {
+    return { task: target, eventId: null };
+  }
+  return params.tasksRepo.updateTaskHiddenWithEvent(
+    {
+      id: params.taskId,
+      boardId: target.boardId,
+      actorId: params.actor.id,
+      currentIsHidden: target.isHidden,
+      nextIsHidden: params.input.isHidden,
       expectedVersion: params.input.version,
       now: params.now,
     },

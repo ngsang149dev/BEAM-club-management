@@ -47,6 +47,11 @@ export {
   taskAccessSqlCondition,
   visibleTaskSqlCondition,
 } from './repository';
+export {
+  buildUserSummariesMap,
+  type RawMemberDepartmentRow,
+  type RawUserProfileRow,
+} from './repository-helpers';
 export { TasksService, type TasksServiceDeps } from './service';
 export { type RunTaskAssigneesResult, toTaskVisibilitySubject } from './service-helpers';
 export type {
@@ -63,5 +68,6 @@ export type {
   TaskOptionalEventMutationResult,
   TaskRecord,
   TasksRepository,
+  UpdateTaskHiddenRepoParams,
   UpdateTaskRepoParams,
 } from './types';

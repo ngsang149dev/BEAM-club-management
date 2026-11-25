@@ -105,6 +105,17 @@ type BoardTaskCardTopProps = Pick<
   | 'dragHandleKeyDown'
 >;
 
+function HiddenTaskEyeIcon() {
+  return (
+    <svg className="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 3l18 18" />
+      <path d="M10.6 5.3A9.8 9.8 0 0 1 12 5.2c5.7 0 9 6.8 9 6.8a17 17 0 0 1-2.4 3.4" />
+      <path d="M6.2 6.9C3.8 8.7 3 12 3 12s3.3 6.8 9 6.8c1.2 0 2.3-.3 3.3-.7" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </svg>
+  );
+}
+
 function BoardTaskCardTop(props: BoardTaskCardTopProps) {
   const { task, canDrag, canMove, columns, isMoving, isOverlay, onOpenTask, onMoveToColumn } = props;
   const tTasks = useTranslations('tasks');
@@ -119,7 +130,12 @@ function BoardTaskCardTop(props: BoardTaskCardTopProps) {
         <span className="kanban-card-title">{task.title}</span>
       </button>
       <div className="kanban-card-top-right">
-        {task.isHidden ? <span className="ui-chip task-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
+        {task.isHidden ? (
+          <span className="ui-chip task-hidden-chip">
+            <HiddenTaskEyeIcon />
+            <span>{tTasks('hiddenBadge')}</span>
+          </span>
+        ) : null}
         {canDrag ? (
           <button
             type="button"

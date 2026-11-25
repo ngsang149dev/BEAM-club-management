@@ -215,6 +215,8 @@ export function CreateTaskModal({ boardId, columnId, columnName, onClose }: Crea
   const { register, control, setValue, handleSubmit, formState: { errors } } = ctrl.form;
   const priority = useWatch({ control, name: 'priority' });
   const dueAtInput = useWatch({ control, name: 'dueAtInput' });
+  const isHidden = useWatch({ control, name: 'isHidden' });
+  const hasAnyAssignment = ctrl.assigneeIds.length > 0 || ctrl.departmentIds.length > 0;
 
   return (
     <div className="ui-modal-backdrop" role="presentation">
@@ -240,6 +242,14 @@ export function CreateTaskModal({ boardId, columnId, columnName, onClose }: Crea
             <input type="checkbox" {...register('isHidden')} />
             <span>{tTasks('isHiddenLabel')}</span>
           </label>
+          {isHidden && !hasAnyAssignment ? (
+            <div className="ui-banner is-warn" role="status">
+              <div className="ui-banner-body">
+                <span className="ui-banner-title">{tTasks('hiddenUnassignedWarnTitle')}</span>
+                <span className="ui-banner-text">{tTasks('hiddenUnassignedWarnBody')}</span>
+              </div>
+            </div>
+          ) : null}
           <CreateTaskModalActions isPending={ctrl.createMutation.isPending} onClose={onClose} />
         </form>
       </div>

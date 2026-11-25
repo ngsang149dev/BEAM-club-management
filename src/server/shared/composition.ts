@@ -1,55 +1,23 @@
-import {
-  type ArchiveRepository,
-  ArchiveService,
-  DrizzleArchiveRepository,
-} from '@/server/modules/archive';
-import {
-  type AuditLogWriter,
-  type AuditRepository,
-  AuditService,
-  DrizzleAuditRepository,
-} from '@/server/modules/audit';
-import {
-  type AuthRepository,
-  AuthService,
-  DrizzleAuthRepository,
-} from '@/server/modules/auth';
-import {
-  type BoardsRepository,
-  BoardsService,
-  DrizzleBoardsRepository,
-} from '@/server/modules/boards';
-import {
-  type BrandingRepository,
-  BrandingService,
-  DrizzleBrandingRepository,
-} from '@/server/modules/branding';
-import {
-  type DepartmentsRepository,
-  DepartmentsService,
-  DrizzleDepartmentsRepository,
-} from '@/server/modules/departments';
-import {
-  DrizzleMembersRepository,
-  type MembersRepository,
-  MembersService,
-} from '@/server/modules/members';
-import {
-  DrizzleNotificationsRepository,
-  type NotificationsRepository,
-  NotificationsService,
-} from '@/server/modules/notifications';
-import {
-  DrizzlePermissionsRepository,
-  type PermissionsRepository,
-  PermissionsService,
-} from '@/server/modules/permissions';
-import {
-  DrizzleTasksRepository,
-  type TasksRepository,
-  TasksService,
-} from '@/server/modules/tasks';
+import type { ArchiveService } from '@/server/modules/archive';
+import type { AuditLogWriter, AuditService } from '@/server/modules/audit';
+import type { AuthService } from '@/server/modules/auth';
+import type { BoardsService } from '@/server/modules/boards';
+import type { BrandingService } from '@/server/modules/branding';
+import type { CommentsService } from '@/server/modules/comments';
+import type { DepartmentsService } from '@/server/modules/departments';
+import type { MembersService } from '@/server/modules/members';
+import type { NotificationsService } from '@/server/modules/notifications';
+import type { PermissionsService } from '@/server/modules/permissions';
+import type { TasksService } from '@/server/modules/tasks';
 import { type Clock, SystemClock } from './clock';
+import {
+  buildDirectoryServices,
+  buildGovernanceServices,
+  buildWorkstreamServices,
+  createDefaultAuditRepo,
+  type ServiceOverrides,
+  type SharedInfraContext,
+} from './composition-services';
 import { type Config, loadConfig } from './config';
 import { createDatabaseClient, type Database } from './db';
 import { type Logger, StructuredLogger } from './logger';
@@ -71,13 +39,14 @@ export interface ServerContainer {
   readonly auditService: AuditService;
   readonly brandingService: BrandingService;
   readonly tasksService: TasksService;
+  readonly commentsService: CommentsService;
   readonly notificationsService: NotificationsService;
   readonly boardsService: BoardsService;
   readonly archiveService: ArchiveService;
   dispose(): Promise<void>;
 }
 
-export interface ContainerOverrides {
+export interface ContainerOverrides extends ServiceOverrides {
   readonly config?: Config;
   readonly clock?: Clock;
   readonly logger?: Logger;
@@ -85,26 +54,6 @@ export interface ContainerOverrides {
   readonly db?: Database;
   readonly transactionRunner?: TransactionRunner;
   readonly auditWriter?: AuditLogWriter;
-  readonly auditRepo?: AuditRepository;
-  readonly auditService?: AuditService;
-  readonly brandingRepo?: BrandingRepository;
-  readonly brandingService?: BrandingService;
-  readonly authRepo?: AuthRepository;
-  readonly authService?: AuthService;
-  readonly departmentsRepo?: DepartmentsRepository;
-  readonly departmentsService?: DepartmentsService;
-  readonly membersRepo?: MembersRepository;
-  readonly membersService?: MembersService;
-  readonly permissionsRepo?: PermissionsRepository;
-  readonly permissionsService?: PermissionsService;
-  readonly tasksRepo?: TasksRepository;
-  readonly tasksService?: TasksService;
-  readonly notificationsRepo?: NotificationsRepository;
-  readonly notificationsService?: NotificationsService;
-  readonly boardsRepo?: BoardsRepository;
-  readonly boardsService?: BoardsService;
-  readonly archiveRepo?: ArchiveRepository;
-  readonly archiveService?: ArchiveService;
 }
 
 const globalForContainer = globalThis as typeof globalThis & {
@@ -128,7 +77,9 @@ function resolveDatabase(
   };
 }
 
-function buildSharedInfra(overrides: ContainerOverrides) {
+function buildSharedInfra(
+  overrides: ContainerOverrides,
+): SharedInfraContext & { readonly dispose: () => Promise<void> } {
   const config = overrides.config ?? loadConfig();
   const clock = overrides.clock ?? new SystemClock();
   const logger = overrides.logger ?? new StructuredLogger();
@@ -136,7 +87,7 @@ function buildSharedInfra(overrides: ContainerOverrides) {
   const { db, dispose } = resolveDatabase(config, overrides.db);
   const transactionRunner =
     overrides.transactionRunner ?? new DrizzleTransactionRunner(db);
-  const auditRepo = overrides.auditRepo ?? new DrizzleAuditRepository(db);
+  const auditRepo = overrides.auditRepo ?? createDefaultAuditRepo(db);
   const auditWriter = overrides.auditWriter ?? auditRepo;
   return {
     config,
@@ -149,120 +100,6 @@ function buildSharedInfra(overrides: ContainerOverrides) {
     auditRepo,
     auditWriter,
   };
-}
-
-type SharedInfra = ReturnType<typeof buildSharedInfra>;
-
-function buildDirectoryServices(infra: SharedInfra, overrides: ContainerOverrides) {
-  const authService =
-    overrides.authService ??
-    new AuthService({
-      authRepo: overrides.authRepo ?? new DrizzleAuthRepository(infra.db),
-      auditWriter: infra.auditWriter,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      config: infra.config,
-      logger: infra.logger,
-    });
-  const departmentsService =
-    overrides.departmentsService ??
-    new DepartmentsService({
-      departmentsRepo: overrides.departmentsRepo ?? new DrizzleDepartmentsRepository(infra.db),
-      auditWriter: infra.auditWriter,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      logger: infra.logger,
-    });
-  const membersService =
-    overrides.membersService ??
-    new MembersService({
-      membersRepo: overrides.membersRepo ?? new DrizzleMembersRepository(infra.db),
-      auditWriter: infra.auditWriter,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      config: infra.config,
-      logger: infra.logger,
-    });
-  return { authService, departmentsService, membersService };
-}
-
-function buildGovernanceServices(infra: SharedInfra, overrides: ContainerOverrides) {
-  const permissionsService =
-    overrides.permissionsService ??
-    new PermissionsService({
-      permissionsRepo: overrides.permissionsRepo ?? new DrizzlePermissionsRepository(infra.db),
-      auditWriter: infra.auditWriter,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      logger: infra.logger,
-    });
-  const auditService =
-    overrides.auditService ??
-    new AuditService({
-      auditRepo: infra.auditRepo,
-      logger: infra.logger,
-    });
-  const brandingService =
-    overrides.brandingService ??
-    new BrandingService({
-      brandingRepo: overrides.brandingRepo ?? new DrizzleBrandingRepository(infra.db),
-      auditWriter: infra.auditWriter,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      logger: infra.logger,
-    });
-  return { permissionsService, auditService, brandingService };
-}
-
-function buildNotificationsService(infra: SharedInfra, overrides: ContainerOverrides) {
-  const notificationsRepo =
-    overrides.notificationsRepo ?? new DrizzleNotificationsRepository(infra.db);
-  return (
-    overrides.notificationsService ??
-    new NotificationsService({
-      notificationsRepo,
-      transactionRunner: infra.transactionRunner,
-      mailer: infra.mailer,
-      clock: infra.clock,
-      config: infra.config,
-      logger: infra.logger,
-    })
-  );
-}
-
-function buildWorkstreamServices(infra: SharedInfra, overrides: ContainerOverrides) {
-  const notificationsService = buildNotificationsService(infra, overrides);
-  const tasksRepo = overrides.tasksRepo ?? new DrizzleTasksRepository(infra.db);
-  const tasksService =
-    overrides.tasksService ??
-    new TasksService({
-      tasksRepo,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      logger: infra.logger,
-      notificationsDispatcher: notificationsService,
-    });
-  const boardsService =
-    overrides.boardsService ??
-    new BoardsService({
-      boardsRepo: overrides.boardsRepo ?? new DrizzleBoardsRepository(infra.db),
-      tasksRepo,
-      auditWriter: infra.auditWriter,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      logger: infra.logger,
-    });
-  const archiveService =
-    overrides.archiveService ??
-    new ArchiveService({
-      archiveRepo: overrides.archiveRepo ?? new DrizzleArchiveRepository(infra.db),
-      auditWriter: infra.auditWriter,
-      transactionRunner: infra.transactionRunner,
-      clock: infra.clock,
-      config: infra.config,
-      logger: infra.logger,
-    });
-  return { tasksService, notificationsService, boardsService, archiveService };
 }
 
 export function createContainer(overrides: ContainerOverrides = {}): ServerContainer {
