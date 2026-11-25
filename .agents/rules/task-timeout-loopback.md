@@ -1,11 +1,7 @@
----
-trigger: always_on
-description: Enforce NotificationTimeoutSeconds watchdog and automatic kill-and-loopback recovery for slow or stalled background tasks and subagents.
----
 
 # Task Timeout & Loopback Watchdog
 
-Prevent background commands, builds, E2E runs, and subagents from hanging indefinitely in the Windows sandbox or CI environment by pairing every long-running invocation with an explicit timeout watchdog and an automatic kill-and-loopback protocol.
+Prevent background commands, builds, E2E runs, and subagents from hanging indefinitely in the Windows, macOS, or Linux sandbox or CI environment by pairing every long-running invocation with an explicit timeout watchdog and an automatic kill-and-loopback protocol.
 
 ## 1. Mandatory `NotificationTimeoutSeconds` on Non-Daemon `run_command`
 
@@ -15,7 +11,7 @@ Always set `NotificationTimeoutSeconds` on every expected-to-terminate `run_comm
 |---|---|---|
 | Fast checks (`typecheck`, `lint`, `arch:check`, `openapi:check`, `test:unit`, `db:migrate`, `db:seed`) | `60` | Fails or completes well within 1 minute. |
 | Production build & DB integration (`npm run build`, `npm run test:integration`) | `90` | Triggers early if PostgreSQL (`5432`) or Turbopack hangs. |
-| Playwright E2E — sandboxed attempt (`npm run test:e2e`) | `25` | Fast stall detection when `[WebServer]` cannot bind/probe `127.0.0.1:3001` inside Windows sandbox. |
+| Playwright E2E — sandboxed attempt (`npm run test:e2e`) | `25` | Fast stall detection when `[WebServer]` cannot bind/probe `127.0.0.1:3001` inside a sandbox. |
 | Playwright E2E — unsandboxed (`BypassSandbox: true`) | `150` | Real Chrome sequential suite typically finishes in ~70–90s. |
 
 Always pass identical `toolSummary` when retrying a blocked command with `BypassSandbox: true`.
@@ -25,7 +21,7 @@ Always pass identical `toolSummary` when retrying a blocked command with `Bypass
 When a `NotificationTimeoutSeconds` notification fires:
 
 1. Call `manage_task(Action: "status", TaskId: ...)` once to inspect recent output and elapsed idle time.
-2. **If stalled (`>= 25–30s` with no forward progress) or blocked by sandbox signature** (`[WebServer]` waiting on `127.0.0.1`, `EACCES`, Turbopack junction `os error 5`, `.git/index.lock`):
+2. **If stalled (`>= 25–30s` with no forward progress) or blocked by sandbox signature** (`[WebServer]` waiting on `127.0.0.1`, `EACCES`, `EPERM` on `127.0.0.1`/PostgreSQL, `operation not permitted` on `docker.sock`, Turbopack junction `os error 5`, `.git/index.lock`):
    - Call `manage_task(Action: "kill", TaskId: ...)` immediately.
    - Diagnose and **loop back** cleanly (e.g., re-run with `BypassSandbox: true` using the exact same `toolSummary`, free locked resources, or fix the failing test/command).
 3. **If actively making forward progress** (new passing test lines recently logged):

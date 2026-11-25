@@ -2,7 +2,12 @@
   "name": "beam-club-management",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -15,6 +20,9 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:ensure": "node scripts/db-ensure.mjs",
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:seed": "node scripts/db-seed.mjs"
   },
