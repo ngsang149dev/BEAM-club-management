@@ -1,10 +1,16 @@
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
 import { boards, columns, departments, memberDepartments, profiles, tasks } from '@db/schema';
 import { notFound } from '@/lib/errors';
+import { escapeLikePattern, notDoneColumnSqlCondition, visibleTaskSqlCondition } from '@/server/modules/tasks';
+import type { AuthActor } from '@/server/shared/authorize';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { assertColumnCanBeDeleted, assertColumnOrderMatches, type BoardListCursor } from './policy';
 
+export interface BoardTaskCounts {
+  readonly visibleTaskCount: number;
+  readonly overdueTaskCount: number;
+}
 export interface BoardDepartmentSummaryRecord { readonly id: string; readonly name: string }
 export interface BoardMemberSummaryRecord {
   readonly id: string;
@@ -20,6 +26,8 @@ export interface BoardSummaryRecord {
   readonly department: BoardDepartmentSummaryRecord | null;
   readonly archivedAt: Date | null;
   readonly createdBy: BoardMemberSummaryRecord;
+  readonly visibleTaskCount?: number;
+  readonly overdueTaskCount?: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -32,8 +40,11 @@ export interface ColumnRecord {
   readonly updatedAt: Date;
 }
 export interface ListBoardsRepoParams {
+  readonly actor: AuthActor;
+  readonly now: Date;
   readonly departmentId?: string;
   readonly includeArchived: boolean;
+  readonly q?: string;
   readonly cursor?: BoardListCursor;
   readonly limit: number;
 }
@@ -55,6 +66,7 @@ export interface UpdateBoardRepoParams {
 export interface BoardsRepository {
   listBoards(params: ListBoardsRepoParams): Promise<{ readonly rows: BoardSummaryRecord[]; readonly hasMore: boolean }>;
   findBoardById(boardId: string, tx?: TransactionContext): Promise<BoardSummaryRecord | null>;
+  countBoardTaskStats(params: { readonly boardIds: readonly string[]; readonly actor: AuthActor; readonly now: Date }, tx?: TransactionContext): Promise<Map<string, BoardTaskCounts>>;
   findColumnsByBoardId(boardId: string, tx?: TransactionContext): Promise<ColumnRecord[]>;
   createBoardWithDefaultColumns(input: CreateBoardRepoParams, tx: TransactionContext): Promise<{ readonly board: BoardSummaryRecord; readonly columns: ColumnRecord[] }>;
   updateBoard(input: UpdateBoardRepoParams, tx: TransactionContext): Promise<BoardSummaryRecord | null>;
@@ -71,6 +83,7 @@ function buildBoardListConditions(params: ListBoardsRepoParams): SQL | undefined
   const filters: SQL[] = [isNull(boards.purgedAt)];
   if (!params.includeArchived) filters.push(isNull(boards.archivedAt));
   if (params.departmentId) filters.push(eq(boards.departmentId, params.departmentId));
+  if (params.q) filters.push(ilike(boards.name, `%${escapeLikePattern(params.q)}%`));
   if (params.cursor) {
     const { createdAt, id } = params.cursor;
     const cond = or(lt(boards.createdAt, createdAt), and(eq(boards.createdAt, createdAt), lt(boards.id, id)));
@@ -91,7 +104,7 @@ export class DrizzleBoardsRepository implements BoardsRepository {
       .limit(params.limit + 1);
     const hasMore = fetched.length > params.limit;
     const pageRows = hasMore ? fetched.slice(0, params.limit) : fetched;
-    return { rows: await this.hydrateBoards(this.db, pageRows), hasMore };
+    return { rows: await this.hydrateBoards(this.db, pageRows, { actor: params.actor, now: params.now }), hasMore };
   }
 
   async findBoardById(boardId: string, tx?: TransactionContext): Promise<BoardSummaryRecord | null> {
@@ -99,6 +112,10 @@ export class DrizzleBoardsRepository implements BoardsRepository {
     const rows = await executor.select().from(boards).where(and(eq(boards.id, boardId), isNull(boards.purgedAt))).limit(1);
     if (!rows[0]) return null;
     return (await this.hydrateBoards(executor, rows))[0] ?? null;
+  }
+
+  async countBoardTaskStats(params: { readonly boardIds: readonly string[]; readonly actor: AuthActor; readonly now: Date }, tx?: TransactionContext): Promise<Map<string, BoardTaskCounts>> {
+    return this.queryBoardTaskStats(tx ?? this.db, params);
   }
 
   async findColumnsByBoardId(boardId: string, tx?: TransactionContext): Promise<ColumnRecord[]> {
@@ -213,20 +230,48 @@ export class DrizzleBoardsRepository implements BoardsRepository {
     if (!rows[0]) throw notFound('errors.notFound', {}, 'NOT_FOUND');
   }
 
-  private async hydrateBoards(executor: DbExecutor, boardRows: readonly BoardRow[]): Promise<BoardSummaryRecord[]> {
+  private async queryBoardTaskStats(executor: DbExecutor, params: { readonly boardIds: readonly string[]; readonly actor: AuthActor; readonly now: Date }): Promise<Map<string, BoardTaskCounts>> {
+    const map = new Map<string, BoardTaskCounts>();
+    if (params.boardIds.length === 0) return map;
+    const overdueFilter = and(isNotNull(tasks.dueAt), lt(tasks.dueAt, params.now), notDoneColumnSqlCondition(executor));
+    const rows = await executor
+      .select({
+        boardId: tasks.boardId,
+        visibleCount: count(),
+        overdueCount: sql<number>`COUNT(*) FILTER (WHERE ${overdueFilter})::int`,
+      })
+      .from(tasks)
+      .where(and(inArray(tasks.boardId, [...params.boardIds]), visibleTaskSqlCondition(executor, params.actor)))
+      .groupBy(tasks.boardId);
+    for (const row of rows) {
+      map.set(row.boardId, { visibleTaskCount: Number(row.visibleCount), overdueTaskCount: Number(row.overdueCount) });
+    }
+    return map;
+  }
+
+  private async hydrateBoards(executor: DbExecutor, boardRows: readonly BoardRow[], viewer?: { readonly actor: AuthActor; readonly now: Date }): Promise<BoardSummaryRecord[]> {
     if (boardRows.length === 0) return [];
     const deptIds = Array.from(new Set(boardRows.map((b) => b.departmentId).filter((id): id is string => id !== null)));
     const creatorIds = Array.from(new Set(boardRows.map((b) => b.createdBy)));
-    const [deptMap, userMap] = await Promise.all([this.loadDepartmentsByIds(executor, deptIds), this.loadUserSummaries(executor, creatorIds)]);
-    return boardRows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      department: row.departmentId ? (deptMap.get(row.departmentId) ?? null) : null,
-      archivedAt: row.archivedAt,
-      createdBy: userMap.get(row.createdBy)!,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
+    const [deptMap, userMap, statsMap] = await Promise.all([
+      this.loadDepartmentsByIds(executor, deptIds),
+      this.loadUserSummaries(executor, creatorIds),
+      viewer ? this.queryBoardTaskStats(executor, { boardIds: boardRows.map((b) => b.id), actor: viewer.actor, now: viewer.now }) : Promise.resolve(new Map<string, BoardTaskCounts>()),
+    ]);
+    return boardRows.map((row) => {
+      const stats = statsMap.get(row.id);
+      return {
+        id: row.id,
+        name: row.name,
+        department: row.departmentId ? (deptMap.get(row.departmentId) ?? null) : null,
+        archivedAt: row.archivedAt,
+        createdBy: userMap.get(row.createdBy)!,
+        visibleTaskCount: stats?.visibleTaskCount ?? 0,
+        overdueTaskCount: stats?.overdueTaskCount ?? 0,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      };
+    });
   }
 
   private async loadDepartmentsByIds(executor: DbExecutor, deptIds: readonly string[]): Promise<Map<string, BoardDepartmentSummaryRecord>> {

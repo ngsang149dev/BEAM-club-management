@@ -1372,6 +1372,7 @@ export interface paths {
                 query?: {
                     departmentId?: string;
                     includeArchived?: boolean;
+                    q?: string;
                     cursor?: components["parameters"]["CursorParam"];
                     limit?: components["parameters"]["LimitParam"];
                 };
@@ -1742,6 +1743,7 @@ export interface paths {
                     assigneeId?: string;
                     departmentId?: string;
                     priority?: number;
+                    /** @description `overdue` excludes tasks in the board's final (`Done`) column. */
                     dueStatus?: "overdue" | "upcoming" | "no_due";
                     q?: string;
                     sortBy?: "position" | "priority" | "dueAt" | "createdAt";
@@ -3281,6 +3283,8 @@ export interface components {
             /** Format: date-time */
             archivedAt: string | null;
             createdBy: components["schemas"]["MemberPublicSummary"];
+            visibleTaskCount: number;
+            overdueTaskCount: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -3296,6 +3300,8 @@ export interface components {
             createdBy: components["schemas"]["MemberPublicSummary"];
             columns: components["schemas"]["ColumnDto"][];
             tasks: components["schemas"]["TaskDto"][];
+            visibleTaskCount: number;
+            overdueTaskCount: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

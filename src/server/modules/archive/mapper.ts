@@ -89,7 +89,11 @@ export function toArchiveBoardItemDto(
   record: ArchivedBoardItemRecord,
 ): ArchiveBoardItemDto {
   return {
-    board: toBoardSummaryDto(record.board),
+    board: {
+      ...toBoardSummaryDto(record.board),
+      visibleTaskCount: 0,
+      overdueTaskCount: 0,
+    },
     taskCount: record.taskCount,
   };
 }

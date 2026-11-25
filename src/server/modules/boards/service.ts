@@ -55,8 +55,11 @@ export class BoardsService {
     assertCanIncludeArchived(actor, query.includeArchived);
     const cursor = query.cursor ? decodeBoardCursor(query.cursor) : undefined;
     const { rows, hasMore } = await this.deps.boardsRepo.listBoards({
+      actor,
+      now: this.deps.clock.now(),
       departmentId: query.departmentId,
       includeArchived: query.includeArchived,
+      q: query.q,
       cursor,
       limit: query.limit,
     });
@@ -74,7 +77,7 @@ export class BoardsService {
       this.deps.boardsRepo.findColumnsByBoardId(boardId),
       this.deps.tasksRepo.listVisibleByBoardId(boardId, actor),
     ]);
-    return toBoardDetailResponseDto({ board, columns, visibleTasks });
+    return toBoardDetailResponseDto({ board, columns, visibleTasks, now: this.deps.clock.now() });
   }
 
   async createBoard(
@@ -110,6 +113,7 @@ export class BoardsService {
       board: created.board,
       columns: created.columns,
       visibleTasks: [],
+      now,
     });
   }
 
@@ -126,6 +130,7 @@ export class BoardsService {
         tx,
       );
       if (!board) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+      const statsMap = await this.deps.boardsRepo.countBoardTaskStats({ boardIds: [board.id], actor, now }, tx);
       await this.deps.auditWriter.record(
         {
           actorId: actor.id,
@@ -135,7 +140,7 @@ export class BoardsService {
         },
         tx,
       );
-      return board;
+      return { ...board, ...(statsMap.get(board.id) ?? { visibleTaskCount: 0, overdueTaskCount: 0 }) };
     });
     this.deps.logger.info('Board updated', { actorId: actor.id, boardId });
     return { board: toBoardSummaryDto(updated) };
@@ -147,6 +152,10 @@ export class BoardsService {
     const archived = await this.deps.transactionRunner.runInTransaction(async (tx) => {
       const result = await this.deps.boardsRepo.archiveBoard({ boardId, now }, tx);
       if (!result) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+      const statsMap = await this.deps.boardsRepo.countBoardTaskStats(
+        { boardIds: [result.board.id], actor, now },
+        tx,
+      );
       await this.deps.auditWriter.record(
         {
           actorId: actor.id,
@@ -156,7 +165,7 @@ export class BoardsService {
         },
         tx,
       );
-      return result.board;
+      return { ...result.board, ...(statsMap.get(result.board.id) ?? { visibleTaskCount: 0, overdueTaskCount: 0 }) };
     });
     this.deps.logger.info('Board archived', { actorId: actor.id, boardId });
     return { board: toBoardSummaryDto(archived) };

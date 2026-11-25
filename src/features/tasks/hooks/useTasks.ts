@@ -8,7 +8,10 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { apiFetch, isApiClientError, type components } from '@/features/shared/api/client';
-import type { TaskPriority } from '@/lib/tasks';
+import type { TaskDueStatus, TaskPriority, TaskSortBy, TaskSortOrder } from '@/lib/tasks';
+import { updateCachedBoardDetailOnTaskMove } from '../optimistic-move';
+
+export { updateCachedBoardDetailOnTaskMove };
 
 export type TaskDto = components['schemas']['TaskDto'];
 export type TaskResponse = components['schemas']['TaskResponse'];
@@ -41,7 +44,21 @@ export const DEFAULT_MY_TASKS_FILTERS: MyTasksFiltersState = {
   limit: 20,
 };
 
+export interface BoardTasksQueryFilters {
+  readonly q: string;
+  readonly departmentId: string;
+  readonly assigneeId: string;
+  readonly priority: '' | TaskPriority;
+  readonly dueStatus: '' | TaskDueStatus;
+  readonly columnId: string;
+  readonly sortBy: TaskSortBy;
+  readonly sortOrder: TaskSortOrder;
+}
+
 export const TASKS_QUERY_KEYS = {
+  boardListRoot: ['tasks', 'boardList'] as const,
+  boardList: (boardId: string, filters: BoardTasksQueryFilters) =>
+    ['tasks', 'boardList', boardId, filters] as const,
   detail: (taskId: string) => ['taskDetail', taskId] as const,
   myTasksRoot: ['myTasks'] as const,
   myTasksList: (filters: MyTasksFiltersState) => ['myTasks', 'list', filters] as const,
@@ -57,6 +74,7 @@ async function invalidateTaskQueries(
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ['boards'] }),
     queryClient.invalidateQueries({ queryKey: ['boardDetail', boardId] }),
+    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.boardListRoot }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.myTasksRoot }),
     ...(taskId ? [queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.detail(taskId) })] : []),
   ]);
@@ -89,6 +107,39 @@ function buildMyTasksQuery(filters: MyTasksFiltersState, cursor?: string) {
     ...(cursor ? { cursor } : {}),
     limit: filters.limit ?? 20,
   };
+}
+
+export function buildBoardTasksQueryParams(boardId: string, filters: BoardTasksQueryFilters) {
+  const trimmedQ = filters.q.trim();
+  return {
+    boardId,
+    ...(trimmedQ ? { q: trimmedQ } : {}),
+    ...(filters.columnId ? { columnId: filters.columnId } : {}),
+    ...(filters.assigneeId ? { assigneeId: filters.assigneeId } : {}),
+    ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
+    ...(filters.priority ? { priority: filters.priority } : {}),
+    ...(filters.dueStatus ? { dueStatus: filters.dueStatus } : {}),
+    sortBy: filters.sortBy,
+    sortOrder: filters.sortOrder,
+    limit: 100,
+  };
+}
+
+export function useBoardFilteredTasksQuery(
+  boardId: string,
+  filters: BoardTasksQueryFilters,
+  enabled: boolean
+) {
+  const normalizedFilters: BoardTasksQueryFilters = { ...filters, q: filters.q.trim() };
+  return useQuery({
+    queryKey: TASKS_QUERY_KEYS.boardList(boardId, normalizedFilters),
+    queryFn: ({ signal }) =>
+      apiFetch('/tasks', {
+        query: buildBoardTasksQueryParams(boardId, normalizedFilters),
+        signal,
+      }),
+    enabled: enabled && Boolean(boardId),
+  });
 }
 
 export function useMyTasksInfiniteQuery(filters: MyTasksFiltersState, enabled = true) {
@@ -179,65 +230,6 @@ export function buildDeleteTaskMutationOptions(queryClient: QueryClient) {
 export function useDeleteTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation(buildDeleteTaskMutationOptions(queryClient));
-}
-
-function compareBoardTaskPositions(a: TaskDto, b: TaskDto): number {
-  const diff = Number(a.position) - Number(b.position);
-  return Number.isFinite(diff) && diff !== 0 ? diff : a.createdAt.localeCompare(b.createdAt);
-}
-
-function computeOptimisticMovePosition(
-  siblings: readonly TaskDto[],
-  beforeId: string | null | undefined,
-  afterId: string | null | undefined
-): number {
-  if (siblings.length === 0) return 1000;
-  const beforeIdx = beforeId ? siblings.findIndex((s) => s.id === beforeId) : -1;
-  if (beforeIdx >= 0) {
-    const beforePos = Number(siblings[beforeIdx]!.position);
-    const nextPos =
-      beforeIdx + 1 < siblings.length ? Number(siblings[beforeIdx + 1]!.position) : beforePos + 2000;
-    return (beforePos + nextPos) / 2;
-  }
-  const afterIdx = afterId ? siblings.findIndex((s) => s.id === afterId) : -1;
-  if (afterIdx >= 0) {
-    const afterPos = Number(siblings[afterIdx]!.position);
-    const prevPos = afterIdx > 0 ? Number(siblings[afterIdx - 1]!.position) : afterPos - 2000;
-    return (prevPos + afterPos) / 2;
-  }
-  return Number(siblings[siblings.length - 1]!.position) + 1000;
-}
-
-function updateColumnCountsOnMove(
-  columns: BoardDetailResponse['board']['columns'],
-  fromColumnId: string | null,
-  toColumnId: string
-): BoardDetailResponse['board']['columns'] {
-  if (fromColumnId === toColumnId) return [...columns];
-  return columns.map((col) => {
-    if (col.id === fromColumnId) return { ...col, taskCount: Math.max(0, col.taskCount - 1) };
-    if (col.id === toColumnId) return { ...col, taskCount: col.taskCount + 1 };
-    return col;
-  });
-}
-
-export function updateCachedBoardDetailOnTaskMove(
-  cached: BoardDetailResponse | undefined,
-  taskId: string,
-  payload: MoveTaskRequest
-): BoardDetailResponse | undefined {
-  if (!cached) return cached;
-  const moving = cached.board.tasks.find((t) => t.id === taskId);
-  if (!moving) return cached;
-  const siblings = cached.board.tasks
-    .filter((t) => t.id !== taskId && t.columnId === payload.columnId)
-    .sort(compareBoardTaskPositions);
-  const nextPosition = computeOptimisticMovePosition(siblings, payload.beforeId, payload.afterId);
-  const nextTasks = cached.board.tasks.map((t) =>
-    t.id === taskId ? { ...t, columnId: payload.columnId, position: nextPosition } : t
-  );
-  const nextColumns = updateColumnCountsOnMove(cached.board.columns, moving.columnId, payload.columnId);
-  return { board: { ...cached.board, columns: nextColumns, tasks: nextTasks } };
 }
 
 export function useMoveTaskMutation(boardId: string) {

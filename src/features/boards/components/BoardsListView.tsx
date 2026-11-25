@@ -1,7 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ErrorState } from '@/components/ErrorState';
@@ -18,7 +17,7 @@ import {
   type BoardsFilterState,
 } from '../hooks/useBoards';
 import { BoardArchiveModal, BoardUpsertModal } from './BoardModals';
-import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from './ActionMenu';
+import { BoardTileCard } from './BoardTileCard';
 
 type BoardModalState =
   | { kind: 'closed' }
@@ -61,7 +60,9 @@ function BoardsToolbar({
           aria-label={t('departmentFilterLabel')}
         >
           <option value="">{t('allDepartments')}</option>
-          {departments.map((dept) => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
+          {departments.map((dept) => (
+            <option key={dept.id} value={dept.id}>{dept.name}</option>
+          ))}
         </select>
       </div>
       {isAdmin ? (
@@ -69,121 +70,99 @@ function BoardsToolbar({
           <input
             type="checkbox"
             checked={filters.includeArchived}
-            onChange={(e) => onFiltersChange((prev) => ({ ...prev, includeArchived: e.target.checked }))}
+            onChange={(e) =>
+              onFiltersChange((prev) => ({ ...prev, includeArchived: e.target.checked }))
+            }
           />
           <span>{t('showArchivedLabel')}</span>
         </label>
       ) : null}
       <Can permission="board.create">
-        <button type="button" className="ui-btn primary" onClick={onOpenCreate}>{t('newBoard')}</button>
+        <button type="button" className="ui-btn primary" onClick={onOpenCreate}>
+          {t('newBoard')}
+        </button>
       </Can>
     </div>
   );
 }
 
-interface BoardTileCardProps {
-  readonly board: BoardSummaryDto;
-  readonly onEdit: (b: BoardSummaryDto) => void;
-  readonly onArchive: (b: BoardSummaryDto) => void;
-  readonly onUnarchive: (b: BoardSummaryDto) => void;
+function useDebouncedBoardSearch(value: string, delayMs = 250): string {
+  const [debounced, setDebounced] = useState(value.trim());
+
+  useEffect(() => {
+    const trimmed = value.trim();
+    const timer = setTimeout(() => {
+      setDebounced(trimmed);
+    }, trimmed === '' ? 0 : delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+
+  return debounced;
 }
 
-function BoardTileActionMenu({
-  board,
-  isArchived,
-  canUpdate,
-  canArchive,
-  onEdit,
-  onArchive,
-  onUnarchive,
-}: BoardTileCardProps & { readonly isArchived: boolean; readonly canUpdate: boolean; readonly canArchive: boolean }) {
+function useBoardCrudHandlers(
+  modal: BoardModalState,
+  closeModal: () => void
+) {
   const t = useTranslations('boards');
-  return (
-    <ActionMenu label={t('boardActionsMenu')}>
-      {canUpdate ? <ActionMenuItem onSelect={() => onEdit(board)}>{t('editBoard')}</ActionMenuItem> : null}
-      {canUpdate && isArchived ? <ActionMenuItem onSelect={() => onUnarchive(board)}>{t('unarchiveBoard')}</ActionMenuItem> : null}
-      {canUpdate && canArchive ? <ActionMenuSeparator /> : null}
-      {canArchive ? <ActionMenuItem variant="danger" onSelect={() => onArchive(board)}>{t('archiveBoard')}</ActionMenuItem> : null}
-    </ActionMenu>
-  );
-}
-
-function BoardTileCard({ board, onEdit, onArchive, onUnarchive }: BoardTileCardProps) {
-  const t = useTranslations('boards');
-  const { can } = usePermissions();
-  const isArchived = board.archivedAt !== null;
-  const canUpdate = can('board.update');
-  const canArchive = !isArchived && can('board.delete');
-
-  return (
-    <article className={isArchived ? 'board-tile is-archived' : 'board-tile'}>
-      <div className="board-tile-top">
-        <div className="board-tile-badges">
-          <span className="ui-chip">{board.department ? board.department.name : t('clubWideLabel')}</span>
-          {isArchived ? <span className="status-pill is-inactive">{t('archivedBadge')}</span> : null}
-        </div>
-        {canUpdate || canArchive ? (
-          <BoardTileActionMenu board={board} isArchived={isArchived} canUpdate={canUpdate} canArchive={canArchive} onEdit={onEdit} onArchive={onArchive} onUnarchive={onUnarchive} />
-        ) : null}
-      </div>
-      <Link href={`/boards/${board.id}`} className="board-tile-name">{board.name}</Link>
-      <div className="board-tile-actions">
-        <Link href={`/boards/${board.id}`} className="ui-btn secondary is-sm">{t('openBoard')}</Link>
-      </div>
-    </article>
-  );
-}
-
-function useBoardsListState(isAdmin: boolean) {
-  const t = useTranslations('boards');
-  const [filters, setFilters] = useState<BoardsFilterState>(DEFAULT_BOARDS_FILTERS);
-  const [modal, setModal] = useState<BoardModalState>({ kind: 'closed' });
-
-  const effectiveIncludeArchived = isAdmin && filters.includeArchived;
-  const boardsQuery = useBoardsInfiniteQuery({
-    departmentId: filters.departmentId,
-    includeArchived: effectiveIncludeArchived,
-    limit: filters.limit,
-  });
-  const departmentsQuery = useDepartmentsQuery(true);
   const createMutation = useCreateBoardMutation();
   const updateMutation = useUpdateBoardMutation();
   const archiveMutation = useArchiveBoardMutation();
 
-  const closeModal = () => {
-    createMutation.reset(); updateMutation.reset(); archiveMutation.reset();
-    setModal({ kind: 'closed' });
+  const resetAll = () => {
+    createMutation.reset();
+    updateMutation.reset();
+    archiveMutation.reset();
+    closeModal();
   };
 
   const handleUpsert = (payload: { name: string; departmentId: string | null }) => {
     if (modal.kind === 'create') {
       createMutation.mutate(payload, {
-        onSuccess: (res) => { toast.success(t('createdToast', { name: res.board.name })); closeModal(); },
+        onSuccess: (res) => { toast.success(t('createdToast', { name: res.board.name })); resetAll(); },
       });
       return;
     }
     if (modal.kind === 'edit') {
-      updateMutation.mutate({ id: modal.board.id, payload }, {
-        onSuccess: (res) => { toast.success(t('updatedToast', { name: res.board.name })); closeModal(); },
-      });
+      updateMutation.mutate(
+        { id: modal.board.id, payload },
+        { onSuccess: (res) => { toast.success(t('updatedToast', { name: res.board.name })); resetAll(); } }
+      );
     }
   };
 
-  return {
-    filters, setFilters, modal, setModal, boardsQuery, departmentsQuery,
-    createMutation, updateMutation, archiveMutation, closeModal, handleUpsert,
-    handleArchiveConfirm: () => {
-      if (modal.kind !== 'archive') return;
-      archiveMutation.mutate(modal.board.id, {
-        onSuccess: (res) => { toast.success(t('archivedToast', { name: res.board.name })); closeModal(); },
-      });
-    },
-    handleUnarchive: (board: BoardSummaryDto) => {
-      updateMutation.mutate({ id: board.id, payload: { unarchive: true } }, {
-        onSuccess: (res) => toast.success(t('unarchivedToast', { name: res.board.name })),
-      });
-    },
+  const handleArchiveConfirm = () => {
+    if (modal.kind !== 'archive') return;
+    archiveMutation.mutate(modal.board.id, {
+      onSuccess: (res) => { toast.success(t('archivedToast', { name: res.board.name })); resetAll(); },
+    });
   };
+
+  const handleUnarchive = (board: BoardSummaryDto) => {
+    updateMutation.mutate(
+      { id: board.id, payload: { unarchive: true } },
+      { onSuccess: (res) => toast.success(t('unarchivedToast', { name: res.board.name })) }
+    );
+  };
+
+  return { createMutation, updateMutation, archiveMutation, closeModal: resetAll, handleUpsert, handleArchiveConfirm, handleUnarchive };
+}
+
+function useBoardsListState(isAdmin: boolean) {
+  const [filters, setFilters] = useState<BoardsFilterState>(DEFAULT_BOARDS_FILTERS);
+  const [modal, setModal] = useState<BoardModalState>({ kind: 'closed' });
+  const debouncedQ = useDebouncedBoardSearch(filters.q);
+
+  const boardsQuery = useBoardsInfiniteQuery({
+    q: debouncedQ,
+    departmentId: filters.departmentId,
+    includeArchived: isAdmin && filters.includeArchived,
+    limit: filters.limit,
+  });
+  const departmentsQuery = useDepartmentsQuery(true);
+  const crud = useBoardCrudHandlers(modal, () => setModal({ kind: 'closed' }));
+
+  return { filters, setFilters, modal, setModal, boardsQuery, departmentsQuery, ...crud };
 }
 
 function BoardsModalHost({
@@ -271,10 +250,7 @@ function BoardsListBody({
     return <BoardsQueryErrorState error={state.boardsQuery.error} onRetry={() => state.boardsQuery.refetch()} />;
   }
 
-  const allBoards = state.boardsQuery.data?.pages.flatMap((page) => page.items) ?? [];
-  const qLower = state.filters.q.trim().toLowerCase();
-  const visible = qLower ? allBoards.filter((b) => b.name.toLowerCase().includes(qLower)) : allBoards;
-
+  const visible = state.boardsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   if (visible.length === 0) {
     return <BoardsEmptyState onOpenCreate={onOpenCreate} />;
   }
@@ -294,7 +270,12 @@ function BoardsListBody({
       </div>
       {state.boardsQuery.hasNextPage ? (
         <div className="directory-load-more">
-          <button type="button" className="ui-btn ghost" onClick={() => state.boardsQuery.fetchNextPage()} disabled={state.boardsQuery.isFetchingNextPage}>
+          <button
+            type="button"
+            className="ui-btn ghost"
+            onClick={() => state.boardsQuery.fetchNextPage()}
+            disabled={state.boardsQuery.isFetchingNextPage}
+          >
             {state.boardsQuery.isFetchingNextPage ? t('loadingMore') : t('loadMore')}
           </button>
         </div>
@@ -311,7 +292,13 @@ export function BoardsListView() {
 
   return (
     <div className="admin-page-stack">
-      <BoardsToolbar filters={state.filters} isAdmin={isAdmin} departments={departments} onFiltersChange={state.setFilters} onOpenCreate={openCreate} />
+      <BoardsToolbar
+        filters={state.filters}
+        isAdmin={isAdmin}
+        departments={departments}
+        onFiltersChange={state.setFilters}
+        onOpenCreate={openCreate}
+      />
       <BoardsListBody state={state} onOpenCreate={openCreate} />
       <BoardsModalHost state={state} departments={departments} />
     </div>

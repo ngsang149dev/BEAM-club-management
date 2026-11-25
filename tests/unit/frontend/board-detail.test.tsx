@@ -16,6 +16,7 @@ const boardsHooksMock = vi.hoisted(() => ({
 }));
 
 const tasksHooksMock = vi.hoisted(() => ({
+  useBoardFilteredTasksQuery: vi.fn(),
   useTaskDetailQuery: vi.fn(),
   useTaskAssigneeMembersQuery: vi.fn(),
   useTaskDepartmentsQuery: vi.fn(),
@@ -30,12 +31,18 @@ const authHooksMock = vi.hoisted(() => ({
   useMeQuery: vi.fn(),
 }));
 
+const navigationMock = vi.hoisted(() => ({
+  replace: vi.fn(),
+  searchParams: new URLSearchParams(),
+}));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: vi.fn(),
-    replace: vi.fn(),
+    replace: navigationMock.replace,
     refresh: vi.fn(),
   }),
+  useSearchParams: () => navigationMock.searchParams,
 }));
 
 vi.mock('@/features/boards/hooks/useBoards', async () => {
@@ -61,6 +68,7 @@ vi.mock('next/link', () => ({
 }));
 
 import { BoardDetailView } from '@/features/boards/components/BoardDetailView';
+import { BoardTaskCardView } from '@/features/boards/components/BoardTaskCard';
 import { ColumnDeleteModal } from '@/features/boards/components/ColumnModals';
 import { CreateTaskModal, buildCreateTaskRequestPayload } from '@/features/tasks/components/CreateTaskModal';
 import { TaskDetailDrawer } from '@/features/tasks/components/TaskDetailDrawer';
@@ -94,6 +102,7 @@ const BOARD_DETAIL: BoardDetailDto = {
   id: 'b-1', name: 'Open Day 2026', department: { id: 'd-1', name: 'Sự kiện' }, archivedAt: null,
   createdBy: { id: 'u-creator', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
   columns: [COL_DONE, COL_TODO], tasks: [TASK_LOW, TASK_URGENT_HIDDEN],
+  visibleTaskCount: 2, overdueTaskCount: 1,
   createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-20T00:00:00Z',
 };
 
@@ -108,8 +117,17 @@ function renderWithIntl(node: ReactNode, options: { permissions?: PermissionCode
 
 describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    navigationMock.searchParams = new URLSearchParams();
     authHooksMock.useMeQuery.mockReturnValue({ data: { profile: { id: 'u-viewer', departments: [] } } });
     boardsHooksMock.useBoardDetailQuery.mockReturnValue({ isPending: false, isError: false, error: null, data: { board: BOARD_DETAIL } });
+    tasksHooksMock.useBoardFilteredTasksQuery.mockReturnValue({
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      data: { items: [], meta: { nextCursor: null, limit: 100 } },
+    });
     tasksHooksMock.useTaskAssigneeMembersQuery.mockReturnValue({ isPending: false, isError: false, data: { items: [] } });
     tasksHooksMock.useTaskDepartmentsQuery.mockReturnValue({
       isPending: false,
@@ -425,5 +443,98 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       notifyDepartmentMembers: false,
       version: 5,
     });
+  });
+
+  it('renders BoardFilterBar, gates assignee filter by member.view, pauses DnD with banner, and filters columns', () => {
+    const noMemberViewHtml = renderWithIntl(<BoardDetailView boardId="b-1" />, { permissions: ['task.create'] });
+    expect(noMemberViewHtml).toContain('board-filter-bar');
+    expect(noMemberViewHtml).toContain('Tìm theo tiêu đề hoặc mô tả...');
+    expect(noMemberViewHtml).not.toContain('Lọc theo người được giao');
+    expect(tasksHooksMock.useTaskAssigneeMembersQuery).toHaveBeenCalledWith(false);
+    expect(noMemberViewHtml).not.toContain('board-dnd-notice');
+
+    tasksHooksMock.useTaskAssigneeMembersQuery.mockReturnValue({
+      isPending: false,
+      isError: false,
+      data: {
+        items: [{ id: 'u-1', fullName: 'Nguyen Van A', isActive: true, leftAt: null, departments: [] }],
+      },
+    });
+    navigationMock.searchParams = new URLSearchParams('priority=4&columnId=c-1&sortBy=dueAt&sortOrder=desc');
+    tasksHooksMock.useBoardFilteredTasksQuery.mockReturnValue({
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      data: { items: [TASK_URGENT_HIDDEN], meta: { nextCursor: null, limit: 100 } },
+    });
+
+    const filteredHtml = renderWithIntl(<BoardDetailView boardId="b-1" />, {
+      permissions: ['member.view', 'task.update_any'],
+      locale: 'en',
+    });
+    expect(tasksHooksMock.useTaskAssigneeMembersQuery).toHaveBeenCalledWith(true);
+    expect(tasksHooksMock.useBoardFilteredTasksQuery).toHaveBeenCalledWith(
+      'b-1',
+      expect.objectContaining({ priority: 4, columnId: 'c-1', sortBy: 'dueAt', sortOrder: 'desc' }),
+      true
+    );
+    expect(filteredHtml).toContain('Filter by assignee');
+    expect(filteredHtml).toContain('Nguyen Van A');
+    expect(filteredHtml).toContain('board-dnd-notice');
+    expect(filteredHtml).toContain('Drag-and-drop is paused while filtering or sorting.');
+    expect(filteredHtml).toContain('Reset to default');
+    expect(filteredHtml).not.toContain('class="kanban-drag-handle"');
+    expect(filteredHtml).toContain('aria-label="Todo"');
+    expect(filteredHtml).not.toContain('aria-label="Done"');
+    expect(filteredHtml).toContain('1 tasks');
+    expect(filteredHtml).toContain('Move to column…');
+  });
+
+  it('suppresses overdue warning styling on Done column cards and exposes Move to column… menu per move permission', () => {
+    const overdueTaskInDone: TaskDto = {
+      ...TASK_URGENT_HIDDEN,
+      id: 't-done-overdue',
+      columnId: 'c-2',
+      title: 'Hoàn tất tổng kết',
+      isHidden: false,
+    };
+    boardsHooksMock.useBoardDetailQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      data: { board: { ...BOARD_DETAIL, tasks: [overdueTaskInDone] } },
+    });
+    const doneHtml = renderWithIntl(<BoardDetailView boardId="b-1" />, { permissions: ['task.update_any'] });
+    expect(doneHtml).toContain('Hoàn tất tổng kết');
+    expect(doneHtml).toContain('ui-due is-done');
+    expect(doneHtml).not.toContain('kanban-card prio-p4 is-overdue');
+    expect(doneHtml).not.toContain('ui-due is-overdue');
+    expect(doneHtml).not.toContain('Quá hạn ·');
+    expect(doneHtml).toContain('Chuyển tới cột…');
+    expect(doneHtml).toContain('Tùy chọn task');
+
+    boardsHooksMock.useBoardDetailQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      data: { board: { ...BOARD_DETAIL, tasks: [overdueTaskInDone] } },
+    });
+    const readOnlyBoardHtml = renderWithIntl(<BoardDetailView boardId="b-1" />, { permissions: ['member.view'] });
+    expect(readOnlyBoardHtml).not.toContain('Chuyển tới cột…');
+    expect(readOnlyBoardHtml).not.toContain('Tùy chọn task');
+
+    const cardHtml = renderWithIntl(
+      <BoardTaskCardView
+        task={TASK_URGENT_HIDDEN}
+        canMove
+        canDrag={false}
+        columns={[COL_TODO, COL_DONE]}
+        onMoveToColumn={vi.fn()}
+      />
+    );
+    expect(cardHtml).toContain('Chuyển tới cột…');
+    expect(cardHtml).toContain('Done');
+    expect(cardHtml).not.toContain('Todo</button>');
   });
 });

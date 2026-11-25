@@ -74,10 +74,14 @@ export function BoardColumnOverlayPreview({
 
 export interface BoardColumnLaneProps {
   readonly column: ColumnDto;
+  readonly allColumns: readonly ColumnDto[];
   readonly tasks: readonly TaskDto[];
   readonly columnIndex: number;
   readonly columnCount: number;
+  readonly isDoneColumn: boolean;
+  readonly dndPaused: boolean;
   readonly isReordering: boolean;
+  readonly isMovingTask: boolean;
   readonly canReorderColumns: boolean;
   readonly isDropTarget: boolean;
   readonly canDragTask: (task: TaskDto) => boolean;
@@ -87,6 +91,7 @@ export interface BoardColumnLaneProps {
   readonly onDelete: () => void;
   readonly onAddTask: () => void;
   readonly onOpenTask: (taskId: string) => void;
+  readonly onMoveTaskToColumn: (task: TaskDto, targetColumn: ColumnDto) => void;
 }
 
 function BoardColumnTitleBar({
@@ -129,20 +134,31 @@ function BoardColumnTitleBar({
 
 function BoardColumnLaneBody({
   columnId,
+  allColumns,
   tasks,
+  isDoneColumn,
+  dndPaused,
   isDropTarget,
+  isMovingTask,
   canDragTask,
   onOpenTask,
+  onMoveTaskToColumn,
 }: {
   readonly columnId: string;
+  readonly allColumns: readonly ColumnDto[];
   readonly tasks: readonly TaskDto[];
+  readonly isDoneColumn: boolean;
+  readonly dndPaused: boolean;
   readonly isDropTarget: boolean;
+  readonly isMovingTask: boolean;
   readonly canDragTask: (task: TaskDto) => boolean;
   readonly onOpenTask: (taskId: string) => void;
+  readonly onMoveTaskToColumn: (task: TaskDto, targetColumn: ColumnDto) => void;
 }) {
   const t = useTranslations('boards');
   const { setNodeRef } = useDroppable({
     id: toLaneDropId(columnId),
+    disabled: dndPaused,
     data: { kind: 'lane', columnId },
   });
   const taskDragIds = tasks.map((task) => toTaskDragId(task.id));
@@ -153,14 +169,22 @@ function BoardColumnLaneBody({
         {tasks.length === 0 ? (
           <p className="kanban-col-empty">{isDropTarget ? t('dropHereHint') : t('emptyColumn')}</p>
         ) : (
-          tasks.map((task) => (
-            <SortableBoardTaskCard
-              key={task.id}
-              task={task}
-              canDrag={canDragTask(task)}
-              onOpenTask={onOpenTask}
-            />
-          ))
+          tasks.map((task) => {
+            const canMove = canDragTask(task);
+            return (
+              <SortableBoardTaskCard
+                key={task.id}
+                task={task}
+                canDrag={canMove && !dndPaused}
+                canMove={canMove}
+                isDoneColumn={isDoneColumn}
+                columns={allColumns}
+                isMoving={isMovingTask}
+                onOpenTask={onOpenTask}
+                onMoveToColumn={onMoveTaskToColumn}
+              />
+            );
+          })
         )}
       </SortableContext>
     </div>
@@ -177,9 +201,10 @@ function getColumnLaneClass(isDropTarget: boolean, isDragging: boolean): string 
 export function BoardColumnLane(props: BoardColumnLaneProps) {
   const { column, tasks } = props;
   const t = useTranslations('boards');
+  const allowColumnDrag = props.canReorderColumns && !props.dndPaused;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: toColumnDragId(column.id),
-    disabled: !props.canReorderColumns,
+    disabled: !allowColumnDrag,
     data: { kind: 'column', column },
   });
 
@@ -194,7 +219,7 @@ export function BoardColumnLane(props: BoardColumnLaneProps) {
         <BoardColumnTitleBar
           name={column.name}
           taskCount={tasks.length}
-          canReorderColumns={props.canReorderColumns}
+          canReorderColumns={allowColumnDrag}
           attributes={attributes}
           listeners={listeners}
           menu={
@@ -212,10 +237,15 @@ export function BoardColumnLane(props: BoardColumnLaneProps) {
       </header>
       <BoardColumnLaneBody
         columnId={column.id}
+        allColumns={props.allColumns}
         tasks={tasks}
+        isDoneColumn={props.isDoneColumn}
+        dndPaused={props.dndPaused}
         isDropTarget={props.isDropTarget}
+        isMovingTask={props.isMovingTask}
         canDragTask={props.canDragTask}
         onOpenTask={props.onOpenTask}
+        onMoveTaskToColumn={props.onMoveTaskToColumn}
       />
       <Can permission="task.create">
         <div className="kanban-col-foot">

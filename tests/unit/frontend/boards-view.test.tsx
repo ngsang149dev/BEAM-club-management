@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
+import { QueryClient } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import enMessages from '../../../messages/en.json';
 import viMessages from '../../../messages/vi.json';
-import { ApiClientError, type components } from '@/features/shared/api/client';
+import { apiFetch, ApiClientError, type components } from '@/features/shared/api/client';
 import { PermissionsProvider, type PermissionCode } from '@/features/shared/permissions/can';
 
 const boardsHooksMock = vi.hoisted(() => ({
@@ -35,6 +36,7 @@ vi.mock('next/link', () => ({
 
 import { BoardsListView } from '@/features/boards/components/BoardsListView';
 import { describeBoardError } from '@/features/boards/error-mapping';
+import { BOARDS_QUERY_KEYS } from '@/features/boards/hooks/useBoards';
 
 type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
 
@@ -44,6 +46,8 @@ const ACTIVE_BOARD: BoardSummaryDto = {
   department: { id: 'dept-1', name: 'Sự kiện' },
   archivedAt: null,
   createdBy: { id: 'u-1', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
+  visibleTaskCount: 12,
+  overdueTaskCount: 1,
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-20T00:00:00Z',
 };
@@ -54,6 +58,8 @@ const ARCHIVED_CLUB_BOARD: BoardSummaryDto = {
   department: null,
   archivedAt: '2026-10-15T00:00:00Z',
   createdBy: { id: 'u-2', fullName: 'Tran Thi B', isActive: true, leftAt: null, departments: [] },
+  visibleTaskCount: 4,
+  overdueTaskCount: 0,
   createdAt: '2026-09-01T00:00:00Z',
   updatedAt: '2026-10-15T00:00:00Z',
 };
@@ -74,7 +80,12 @@ function renderBoards(options: {
 }
 
 describe('BoardsListView (S03)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
+    vi.clearAllMocks();
     departmentsHookMock.useDepartmentsQuery.mockReturnValue({
       isPending: false,
       isError: false,
@@ -93,11 +104,20 @@ describe('BoardsListView (S03)', () => {
     });
   });
 
-  it('hides admin archived toggle and board mutation buttons for standard members', () => {
+  it('hides admin archived toggle and board mutation buttons for standard members and shows viewer counts', () => {
     const html = renderBoards({ permissions: ['member.view'] });
     expect(html).toContain('Sự kiện Open Day 2026');
     expect(html).toContain('Sự kiện');
+    expect(html).toContain('12 task');
+    expect(html).toContain('1 quá hạn');
+    expect(html).toContain('board-tile-overdue-pill');
     expect(html).toContain('Tải thêm board');
+    expect(boardsHooksMock.useBoardsInfiniteQuery).toHaveBeenCalledWith({
+      q: '',
+      departmentId: '',
+      includeArchived: false,
+      limit: 20,
+    });
     expect(html).not.toContain('Hiện board đã lưu trữ');
     expect(html).not.toContain('Tùy chọn board');
     expect(html).not.toContain('>Tạo board<');
@@ -130,9 +150,43 @@ describe('BoardsListView (S03)', () => {
     expect(html).toContain('Show archived boards');
     expect(html).toContain('Club-wide');
     expect(html).toContain('Archived');
+    expect(html).toContain('12 tasks');
+    expect(html).toContain('1 overdue');
+    expect(html).toContain('4 tasks');
+    expect(html).toContain('No overdue');
     expect(html).toContain('Board options');
     expect(html).toContain('Restore board');
     expect(html).toContain('New board');
+  });
+
+  it('forwards q in BOARDS_QUERY_KEYS and GET /api/v1/boards?q=...', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], meta: { nextCursor: null, limit: 20 } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const keyWithQ = BOARDS_QUERY_KEYS.list({
+      q: 'open day',
+      departmentId: '',
+      includeArchived: false,
+      limit: 20,
+    });
+    expect(keyWithQ).toEqual([
+      'boards',
+      'list',
+      { q: 'open day', departmentId: '', includeArchived: false, limit: 20 },
+    ]);
+
+    const queryClient = new QueryClient();
+    await queryClient.fetchQuery({
+      queryKey: keyWithQ,
+      queryFn: () => apiFetch('/boards', { query: { q: 'open day', includeArchived: false, limit: 20 } }),
+    });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe('/api/v1/boards?q=open+day&includeArchived=false&limit=20');
   });
 
   it('renders empty state and error state with requestId cleanly', () => {

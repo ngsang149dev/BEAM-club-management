@@ -48,7 +48,13 @@ function resolveDueBadgeLabel(
   return dateText;
 }
 
-export function TaskDueBadge({ dueAt }: { dueAt: string | null }) {
+export function TaskDueBadge({
+  dueAt,
+  suppressOverdue = false,
+}: {
+  dueAt: string | null;
+  suppressOverdue?: boolean;
+}) {
   const locale = useLocale();
   const tTasks = useTranslations('tasks');
   const urgency = getTaskDueUrgency(dueAt);
@@ -58,6 +64,15 @@ export function TaskDueBadge({ dueAt }: { dueAt: string | null }) {
   }
 
   const dateText = formatTaskDueDate(dueAt, locale);
+  if (suppressOverdue) {
+    return (
+      <span className="ui-due is-done">
+        <DueCalendarIcon />
+        <span>{dateText}</span>
+      </span>
+    );
+  }
+
   const showDot = urgency === 'overdue' || urgency === 'today';
 
   return (

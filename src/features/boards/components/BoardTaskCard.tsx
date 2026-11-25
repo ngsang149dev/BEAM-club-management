@@ -15,13 +15,20 @@ import { isTaskOverdue, normalizeTaskPriority } from '@/features/tasks/formatter
 import type { TaskDto } from '@/features/tasks/hooks/useTasks';
 import type { TaskPriority } from '@/lib/tasks';
 import { toTaskDragId } from '../dnd-helpers';
+import type { ColumnDto } from '../hooks/useBoards';
+import { ActionMenu, ActionMenuItem } from './ActionMenu';
 
 export interface BoardTaskCardViewProps {
   readonly task: TaskDto;
   readonly canDrag?: boolean;
+  readonly canMove?: boolean;
+  readonly isDoneColumn?: boolean;
+  readonly columns?: readonly ColumnDto[];
+  readonly isMoving?: boolean;
   readonly isDragging?: boolean;
   readonly isOverlay?: boolean;
   readonly onOpenTask?: (taskId: string) => void;
+  readonly onMoveToColumn?: (task: TaskDto, targetColumn: ColumnDto) => void;
   readonly cardPointerDown?: PointerEventHandler<HTMLElement>;
   readonly dragHandleAttributes?: DraggableAttributes;
   readonly dragHandleKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
@@ -51,12 +58,105 @@ function buildTaskCardClass({
   return classes.join(' ');
 }
 
+function TaskMoveColumnMenu({
+  task,
+  columns,
+  isMoving,
+  onMoveToColumn,
+}: {
+  readonly task: TaskDto;
+  readonly columns: readonly ColumnDto[];
+  readonly isMoving: boolean;
+  readonly onMoveToColumn: (task: TaskDto, targetColumn: ColumnDto) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+  const otherColumns = columns.filter((col) => col.id !== task.columnId);
+  if (otherColumns.length === 0) return null;
+
+  return (
+    <div
+      className="task-card-menu"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <ActionMenu label={tTasks('taskActionsMenu')}>
+        <div className="task-card-menu-label">{tTasks('moveToColumnMenu')}</div>
+        {otherColumns.map((col) => (
+          <ActionMenuItem key={col.id} disabled={isMoving} onSelect={() => onMoveToColumn(task, col)}>
+            {col.name}
+          </ActionMenuItem>
+        ))}
+      </ActionMenu>
+    </div>
+  );
+}
+
+type BoardTaskCardTopProps = Pick<
+  BoardTaskCardViewProps,
+  | 'task'
+  | 'canDrag'
+  | 'canMove'
+  | 'columns'
+  | 'isMoving'
+  | 'isOverlay'
+  | 'onOpenTask'
+  | 'onMoveToColumn'
+  | 'dragHandleAttributes'
+  | 'dragHandleKeyDown'
+>;
+
+function BoardTaskCardTop(props: BoardTaskCardTopProps) {
+  const { task, canDrag, canMove, columns, isMoving, isOverlay, onOpenTask, onMoveToColumn } = props;
+  const tTasks = useTranslations('tasks');
+
+  return (
+    <div className="kanban-card-top">
+      <button
+        type="button"
+        className="kanban-card-open"
+        onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
+      >
+        <span className="kanban-card-title">{task.title}</span>
+      </button>
+      <div className="kanban-card-top-right">
+        {task.isHidden ? <span className="ui-chip task-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
+        {canDrag ? (
+          <button
+            type="button"
+            className="kanban-drag-handle"
+            aria-label={tTasks('dragTaskHint')}
+            title={tTasks('dragTaskHint')}
+            {...props.dragHandleAttributes}
+            onKeyDown={props.dragHandleKeyDown}
+            onClick={(event) => event.stopPropagation()}
+          >
+            ⋮⋮
+          </button>
+        ) : null}
+        {!isOverlay && canMove && columns && onMoveToColumn ? (
+          <TaskMoveColumnMenu
+            task={task}
+            columns={columns}
+            isMoving={Boolean(isMoving)}
+            onMoveToColumn={onMoveToColumn}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function BoardTaskCardView({
   task,
   canDrag = false,
+  canMove = false,
+  isDoneColumn = false,
+  columns = [],
+  isMoving = false,
   isDragging = false,
   isOverlay = false,
   onOpenTask,
+  onMoveToColumn,
   cardPointerDown,
   dragHandleAttributes,
   dragHandleKeyDown,
@@ -65,7 +165,7 @@ export function BoardTaskCardView({
   const priorityLevel = normalizeTaskPriority(task.priority);
   const cardClass = buildTaskCardClass({
     priorityLevel,
-    isOverdue: isTaskOverdue(task.dueAt),
+    isOverdue: !isDoneColumn && isTaskOverdue(task.dueAt),
     isHidden: task.isHidden,
     canDrag,
     isDragging,
@@ -74,34 +174,21 @@ export function BoardTaskCardView({
 
   return (
     <article className={cardClass} onPointerDown={cardPointerDown}>
-      <div className="kanban-card-top">
-        <button
-          type="button"
-          className="kanban-card-open"
-          onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
-        >
-          <span className="kanban-card-title">{task.title}</span>
-        </button>
-        <div className="kanban-card-top-right">
-          {task.isHidden ? <span className="ui-chip task-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
-          {canDrag ? (
-            <button
-              type="button"
-              className="kanban-drag-handle"
-              aria-label={tTasks('dragTaskHint')}
-              title={tTasks('dragTaskHint')}
-              {...dragHandleAttributes}
-              onKeyDown={dragHandleKeyDown}
-              onClick={(event) => event.stopPropagation()}
-            >
-              ⋮⋮
-            </button>
-          ) : null}
-        </div>
-      </div>
+      <BoardTaskCardTop
+        task={task}
+        canDrag={canDrag}
+        canMove={canMove}
+        columns={columns}
+        isMoving={isMoving}
+        isOverlay={isOverlay}
+        onOpenTask={onOpenTask}
+        onMoveToColumn={onMoveToColumn}
+        dragHandleAttributes={dragHandleAttributes}
+        dragHandleKeyDown={dragHandleKeyDown}
+      />
       <div className="kanban-card-signals">
         <TaskPriorityBadge priority={task.priority} />
-        <TaskDueBadge dueAt={task.dueAt} />
+        <TaskDueBadge dueAt={task.dueAt} suppressOverdue={isDoneColumn} />
       </div>
       <div className="kanban-card-meta">
         <span className="ui-chip">{tTasks('commentsCount', { count: task.commentCount })}</span>
@@ -131,11 +218,21 @@ function getKeyDownHandler(
 export function SortableBoardTaskCard({
   task,
   canDrag,
+  canMove,
+  isDoneColumn,
+  columns,
+  isMoving,
   onOpenTask,
+  onMoveToColumn,
 }: {
   readonly task: TaskDto;
   readonly canDrag: boolean;
+  readonly canMove: boolean;
+  readonly isDoneColumn: boolean;
+  readonly columns: readonly ColumnDto[];
+  readonly isMoving: boolean;
   readonly onOpenTask: (taskId: string) => void;
+  readonly onMoveToColumn: (task: TaskDto, targetColumn: ColumnDto) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: toTaskDragId(task.id),
@@ -153,8 +250,13 @@ export function SortableBoardTaskCard({
       <BoardTaskCardView
         task={task}
         canDrag={canDrag}
+        canMove={canMove}
+        isDoneColumn={isDoneColumn}
+        columns={columns}
+        isMoving={isMoving}
         isDragging={isDragging}
         onOpenTask={onOpenTask}
+        onMoveToColumn={onMoveToColumn}
         cardPointerDown={getPointerDownHandler(canDrag, listeners)}
         dragHandleAttributes={canDrag ? attributes : undefined}
         dragHandleKeyDown={getKeyDownHandler(canDrag, listeners)}

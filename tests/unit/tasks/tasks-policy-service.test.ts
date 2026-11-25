@@ -518,6 +518,30 @@ describe('tasks policy & TasksService', () => {
     // departmentId query param forwarded to repo
     await service.listTasks(ADMIN, { departmentId: DEPT_1, sortBy: 'position', sortOrder: 'asc', limit: 20 });
     expect(repo.lastListParams?.departmentId).toBe(DEPT_1);
+    await service.listTasks(ADMIN, {
+      boardId: BOARD_ID,
+      columnId: COL_TODO,
+      assigneeId: ASSIGNEE_ID,
+      departmentId: DEPT_1,
+      priority: 4,
+      dueStatus: 'overdue',
+      q: 'urgent',
+      sortBy: 'dueAt',
+      sortOrder: 'desc',
+      limit: 10,
+    });
+    expect(repo.lastListParams).toMatchObject({
+      boardId: BOARD_ID,
+      columnId: COL_TODO,
+      assigneeId: ASSIGNEE_ID,
+      departmentId: DEPT_1,
+      priority: 4,
+      dueStatus: 'overdue',
+      q: 'urgent',
+      sortBy: 'dueAt',
+      sortOrder: 'desc',
+      limit: 10,
+    });
     await service.listMyTasks(DEPT_MEMBER_ACTOR, { departmentId: DEPT_1, includeDone: false, limit: 20 });
     expect(repo.lastMyParams?.departmentId).toBe(DEPT_1);
   });

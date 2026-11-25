@@ -127,6 +127,8 @@ const ARCHIVED_BOARD_ITEM: ArchiveBoardItem = {
       leftAt: null,
       departments: [],
     },
+    visibleTaskCount: 0,
+    overdueTaskCount: 0,
     createdAt: '2026-09-01T00:00:00Z',
     updatedAt: '2026-11-18T03:00:00Z',
   },

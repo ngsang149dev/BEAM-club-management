@@ -41,7 +41,12 @@ export {
   POSITION_STEP,
   type TaskMovePlan,
 } from './positioning';
-export { DrizzleTasksRepository, visibleTaskSqlCondition } from './repository';
+export {
+  DrizzleTasksRepository,
+  notDoneColumnSqlCondition,
+  taskAccessSqlCondition,
+  visibleTaskSqlCondition,
+} from './repository';
 export { TasksService, type TasksServiceDeps } from './service';
 export { type RunTaskAssigneesResult, toTaskVisibilitySubject } from './service-helpers';
 export type {

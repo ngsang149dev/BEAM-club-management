@@ -159,6 +159,8 @@ describe('board-dnd-helpers', () => {
       createdBy: CREATOR,
       columns: [makeColumn('c-1', 'Todo', 0), makeColumn('c-2', 'Doing', 1), makeColumn('c-3', 'Done', 2)],
       tasks: [],
+      visibleTaskCount: 0,
+      overdueTaskCount: 0,
       createdAt: '2026-11-01T00:00:00Z',
       updatedAt: '2026-11-01T00:00:00Z',
     };
@@ -185,6 +187,8 @@ describe('board-dnd-helpers', () => {
         createdBy: CREATOR,
         columns: [makeColumn('c-1', 'Todo', 0, 1), makeColumn('c-2', 'Done', 1, 2)],
         tasks: [t1, d1, d2],
+        visibleTaskCount: 3,
+        overdueTaskCount: 0,
         createdAt: '2026-11-01T00:00:00Z',
         updatedAt: '2026-11-01T00:00:00Z',
       },

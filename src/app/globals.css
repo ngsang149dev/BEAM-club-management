@@ -596,6 +596,12 @@ svg {
   color: var(--ink-3);
   font-weight: 500;
 }
+.ui-due.is-done {
+  border-color: var(--line-soft);
+  background: var(--paper);
+  color: var(--ink-3);
+  font-weight: 500;
+}
 
 .ui-due-dot {
   width: 7px;
@@ -3260,6 +3266,10 @@ svg {
   box-shadow: var(--shadow-pop-xs);
 }
 
+.kanban-card:has(.ui-action-menu[open]) {
+  z-index: 30;
+}
+
 .kanban-card.prio-p1 {
   border-left: 5px solid var(--p1);
 }
@@ -4516,6 +4526,127 @@ svg {
 .notif-error-text {
   color: var(--danger) !important;
   font-weight: 600;
+}
+
+.board-tile-main {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.board-tile-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 12.5px;
+}
+
+.board-tile-count-total {
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.board-tile-overdue-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border: 1.5px solid #e11d48;
+  border-radius: 999px;
+  background: #ffe4e6;
+  color: #be123c;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.board-tile-no-overdue {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.board-filter-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.board-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop-xs);
+}
+
+.board-filter-search {
+  flex: 1 1 210px;
+  min-width: 170px;
+}
+
+.board-filter-control {
+  flex: 0 1 168px;
+  min-width: 138px;
+}
+
+.board-filter-bar .ui-input,
+.board-filter-bar .ui-select,
+.board-filter-bar .ui-btn {
+  height: 36px;
+  min-height: 36px;
+}
+
+.board-dnd-notice {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 9px 14px;
+}
+
+.board-dnd-notice-body {
+  flex: 1 1 240px;
+}
+
+.task-card-menu {
+  position: relative;
+  z-index: 2;
+}
+
+.task-card-menu .ui-action-menu-trigger {
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+}
+
+.task-card-menu-label {
+  padding: 5px 10px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-3);
+}
+
+@media (max-width: 640px) {
+  .board-filter-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .board-filter-search {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .board-filter-control {
+    min-width: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
