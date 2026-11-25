@@ -10,6 +10,15 @@ import { PermissionsProvider } from '@/features/shared/permissions/can';
 
 const tasksHooksMock = vi.hoisted(() => ({
   useMyTasksInfiniteQuery: vi.fn(),
+  useTaskDepartmentsQuery: vi.fn(() => ({
+    isPending: false,
+    isError: false,
+    data: {
+      items: [
+        { id: 'd-comm', name: 'Truyền thông', memberCount: 4, boardCount: 1, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+      ],
+    },
+  })),
   useTaskDetailQuery: vi.fn(() => ({ isPending: false, isError: false, error: null, data: undefined, refetch: vi.fn() })),
   useTaskAssigneeMembersQuery: vi.fn(() => ({ isPending: false, isError: false, data: { items: [] } })),
   useUpdateTaskMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
@@ -60,6 +69,7 @@ const MY_TASK_1: TaskDto = {
   version: 1,
   deletedAt: null,
   assignees: [{ id: 'u-me', fullName: 'Nguyen Van A', isActive: true, leftAt: null, departments: [] }],
+  assignedDepartments: [{ id: 'd-comm', name: 'Truyền thông' }],
   creator: { id: 'u-c', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
   commentCount: 3,
   createdAt: '2026-11-20T01:00:00Z',
@@ -90,13 +100,17 @@ describe('MyTasksView (S06) & task formatters', () => {
     });
   });
 
-  it('calls /me/tasks with includeDone=false by default (WQ-03) and renders tasks, priority, and Load more', () => {
+  it('calls /me/tasks with includeDone=false and departmentId="" by default (WQ-03) and renders tasks, department filter & chips, priority, and Load more', () => {
     const html = renderMyTasks('vi');
     expect(tasksHooksMock.useMyTasksInfiniteQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ includeDone: false, priority: '' }),
+      expect.objectContaining({ includeDone: false, priority: '', departmentId: '' }),
       true
     );
     expect(html).toContain('Hiện cả task đã hoàn thành');
+    expect(html).toContain('Lọc theo ban');
+    expect(html).toContain('Tất cả ban');
+    expect(html).toContain('task-dept-chip');
+    expect(html).toContain('Truyền thông');
     expect(html).toContain('Viết kịch bản MC');
     expect(html).toContain('Khẩn');
     expect(html).toContain('prio-p4');
@@ -158,6 +172,11 @@ describe('MyTasksView (S06) & task formatters', () => {
         new ApiClientError({ status: 400, code: 'INVALID_ASSIGNEE_IDS', messageKey: 'errors.invalidAssigneeIds', details: {}, requestId: 'req-a' })
       )
     ).toEqual({ key: 'invalidAssigneeIds', requestId: 'req-a' });
+    expect(
+      describeTaskError(
+        new ApiClientError({ status: 400, code: 'INVALID_DEPARTMENT_IDS', messageKey: 'errors.invalidDepartmentIds', details: {}, requestId: 'req-d' })
+      )
+    ).toEqual({ key: 'invalidDepartmentIds', requestId: 'req-d' });
   });
 
   it('prevents 404 detail refetch when deleting a task via useDeleteTaskMutation cache lifecycle', async () => {

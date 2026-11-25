@@ -1,5 +1,7 @@
 # Entity-Relationship Diagram & Data Dictionary (`docs/ERD.md`)
 
+- **Tài liệu `docs/ERD.md` (CR-03):** Đã cập nhật lên 21 bảng miền.
+
 Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống quản lý thành viên & giao task CLB BEAM, chốt ở giai đoạn **0B (`E0-02`)** dựa trên:
 - `docs/HANDOFF-club-management-website.md` v1.4 (mục 8.1, 8.2, 8.6, 8.8, 11.4)
 - `docs/DECISIONS.md` (`sessions` table, `WQ-02`, `WQ-05`, `WQ-10`, `WQ-12`, `WQ-19`, `WQ-21`, `WQ-33`, `Q36–Q39`)
@@ -15,18 +17,19 @@ Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống qu�
 4. **Bảo vệ lịch sử & danh tính (`CR-04` mở rộng `WQ-21`, `Q39`):**
    - Mọi khóa ngoại trỏ về `profiles(id)` dùng `ON DELETE RESTRICT` (không bao giờ xóa cascade lịch sử thành viên; thành viên rời CLB dùng `is_active = false`, `left_at`).
    - `profiles.student_id` bất biến sau khi tạo (trigger `prevent_student_id_change`, `WQ-21`), chỉ mở ngoại lệ một chiều duy nhất khi Admin/Cron thực hiện purge tài khoản đã phát sinh lịch sử (`OLD.purged_at IS NULL AND NEW.purged_at IS NOT NULL AND NEW.is_active = false`) để ẩn danh thành `'PURGED-' || id::text`; đồng thời chặn mọi thao tác bỏ `purged_at` (`ALREADY_PURGED`) trên `profiles`, `boards` và `tasks` (trigger `prevent_entity_unpurge`).
-   - Tài khoản đã khóa nhưng **chưa có** bản ghi lịch sử/liên kết (`audit_logs`, `task_events`, `tasks`, `task_assignees`, `comments`, `boards`, `reminders`, `app_settings`, `club_assets`, `user_permissions(granted_by)`) có thể bị xóa vật lý (`DELETE FROM profiles`) bởi Admin/Cron sau khi dọn `sessions`, `member_departments`, `user_permissions(user_id)`.
+   - Tài khoản đã khóa nhưng **chưa có** bản ghi lịch sử/liên kết (`audit_logs`, `task_events`, `tasks`, `task_assignees`, `comments`, `boards`, `reminders`, `app_settings`, `club_assets`, `user_permissions(granted_by)`, `notifications(actor_id)`) có thể bị xóa vật lý (`DELETE FROM profiles`) bởi Admin/Cron sau khi dọn `sessions`, `member_departments`, `user_permissions(user_id)`, `notifications(user_id)`.
    - Luôn có ít nhất 1 admin hoạt động (hai trigger `AFTER STATEMENT` với transition tables `prevent_last_active_admin_update` và `prevent_last_active_admin_delete`, khóa đồng thời bằng `pg_advisory_xact_lock`).
    - `task_events` và `audit_logs` là bảng **chỉ ghi thêm** (`append-only`), chặn `UPDATE`/`DELETE`/`TRUNCATE` bằng trigger `prevent_append_only_mutation`.
-   - `task_events.changes` chỉ lưu ID và giá trị trường miền, **không lưu** họ tên, MSSV hay email.
+   - `task_events.changes` chỉ lưu ID (kể cả `department_ids`) và giá trị trường miền, **không lưu** họ tên, MSSV hay email.
+   - `notifications.payload` tuân thủ bảo mật `WQ-27`: khi `is_hidden_task = true`, `payload.taskTitle` phải là `null` và không bao giờ lưu MSSV/email.
    - Không hardcode `@eiu.edu.vn` trong ràng buộc SQL; kiểm tra domain email nằm ở cấu hình máy chủ (`ALLOWED_EMAIL_DOMAIN`).
-5. **Xóa mềm, Kho lưu trữ Archive & Purge an toàn (`CR-04`, `WQ-05`, `WQ-33`):**
-   - `profiles.purged_at`, `boards.purged_at`, `tasks.purged_at`: đánh dấu đối tượng đã bị xóa vĩnh viễn khỏi Kho lưu trữ (`/archive`) bởi Admin hoặc Cron (`app_settings('archive_retention')`: `null`/`7`/`30`/`90` ngày) nhưng vẫn bảo toàn khóa ngoại & lịch sử bất biến.
+5. **Xóa mềm, Kho lưu trữ Archive & Purge an toàn (`CR-04`, `CR-03`, `WQ-05`, `WQ-33`):**
+   - `profiles.purged_at`, `boards.purged_at`, `tasks.purged_at`: đánh dấu đối tượng đã bị xóa vĩnh viễn khỏi Kho lưu trữ (`/archive`) bởi Admin hoặc Cron (`app_settings('archive_retention')`: `null`/`7`/`30`/`90` ngày) nhưng vẫn bảo toàn khóa ngoại & lịch sử bất biến. Khi purge task/board, service đồng thời dọn `task_departments` và `notifications` của task bị purge (giải phóng ban nếu không còn tham chiếu).
    - `columns -> tasks` dùng `ON DELETE RESTRICT` để chặn xóa cột còn task (`409`). Riêng `tasks.column_id` cho phép `NULL` khi `deleted_at IS NOT NULL` (`CHECK (deleted_at IS NOT NULL OR column_id IS NOT NULL)`), giúp service xóa cột có thể dọn `column_id = NULL` cho các task đã nằm sẵn trong Thùng rác và khi khôi phục (`WQ-33`) sẽ đưa về cột đầu tiên của board.
 
 ---
 
-## 2. Sơ đồ ERD (19 bảng miền)
+## 2. Sơ đồ ERD (21 bảng miền)
 
 ```mermaid
 erDiagram
@@ -184,6 +187,26 @@ erDiagram
         timestamptz created_at
     }
 
+    TASK_DEPARTMENTS {
+        uuid task_id PK,FK
+        uuid department_id PK,FK
+        timestamptz created_at
+    }
+
+    NOTIFICATIONS {
+        uuid id PK
+        uuid user_id FK
+        text type
+        uuid task_id FK
+        uuid board_id FK
+        uuid department_id FK "NULL"
+        uuid actor_id FK
+        boolean is_hidden_task
+        jsonb payload
+        timestamptz read_at "NULL"
+        timestamptz created_at
+    }
+
     COMMENTS {
         uuid id PK
         uuid task_id FK
@@ -232,6 +255,13 @@ erDiagram
     PROFILES ||--o{ TASKS : "creates"
     TASKS ||--o{ TASK_ASSIGNEES : "assigned_to"
     PROFILES ||--o{ TASK_ASSIGNEES : "assigned_user"
+    TASKS ||--o{ TASK_DEPARTMENTS : "assigned_to_dept"
+    DEPARTMENTS ||--o{ TASK_DEPARTMENTS : "assigned_task"
+    PROFILES ||--o{ NOTIFICATIONS : "receives_notification"
+    PROFILES ||--o{ NOTIFICATIONS : "triggers_notification"
+    TASKS ||--o{ NOTIFICATIONS : "notifies_for"
+    BOARDS ||--o{ NOTIFICATIONS : "scoped_notification"
+    DEPARTMENTS ||--o{ NOTIFICATIONS : "dept_notification"
     TASKS ||--o{ COMMENTS : "has"
     PROFILES ||--o{ COMMENTS : "authors"
     TASKS ||--o{ TASK_EVENTS : "records"
@@ -243,7 +273,7 @@ erDiagram
     PROFILES ||--o{ CLUB_ASSETS : "updates_asset"
 ```
 
-> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong 19 bảng miền nghiệp vụ. `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
+> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong 21 bảng miền nghiệp vụ. `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
 
 ---
 
@@ -451,6 +481,32 @@ Danh sách thành viên được giao cho một task.
 | `user_id` | `uuid` | NO | — | `PK`, `FK -> profiles(id) ON DELETE RESTRICT` |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 
+### 3.15a `task_departments` (Junction, `CR-03`)
+Danh sách ban được giao cho một task. Thành viên đang hoạt động thuộc bất kỳ ban nào trong bảng này được xem và thao tác task tương đương thành viên được giao trực tiếp (`taskVisibilityPolicy`, `canEditTask`, `/me/tasks`).
+
+| Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
+|---|---|---|---|---|
+| `task_id` | `uuid` | NO | — | `PK`, `FK -> tasks(id) ON DELETE CASCADE` |
+| `department_id` | `uuid` | NO | — | `PK`, `FK -> departments(id) ON DELETE RESTRICT` |
+| `created_at` | `timestamptz` | NO | `now()` | UTC |
+
+### 3.15b `notifications` (Mutable read tracking, `CR-03`)
+Thông báo in-app cho thành viên khi được giao việc theo Ban (`task.department_assigned`) hoặc trực tiếp (`task.assigned`). Tuân thủ `WQ-27`: khi `is_hidden_task = true`, `payload.taskTitle` luôn là `null` và chỉ trả về cho người còn quyền xem `taskVisibilityPolicy`.
+
+| Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
+|---|---|---|---|---|
+| `id` | `uuid` | NO | `gen_random_uuid()` | `PRIMARY KEY` |
+| `user_id` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` (người nhận) |
+| `type` | `text` | NO | — | `CHECK (type IN ('task.department_assigned', 'task.assigned'))` |
+| `task_id` | `uuid` | NO | — | `FK -> tasks(id) ON DELETE CASCADE` |
+| `board_id` | `uuid` | NO | — | `FK -> boards(id) ON DELETE CASCADE` |
+| `department_id` | `uuid` | YES | `NULL` | `FK -> departments(id) ON DELETE SET NULL` |
+| `actor_id` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` (người giao) |
+| `is_hidden_task` | `boolean` | NO | `false` | Cờ task ẩn phục vụ che tiêu đề theo `WQ-27` |
+| `payload` | `jsonb` | NO | `'{}'::jsonb` | `{ taskTitle: string \| null, boardName: string, departmentName: string \| null }` (`taskTitle = null` khi ẩn, không PII) |
+| `read_at` | `timestamptz` | YES | `NULL` | Mốc đánh dấu đã đọc (`NULL` = chưa đọc) |
+| `created_at` | `timestamptz` | NO | `now()` | UTC |
+
 ### 3.16 `comments` (Create/Delete)
 Bình luận trong task (không chỉnh sửa, không hoàn tác trong MVP).
 
@@ -508,19 +564,21 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `boards_purged_requires_archived_chk`: `CHECK (purged_at IS NULL OR archived_at IS NOT NULL)` trên `boards`.
 - `tasks_purged_requires_deleted_chk`: `CHECK (purged_at IS NULL OR deleted_at IS NOT NULL)` trên `tasks`.
 - `reminders_task_user_kind_uq`: `UNIQUE (task_id, user_id, kind)` trên `reminders`.
-- Khóa chính kép: `member_departments (user_id, department_id)`, `user_permissions (user_id, permission_code)`, `preset_permissions (preset_id, permission_code)`, `task_assignees (task_id, user_id)`.
+- `notifications_type_chk`: `CHECK (type IN ('task.department_assigned', 'task.assigned'))` trên `notifications`.
+- Khóa chính kép: `member_departments (user_id, department_id)`, `user_permissions (user_id, permission_code)`, `preset_permissions (preset_id, permission_code)`, `task_assignees (task_id, user_id)`, `task_departments (task_id, department_id)`.
 
 ### 4.2 Hành vi xóa khóa ngoại (`ON DELETE`)
 | Cha -> Con | Cột FK | Hành vi | Lý do |
 |---|---|---|---|
 | `profiles -> *` | Mọi bảng | `RESTRICT` | Bảo toàn lịch sử thành viên cũ, không xóa cascade |
-| `departments -> member_departments, boards` | `department_id` | `RESTRICT` | Hỗ trợ kiểm tra xung đột `409` khi xóa ban còn dữ liệu (`WQ-10`) |
+| `departments -> member_departments, boards, task_departments` | `department_id` | `RESTRICT` | Hỗ trợ kiểm tra xung đột `409` khi xóa ban còn dữ liệu (`WQ-10`) |
+| `departments -> notifications` | `department_id` | `SET NULL` | Giữ thông báo khi ban không còn tham chiếu và bị xóa |
 | `permissions -> user_permissions, preset_permissions` | `permission_code` | `RESTRICT` | Không xóa quyền đang được tham chiếu |
 | `permission_presets -> preset_permissions` | `preset_id` | `CASCADE` | Xóa mapping khi xóa mẫu quyền |
-| `boards -> columns` | `board_id` | `CASCADE` | Cột thuộc hoàn toàn về board |
+| `boards -> columns, notifications` | `board_id` | `CASCADE` | Cột và thông báo phụ thuộc vòng đời bản ghi board |
 | `boards -> tasks, task_events` | `board_id` | `RESTRICT` | Bảo toàn lịch sử task |
 | `columns -> tasks` | `column_id` | `RESTRICT` | Hỗ trợ chặn xóa cột còn task (`409`, `WQ-05`) |
-| `tasks -> task_assignees, comments, reminders` | `task_id` | `CASCADE` | Dữ liệu phụ thuộc trực tiếp vào vòng đời bản ghi task |
+| `tasks -> task_assignees, task_departments, comments, reminders, notifications` | `task_id` | `CASCADE` | Dữ liệu phụ thuộc trực tiếp vào vòng đời bản ghi task |
 | `tasks -> task_events` | `task_id` | `RESTRICT` | Giữ nguyên dấu vết lịch sử task |
 | `task_events -> task_events` | `reverts_event_id` | `RESTRICT` | Bảo toàn chuỗi sự kiện hoàn tác |
 
@@ -533,6 +591,11 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `profiles_archive_left_at_idx`: `ON profiles (left_at DESC NULLS LAST, id DESC) WHERE is_active = false AND purged_at IS NULL`
 - `tasks_created_by_idx`: `ON tasks (created_by)`
 - `task_assignees_user_id_idx`: `ON task_assignees (user_id)`
+- `task_departments_department_id_idx`: `ON task_departments (department_id)`
+- `notifications_user_created_idx`: `ON notifications (user_id, created_at DESC, id DESC)`
+- `notifications_user_unread_idx`: `ON notifications (user_id, created_at DESC) WHERE read_at IS NULL`
+- `notifications_task_id_idx`: `ON notifications (task_id)`
+- `notifications_actor_id_idx`: `ON notifications (actor_id)`
 - `comments_task_id_created_at_idx`: `ON comments (task_id, created_at)`
 - `task_events_task_id_created_at_idx`: `ON task_events (task_id, created_at DESC)`
 - `task_events_reverts_event_id_idx`: `ON task_events (reverts_event_id) WHERE reverts_event_id IS NOT NULL`

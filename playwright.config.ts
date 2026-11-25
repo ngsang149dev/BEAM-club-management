@@ -112,6 +112,13 @@ serverEnv.DATABASE_URL = testDatabaseUrl;
 serverEnv.TEST_DATABASE_URL = testDatabaseUrl;
 serverEnv.PORT = playwrightPort;
 serverEnv.NEXT_PUBLIC_APP_URL = baseUrl;
+if (process.env.PLAYWRIGHT_KEEP_SMTP !== '1') {
+  serverEnv.SMTP_HOST = '';
+  serverEnv.SMTP_PORT = '';
+  serverEnv.SMTP_USER = '';
+  serverEnv.SMTP_PASS = '';
+  serverEnv.SMTP_FROM = '';
+}
 
 export default defineConfig({
   testDir: './tests/e2e',

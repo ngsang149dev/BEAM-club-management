@@ -56,15 +56,20 @@ export function canDragTask({
   isAdmin,
   can,
   currentUserId,
+  currentDepartmentIds = [],
 }: {
   readonly task: TaskDto;
   readonly isAdmin: boolean;
   readonly can: (permission: PermissionCode) => boolean;
   readonly currentUserId: string | null | undefined;
+  readonly currentDepartmentIds?: readonly string[];
 }): boolean {
   if (isAdmin || can('task.update_any')) return true;
   if (!can('task.update_assigned') || !currentUserId) return false;
-  return task.assignees.some((assignee) => assignee.id === currentUserId);
+  return (
+    task.assignees.some((assignee) => assignee.id === currentUserId) ||
+    task.assignedDepartments.some((dept) => currentDepartmentIds.includes(dept.id))
+  );
 }
 
 export function reorderIdsWithArrayMove(

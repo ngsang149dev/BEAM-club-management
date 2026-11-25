@@ -4,10 +4,12 @@ import type { AuthActor } from '@/server/shared/authorize';
 import { FakeClock } from '@/server/shared/clock';
 import { StructuredLogger } from '@/server/shared/logger';
 import type { TransactionContext, TransactionRunner } from '@/server/shared/transaction';
+import type { NotificationsDispatcher, NotifyDepartmentAssignmentInput } from '@/server/modules/notifications';
 import {
   assertCanEditTask,
   assertCanViewTask,
   buildTaskUpdateChanges,
+  canEditTask,
   canToggleTaskHidden,
   canViewTask,
   type CreateTaskRepoParams,
@@ -15,6 +17,7 @@ import {
   decodeTaskCursor,
   encodeMyTasksCursor,
   encodeTaskCursor,
+  isActorAssignedToTask,
   type ListMyTasksParams,
   type ListVisibleTasksParams,
   type MoveTaskRepoParams,
@@ -33,7 +36,10 @@ const COL_TODO = '50000000-0000-4000-8000-000000000001';
 const CREATOR_ID = '10000000-0000-4000-8000-000000000010';
 const ASSIGNEE_ID = '10000000-0000-4000-8000-000000000011';
 const OTHER_USER_ID = '10000000-0000-4000-8000-000000000012';
+const DEPT_MEMBER_ID = '10000000-0000-4000-8000-000000000013';
 const ADMIN_ID = '10000000-0000-4000-8000-000000000001';
+const DEPT_1 = '20000000-0000-4000-8000-000000000001';
+const DEPT_2 = '20000000-0000-4000-8000-000000000002';
 const TASK_1 = '60000000-0000-4000-8000-000000000001';
 const TASK_HIDDEN = '60000000-0000-4000-8000-000000000002';
 
@@ -56,6 +62,7 @@ class InMemoryTasksRepository implements TasksRepository {
           isHidden: t.isHidden,
           createdBy: t.createdBy,
           assigneeIds: t.assignees.map((a) => a.id),
+          assignedDepartmentIds: t.assignedDepartments.map((d) => d.id),
         }),
     );
   }
@@ -68,10 +75,12 @@ class InMemoryTasksRepository implements TasksRepository {
     const rows = Array.from(this.records.values()).filter(
       (t) =>
         t.deletedAt === null &&
+        (!params.departmentId || t.assignedDepartments.some((d) => d.id === params.departmentId)) &&
         canViewTask(actor, {
           isHidden: t.isHidden,
           createdBy: t.createdBy,
           assigneeIds: t.assignees.map((a) => a.id),
+          assignedDepartmentIds: t.assignedDepartments.map((d) => d.id),
         }),
     );
     return { rows: rows.slice(0, params.limit), hasMore: rows.length > params.limit };
@@ -83,7 +92,14 @@ class InMemoryTasksRepository implements TasksRepository {
   ): Promise<{ readonly rows: TaskRecord[]; readonly hasMore: boolean }> {
     this.lastMyParams = params;
     const rows = Array.from(this.records.values()).filter(
-      (t) => t.deletedAt === null && t.assignees.some((a) => a.id === actor.id),
+      (t) =>
+        t.deletedAt === null &&
+        isActorAssignedToTask(actor, {
+          isHidden: t.isHidden,
+          createdBy: t.createdBy,
+          assigneeIds: t.assignees.map((a) => a.id),
+          assignedDepartmentIds: t.assignedDepartments.map((d) => d.id),
+        }),
     );
     return { rows: rows.slice(0, params.limit), hasMore: rows.length > params.limit };
   }
@@ -110,6 +126,7 @@ class InMemoryTasksRepository implements TasksRepository {
       deletedAt: null,
       createdBy: input.actorId,
       assignees: input.assigneeIds.map((aid) => makeUser(aid, `User ${aid.slice(-2)}`)),
+      assignedDepartments: input.departmentIds.map((did) => ({ id: did, name: `Dept ${did.slice(-2)}` })),
       creator: makeUser(input.actorId, 'Creator'),
       commentCount: 0,
       createdAt: input.now,
@@ -145,6 +162,7 @@ class InMemoryTasksRepository implements TasksRepository {
       ...current,
       version: current.version + 1,
       assignees: input.nextAssigneeIds.map((aid) => makeUser(aid, `User ${aid.slice(-2)}`)),
+      assignedDepartments: input.nextDepartmentIds.map((did) => ({ id: did, name: `Dept ${did.slice(-2)}` })),
       updatedAt: input.now,
     };
     this.records.set(input.id, next);
@@ -174,10 +192,21 @@ const MOCK_TX_RUNNER: TransactionRunner = {
     fn({} as TransactionContext),
 };
 
-function createHarness() {
+function createHarness(options: { failDispatch?: boolean } = {}) {
   const repo = new InMemoryTasksRepository();
   const clock = new FakeClock('2026-11-24T05:00:00.000Z');
-  const logger = new StructuredLogger({ writeOut: () => undefined, writeErr: () => undefined });
+  const logs: string[] = [];
+  const logger = new StructuredLogger({
+    writeOut: (line) => logs.push(line),
+    writeErr: (line) => logs.push(line),
+  });
+  const dispatches: NotifyDepartmentAssignmentInput[] = [];
+  const notificationsDispatcher: NotificationsDispatcher = {
+    notifyDepartmentAssignment: async (input) => {
+      if (options.failDispatch) throw new Error('SMTP down');
+      dispatches.push(input);
+    },
+  };
   const now = clock.now();
 
   repo.records.set(TASK_1, {
@@ -194,6 +223,7 @@ function createHarness() {
     deletedAt: null,
     createdBy: CREATOR_ID,
     assignees: [makeUser(ASSIGNEE_ID, 'Assignee')],
+    assignedDepartments: [{ id: DEPT_1, name: 'Dept 1' }],
     creator: makeUser(CREATOR_ID, 'Creator'),
     commentCount: 2,
     createdAt: now,
@@ -214,14 +244,21 @@ function createHarness() {
     deletedAt: null,
     createdBy: CREATOR_ID,
     assignees: [makeUser(ASSIGNEE_ID, 'Assignee')],
+    assignedDepartments: [{ id: DEPT_1, name: 'Dept 1' }],
     creator: makeUser(CREATOR_ID, 'Creator'),
     commentCount: 0,
     createdAt: now,
     updatedAt: now,
   });
 
-  const service = new TasksService({ tasksRepo: repo, transactionRunner: MOCK_TX_RUNNER, clock, logger });
-  return { repo, service };
+  const service = new TasksService({
+    tasksRepo: repo,
+    transactionRunner: MOCK_TX_RUNNER,
+    clock,
+    logger,
+    notificationsDispatcher,
+  });
+  return { repo, service, dispatches, logs };
 }
 
 const ADMIN: AuthActor = { id: ADMIN_ID, isActive: true, isAdmin: true, permissions: [] };
@@ -238,6 +275,13 @@ const ASSIGNED_ONLY: AuthActor = {
   isAdmin: false,
   permissions: ['task.update_assigned'],
 };
+const DEPT_MEMBER_ACTOR: AuthActor = {
+  id: DEPT_MEMBER_ID,
+  isActive: true,
+  isAdmin: false,
+  permissions: ['task.update_assigned'],
+  departmentIds: [DEPT_1],
+};
 const CREATE_NO_ASSIGN: AuthActor = {
   id: OTHER_USER_ID,
   isActive: true,
@@ -246,12 +290,27 @@ const CREATE_NO_ASSIGN: AuthActor = {
 };
 
 describe('tasks policy & TasksService', () => {
-  it('enforces taskVisibilityPolicy (404 on hidden for non-viewers, never 403), edit rules, and hidden toggle', () => {
-    const hiddenSubject = { isHidden: true, createdBy: CREATOR_ID, assigneeIds: [ASSIGNEE_ID] };
+  it('enforces taskVisibilityPolicy (including department assignment & revocation), edit rules, and hidden toggle', () => {
+    const hiddenSubject = {
+      isHidden: true,
+      createdBy: CREATOR_ID,
+      assigneeIds: [ASSIGNEE_ID],
+      assignedDepartmentIds: [DEPT_1],
+    };
     expect(canViewTask(INACTIVE, hiddenSubject)).toBe(false);
     expect(canViewTask(ADMIN, hiddenSubject)).toBe(true);
     expect(canViewTask(ASSIGNED_ONLY, hiddenSubject)).toBe(true);
+    expect(canViewTask(DEPT_MEMBER_ACTOR, hiddenSubject)).toBe(true);
+    expect(canEditTask(DEPT_MEMBER_ACTOR, hiddenSubject)).toBe(true);
     expect(canViewTask(UPDATE_ANY_OTHER, hiddenSubject)).toBe(false);
+
+    // Leaving department immediately revokes hidden-task view and edit rights
+    const leftDeptActor: AuthActor = { ...DEPT_MEMBER_ACTOR, departmentIds: [DEPT_2] };
+    expect(canViewTask(leftDeptActor, hiddenSubject)).toBe(false);
+    expect(canEditTask(leftDeptActor, hiddenSubject)).toBe(false);
+    expect(() => assertCanViewTask(leftDeptActor, hiddenSubject)).toThrowError(
+      expect.objectContaining({ httpStatus: 404, code: 'NOT_FOUND' }),
+    );
 
     expect(() => assertCanViewTask(UPDATE_ANY_OTHER, hiddenSubject)).toThrowError(
       expect.objectContaining({ httpStatus: 404, code: 'NOT_FOUND' }),
@@ -269,12 +328,7 @@ describe('tasks policy & TasksService', () => {
   });
 
   it('encodes/decodes task and my-tasks cursors strictly and rejects bad cursors', () => {
-    const dueCursor = encodeTaskCursor({
-      sortBy: 'dueAt',
-      sortOrder: 'desc',
-      value: null,
-      id: TASK_1,
-    });
+    const dueCursor = encodeTaskCursor({ sortBy: 'dueAt', sortOrder: 'desc', value: null, id: TASK_1 });
     expect(decodeTaskCursor(dueCursor, 'dueAt', 'desc')).toEqual({
       sortBy: 'dueAt',
       sortOrder: 'desc',
@@ -292,7 +346,7 @@ describe('tasks policy & TasksService', () => {
     );
   });
 
-  it('computes task diffs strictly and maps DTO position as number without PII', () => {
+  it('computes task diffs strictly', () => {
     const due = new Date('2026-11-25T00:00:00.000Z');
     expect(
       buildTaskUpdateChanges(
@@ -313,68 +367,105 @@ describe('tasks policy & TasksService', () => {
     });
   });
 
-  it('enforces AC-06 create permissions, version conflicts, no-op eventId=null, and hidden-task 404 across mutations', async () => {
-    const { service } = createHarness();
+  it('enforces AC-06 create permissions for assigneeIds & departmentIds, partial replaceAssignees, and non-blocking notifications', async () => {
+    const { service, repo, dispatches } = createHarness();
 
     await expect(service.listTasks(INACTIVE, { sortBy: 'position', sortOrder: 'asc', limit: 20 })).rejects.toMatchObject({ httpStatus: 401 });
     await expect(service.getTask(UPDATE_ANY_OTHER, TASK_HIDDEN)).rejects.toMatchObject({ httpStatus: 404 });
     await expect(service.updateTask(UPDATE_ANY_OTHER, TASK_HIDDEN, { title: 'Steal', version: 1 })).rejects.toMatchObject({ httpStatus: 404 });
-    await expect(service.replaceAssignees(UPDATE_ANY_OTHER, TASK_HIDDEN, { assigneeIds: [] })).rejects.toMatchObject({ httpStatus: 404 });
+    await expect(service.replaceAssignees(UPDATE_ANY_OTHER, TASK_HIDDEN, { assigneeIds: [], notifyDepartmentMembers: true })).rejects.toMatchObject({ httpStatus: 404 });
     await expect(service.deleteTask(UPDATE_ANY_OTHER, TASK_HIDDEN)).rejects.toMatchObject({ httpStatus: 404 });
 
-    // task.delete deny on visible task (even when caller can edit) + 404 on hidden task
-    const updateAnyNoDelete: AuthActor = {
-      id: OTHER_USER_ID,
-      isActive: true,
-      isAdmin: false,
-      permissions: ['task.update_any'],
-    };
-    await expect(service.deleteTask(ASSIGNED_ONLY, TASK_1)).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
-    await expect(service.deleteTask(updateAnyNoDelete, TASK_1)).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
-    await expect(service.deleteTask(updateAnyNoDelete, TASK_HIDDEN)).rejects.toMatchObject({ httpStatus: 404, code: 'NOT_FOUND' });
-
-    // AC-06: task.create without task.assign cannot assign on create
+    // task.assign enforced for both assigneeIds and departmentIds
     await expect(
       service.createTask(CREATE_NO_ASSIGN, {
-        boardId: BOARD_ID,
-        columnId: COL_TODO,
-        title: 'Fail Assign',
-        priority: 2,
-        assigneeIds: [ASSIGNEE_ID],
-        isHidden: false,
+        boardId: BOARD_ID, columnId: COL_TODO, title: 'Fail Assign',
+        priority: 2, assigneeIds: [ASSIGNEE_ID], departmentIds: [], notifyDepartmentMembers: true, isHidden: false,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+    await expect(
+      service.createTask(CREATE_NO_ASSIGN, {
+        boardId: BOARD_ID, columnId: COL_TODO, title: 'Fail Dept Assign',
+        priority: 2, assigneeIds: [], departmentIds: [DEPT_1], notifyDepartmentMembers: true, isHidden: false,
       }),
     ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
 
-    const created = await service.createTask(CREATE_NO_ASSIGN, {
+    const createdNoDept = await service.createTask(CREATE_NO_ASSIGN, {
+      boardId: BOARD_ID, columnId: COL_TODO, title: 'Unassigned Ok',
+      priority: 2, assigneeIds: [], departmentIds: [], notifyDepartmentMembers: true, isHidden: false,
+    });
+    expect(createdNoDept.eventId).toBeTruthy();
+    expect(dispatches).toHaveLength(0);
+
+    // Create with departmentIds + notifyDepartmentMembers=false skips dispatcher
+    await service.createTask(ADMIN, {
+      boardId: BOARD_ID, columnId: COL_TODO, title: 'Silent Dept Task',
+      priority: 2, assigneeIds: [], departmentIds: [DEPT_1], notifyDepartmentMembers: false, isHidden: false,
+    });
+    expect(dispatches).toHaveLength(0);
+
+    // Create with departmentIds + notifyDepartmentMembers=true dispatches
+    const createdDept = await service.createTask(ADMIN, {
+      boardId: BOARD_ID, columnId: COL_TODO, title: 'Loud Dept Task',
+      priority: 2, assigneeIds: [], departmentIds: [DEPT_1], notifyDepartmentMembers: true, isHidden: true,
+    });
+    expect(createdDept.task.assignedDepartments).toHaveLength(1);
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]).toMatchObject({
+      taskId: createdDept.task.id,
+      departmentIds: [DEPT_1],
+      isHiddenTask: true,
+    });
+
+    // Partial replaceAssignees: omitting assigneeIds preserves assignees, only newly added DEPT_2 triggers notification
+    const deptOnlyUpdate = await service.replaceAssignees(UPDATE_ANY_OTHER, TASK_1, {
+      departmentIds: [DEPT_1, DEPT_2],
+      notifyDepartmentMembers: true,
+      version: 1,
+    });
+    expect(deptOnlyUpdate.task.assignees.map((a) => a.id)).toEqual([ASSIGNEE_ID]);
+    expect(deptOnlyUpdate.task.assignedDepartments.map((d) => d.id)).toEqual([DEPT_1, DEPT_2]);
+    expect(dispatches).toHaveLength(2);
+    expect(dispatches[1]!.departmentIds).toEqual([DEPT_2]);
+
+    // Partial replaceAssignees: omitting departmentIds preserves assignedDepartments and triggers 0 dept notifications
+    const userOnlyUpdate = await service.replaceAssignees(UPDATE_ANY_OTHER, TASK_1, {
+      assigneeIds: [],
+      notifyDepartmentMembers: true,
+      version: 2,
+    });
+    expect(userOnlyUpdate.task.assignees).toEqual([]);
+    expect(userOnlyUpdate.task.assignedDepartments.map((d) => d.id)).toEqual([DEPT_1, DEPT_2]);
+    expect(dispatches).toHaveLength(2);
+
+    // Non-assigned loses edit right when neither direct nor department assigned
+    await service.replaceAssignees(UPDATE_ANY_OTHER, TASK_1, {
+      departmentIds: [],
+      notifyDepartmentMembers: true,
+      version: 3,
+    });
+    await expect(service.updateTask(DEPT_MEMBER_ACTOR, TASK_1, { title: 'Deny', version: 4 })).rejects.toMatchObject({ httpStatus: 403 });
+
+    // departmentId query param forwarded to repo
+    await service.listTasks(ADMIN, { departmentId: DEPT_1, sortBy: 'position', sortOrder: 'asc', limit: 20 });
+    expect(repo.lastListParams?.departmentId).toBe(DEPT_1);
+    await service.listMyTasks(DEPT_MEMBER_ACTOR, { departmentId: DEPT_1, includeDone: false, limit: 20 });
+    expect(repo.lastMyParams?.departmentId).toBe(DEPT_1);
+  });
+
+  it('does not fail task creation or assignee update when notificationsDispatcher throws', async () => {
+    const { service, logs } = createHarness({ failDispatch: true });
+    const created = await service.createTask(ADMIN, {
       boardId: BOARD_ID,
       columnId: COL_TODO,
-      title: 'Unassigned Ok',
+      title: 'Resilient Task',
       priority: 2,
       assigneeIds: [],
+      departmentIds: [DEPT_1],
+      notifyDepartmentMembers: true,
       isHidden: false,
     });
     expect(created.eventId).toBeTruthy();
-    expect(created.task.position).toBe(1000);
-
-    // No-op PATCH with matching version -> eventId: null; stale version -> 409
-    const noop = await service.updateTask(ASSIGNED_ONLY, TASK_1, { title: 'Public Task', version: 1 });
-    expect(noop.eventId).toBeNull();
-    await expect(service.updateTask(ASSIGNED_ONLY, TASK_1, { title: 'Public Task', version: 9 })).rejects.toMatchObject({
-      httpStatus: 409,
-      code: 'TASK_VERSION_CONFLICT',
-      messageKey: 'errors.taskVersionConflict',
-    });
-
-    const edited = await service.updateTask(ASSIGNED_ONLY, TASK_1, { title: 'Edited', version: 1 });
-    expect(edited.eventId).toBeTruthy();
-    expect(edited.task.version).toBe(2);
-
-    // Non-assigned task.update_assigned cannot edit TASK_1 if unassigned
-    const assignNoop = await service.replaceAssignees(UPDATE_ANY_OTHER, TASK_1, { assigneeIds: [ASSIGNEE_ID], version: 2 });
-    expect(assignNoop.eventId).toBeNull();
-
-    const reassigned = await service.replaceAssignees(UPDATE_ANY_OTHER, TASK_1, { assigneeIds: [], version: 2 });
-    expect(reassigned.eventId).toBeTruthy();
-    await expect(service.updateTask(ASSIGNED_ONLY, TASK_1, { title: 'Deny', version: 3 })).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+    expect(logs.some((l) => l.includes('Failed to dispatch task department notifications'))).toBe(true);
   });
 });

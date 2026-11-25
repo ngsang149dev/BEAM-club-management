@@ -9,6 +9,10 @@ import {
   updateColumnRequestSchema,
 } from '@/lib/boards';
 import {
+  listNotificationsQuerySchema,
+  NOTIFICATION_TYPES,
+} from '@/lib/notifications';
+import {
   createTaskRequestSchema,
   dedupeSortedUuids,
   listMyTasksQuerySchema,
@@ -76,6 +80,8 @@ describe('boards & tasks shared contracts', () => {
     expect(created.priority).toBe(2);
     expect(created.dueAt).toBeInstanceOf(Date);
     expect(created.assigneeIds).toEqual([]);
+    expect(created.departmentIds).toEqual([]);
+    expect(created.notifyDepartmentMembers).toBe(true);
     expect(created.isHidden).toBe(false);
 
     expect(
@@ -136,6 +142,23 @@ describe('boards & tasks shared contracts', () => {
     expect(
       replaceTaskAssigneesRequestSchema.safeParse({ assigneeIds: [UUID_3] }).success,
     ).toBe(true);
+    expect(
+      replaceTaskAssigneesRequestSchema.safeParse({ departmentIds: [UUID_1] }).success,
+    ).toBe(true);
+    expect(
+      replaceTaskAssigneesRequestSchema.safeParse({ version: 1 }).success,
+    ).toBe(false);
+
+    expect(NOTIFICATION_TYPES).toEqual(['task.department_assigned', 'task.assigned']);
+    expect(
+      listNotificationsQuerySchema.parse({ unreadOnly: 'true', limit: '10' }),
+    ).toEqual({ unreadOnly: true, limit: 10 });
+    expect(
+      listNotificationsQuerySchema.safeParse({ unreadOnly: 'invalid' }).success,
+    ).toBe(false);
+    expect(
+      listNotificationsQuerySchema.safeParse({ limit: '51' }).success,
+    ).toBe(false);
 
     const tasksQuery = listTasksQuerySchema.parse({
       priority: '4',

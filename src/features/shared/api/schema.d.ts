@@ -481,6 +481,7 @@ export interface paths {
             parameters: {
                 query?: {
                     boardId?: string;
+                    departmentId?: string;
                     /** @description Search query on task title and description */
                     q?: string;
                     includeDone?: boolean;
@@ -1739,6 +1740,7 @@ export interface paths {
                     boardId?: string;
                     columnId?: string;
                     assigneeId?: string;
+                    departmentId?: string;
                     priority?: number;
                     dueStatus?: "overdue" | "upcoming" | "no_due";
                     q?: string;
@@ -1769,8 +1771,9 @@ export interface paths {
         put?: never;
         /**
          * Create a new task
-         * @description Requires `task.create` (or admin). Supplying non-empty `assigneeIds` also requires `task.assign` (or admin).
+         * @description Requires `task.create` (or admin). Supplying non-empty `assigneeIds` or `departmentIds` also requires `task.assign` (or admin).
          *     Creates the task and records a `task.created` event in `task_events` inside the same transaction, returning `eventId`.
+         *     When `notifyDepartmentMembers` is `true` (default) and `departmentIds` is non-empty, dispatches in-app notifications and bilingual emails to active members of those departments post-commit (with `WQ-27` hidden-task title redaction).
          */
         post: {
             parameters: {
@@ -1978,9 +1981,11 @@ export interface paths {
         };
         get?: never;
         /**
-         * Replace task assignees
+         * Replace task assignees and/or assigned departments
          * @description Requires `task.assign` (or admin) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
-         *     Records `task.assignees_changed` with user IDs only (no names/MSSV/email) in `task_events` and returns `eventId`.
+         *     At least one of `assigneeIds` or `departmentIds` is required; omitting one preserves its existing assignments.
+         *     Records `task.assignees_changed` with IDs only (no names/MSSV/email) in `task_events` and returns `eventId`.
+         *     When `notifyDepartmentMembers` is `true` (default) and new departments are added, dispatches in-app notifications and bilingual emails post-commit.
          */
         put: {
             parameters: {
@@ -2922,6 +2927,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List notifications for the current member
+         * @description Returns paginated notifications belonging to the authenticated caller, excluding soft-deleted/purged tasks, purged boards, and hidden tasks the caller can no longer view (`taskVisibilityPolicy`).
+         *     Hidden task notifications always omit `taskTitle` (`null`, `WQ-27`).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    unreadOnly?: boolean;
+                    cursor?: components["parameters"]["CursorParam"];
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated notifications and unread count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationPageResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a notification as read
+         * @description Marks the caller's notification as read (idempotent if already read).
+         *     Returns `404` if the notification does not exist, belongs to another user, references a soft-deleted/purged task or purged board, or references a hidden task the caller cannot view (`taskVisibilityPolicy`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Notification marked as read */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationReadResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all visible notifications as read */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description All visible unread notifications marked as read */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationReadAllResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3228,6 +3361,7 @@ export interface components {
             /** Format: date-time */
             deletedAt: string | null;
             assignees: components["schemas"]["MemberPublicSummary"][];
+            assignedDepartments: components["schemas"]["DepartmentSummary"][];
             creator: components["schemas"]["MemberPublicSummary"];
             commentCount: number;
             /** Format: date-time */
@@ -3263,6 +3397,10 @@ export interface components {
             priority: number;
             /** @default [] */
             assigneeIds: string[];
+            /** @description Department UUIDs assigned to the task (defaults to `[]` on the server). */
+            departmentIds?: string[];
+            /** @description Whether to dispatch notifications and emails to active members of assigned departments (defaults to `true` on the server). */
+            notifyDepartmentMembers?: boolean;
             /** @default false */
             isHidden: boolean;
         };
@@ -3283,8 +3421,12 @@ export interface components {
             afterId?: string | null;
             version: number;
         };
+        /** @description At least one of `assigneeIds` or `departmentIds` is required. Omitting either preserves its existing assignments. */
         ReplaceTaskAssigneesRequest: {
-            assigneeIds: string[];
+            assigneeIds?: string[];
+            departmentIds?: string[];
+            /** @description Whether to dispatch notifications and emails to active members of newly added departments (defaults to `true` on the server). */
+            notifyDepartmentMembers?: boolean;
             version?: number;
         };
         UpdateTaskHiddenRequest: {
@@ -3443,6 +3585,42 @@ export interface components {
             purgedTasks: number;
             purgedBoards: number;
             purgedMembers: number;
+        };
+        /** @enum {string} */
+        NotificationType: "task.department_assigned" | "task.assigned";
+        NotificationDto: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["NotificationType"];
+            /** Format: uuid */
+            taskId: string;
+            /** Format: uuid */
+            boardId: string;
+            /** Format: uuid */
+            departmentId: string | null;
+            departmentName: string | null;
+            boardName: string;
+            /** @description Task title when public or visible; strictly `null` when `isHiddenTask=true` (`WQ-27`). */
+            taskTitle: string | null;
+            isHiddenTask: boolean;
+            actor: components["schemas"]["MemberPublicSummary"];
+            /** Format: date-time */
+            readAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        NotificationPageResponse: {
+            items: components["schemas"]["NotificationDto"][];
+            unreadCount: number;
+            meta: components["schemas"]["CursorPageMeta"];
+        };
+        NotificationReadResponse: {
+            notification: components["schemas"]["NotificationDto"];
+            unreadCount: number;
+        };
+        NotificationReadAllResponse: {
+            updatedCount: number;
+            unreadCount: number;
         };
     };
     responses: {

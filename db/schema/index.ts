@@ -6,6 +6,7 @@ import {
   profiles,
   sessions,
 } from './identity';
+import { notifications } from './notifications';
 import {
   auditLogs,
   departments,
@@ -15,7 +16,14 @@ import {
   presetPermissions,
   userPermissions,
 } from './permissions';
-import { comments, reminders, taskAssignees, taskEvents, tasks } from './tasks';
+import {
+  comments,
+  reminders,
+  taskAssignees,
+  taskDepartments,
+  taskEvents,
+  tasks,
+} from './tasks';
 
 export {
   appSettings,
@@ -27,6 +35,7 @@ export {
   departments,
   loginAttempts,
   memberDepartments,
+  notifications,
   permissionPresets,
   permissions,
   presetPermissions,
@@ -34,6 +43,7 @@ export {
   reminders,
   sessions,
   taskAssignees,
+  taskDepartments,
   taskEvents,
   tasks,
   userPermissions,
@@ -49,6 +59,7 @@ export const schema = {
   departments,
   loginAttempts,
   memberDepartments,
+  notifications,
   permissionPresets,
   permissions,
   presetPermissions,
@@ -56,6 +67,7 @@ export const schema = {
   reminders,
   sessions,
   taskAssignees,
+  taskDepartments,
   taskEvents,
   tasks,
   userPermissions,

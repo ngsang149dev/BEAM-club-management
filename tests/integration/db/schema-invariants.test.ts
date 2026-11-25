@@ -20,9 +20,11 @@ import {
   reminders,
   sessions,
   taskAssignees,
+  taskDepartments,
   taskEvents,
   tasks,
   userPermissions,
+  notifications,
 } from '@db/schema';
 import { createDb, createDbPool } from '@/server/shared/db';
 
@@ -109,7 +111,7 @@ describe('PostgreSQL schema & trigger invariants', () => {
     await pool?.end();
   });
 
-  it('has all 19 Drizzle domain tables synced with PostgreSQL', async () => {
+  it('has all 21 Drizzle domain tables synced with PostgreSQL', async () => {
     const db = createDb(pool);
     const tables = [
       profiles,
@@ -128,9 +130,11 @@ describe('PostgreSQL schema & trigger invariants', () => {
       columns,
       tasks,
       taskAssignees,
+      taskDepartments,
       comments,
       taskEvents,
       reminders,
+      notifications,
     ];
 
     const tableNames = await Promise.all(
@@ -140,8 +144,8 @@ describe('PostgreSQL schema & trigger invariants', () => {
       }),
     );
 
-    expect(tableNames).toHaveLength(19);
-    expect(new Set(tableNames).size).toBe(19);
+    expect(tableNames).toHaveLength(21);
+    expect(new Set(tableNames).size).toBe(21);
   });
 
   it('enforces APPEND_ONLY_TABLE, STUDENT_ID_IMMUTABLE, LAST_ACTIVE_ADMIN, and unique/check constraints', async () => {
@@ -517,6 +521,94 @@ describe('PostgreSQL schema & trigger invariants', () => {
         () => client.query(`UPDATE boards SET purged_at = NULL WHERE id = $1`, [boardId]),
         { hint: 'ALREADY_PURGED' },
       );
+    });
+  });
+
+  it('enforces 0005 task_departments and notifications PK, FK RESTRICT/SET NULL/CASCADE, and CHECK constraints', async () => {
+    await withRollbackTransaction(pool, async (client) => {
+      const actorId = '97000000-0000-4000-8000-000000000001';
+      const recipientId = '97000000-0000-4000-8000-000000000002';
+      const deptId = '97000000-0000-4000-8000-000000000010';
+      const boardId = '97000000-0000-4000-8000-000000000020';
+      const colId = '97000000-0000-4000-8000-000000000030';
+      const taskId = '97000000-0000-4000-8000-000000000040';
+      const notifId = '97000000-0000-4000-8000-000000000050';
+
+      await client.query(
+        `INSERT INTO profiles (id, student_id, email, full_name, is_admin, is_active)
+         VALUES
+           ($1, 'INV05-ACT', 'inv05-act@eiu.edu.vn', 'Inv05 Actor', false, true),
+           ($2, 'INV05-REC', 'inv05-rec@eiu.edu.vn', 'Inv05 Recipient', false, true)`,
+        [actorId, recipientId],
+      );
+      await client.query(`INSERT INTO departments (id, name) VALUES ($1, 'Inv05 Dept')`, [deptId]);
+      await client.query(`INSERT INTO boards (id, name, created_by) VALUES ($1, 'Inv05 Board', $2)`, [boardId, actorId]);
+      await client.query(`INSERT INTO columns (id, board_id, name, order_index) VALUES ($1, $2, 'Todo', 0)`, [colId, boardId]);
+      await client.query(
+        `INSERT INTO tasks (id, board_id, column_id, title, priority, position, created_by)
+         VALUES ($1, $2, $3, 'Inv05 Task', 2, 1000, $4)`,
+        [taskId, boardId, colId, actorId],
+      );
+
+      // 1. task_departments PK + RESTRICT on department delete + CASCADE on task delete
+      await client.query(`INSERT INTO task_departments (task_id, department_id) VALUES ($1, $2)`, [taskId, deptId]);
+      await expectPgError(
+        client,
+        'sp_td_dup',
+        () => client.query(`INSERT INTO task_departments (task_id, department_id) VALUES ($1, $2)`, [taskId, deptId]),
+        { code: '23505' },
+      );
+      await expectPgError(
+        client,
+        'sp_td_dept_restrict',
+        () => client.query(`DELETE FROM departments WHERE id = $1`, [deptId]),
+        { code: '23503' },
+      );
+
+      // 2. notifications type CHECK + RESTRICT on user_id/actor_id + SET NULL on department delete
+      await expectPgError(
+        client,
+        'sp_notif_type',
+        () =>
+          client.query(
+            `INSERT INTO notifications (user_id, type, task_id, board_id, department_id, actor_id)
+             VALUES ($1, 'invalid.type', $2, $3, $4, $5)`,
+            [recipientId, taskId, boardId, deptId, actorId],
+          ),
+        { code: '23514' },
+      );
+
+      await client.query(
+        `INSERT INTO notifications (id, user_id, type, task_id, board_id, department_id, actor_id, is_hidden_task, payload)
+         VALUES ($1, $2, 'task.department_assigned', $3, $4, $5, $6, false, '{"boardName":"Inv05 Board"}'::jsonb)`,
+        [notifId, recipientId, taskId, boardId, deptId, actorId],
+      );
+      await expectPgError(
+        client,
+        'sp_notif_user_restrict',
+        () => client.query(`DELETE FROM profiles WHERE id = $1`, [recipientId]),
+        { code: '23503' },
+      );
+      await expectPgError(
+        client,
+        'sp_notif_actor_restrict',
+        () => client.query(`DELETE FROM profiles WHERE id = $1`, [actorId]),
+        { code: '23503' },
+      );
+
+      // Remove task_departments link -> deleting department succeeds and sets notifications.department_id = NULL
+      await client.query(`DELETE FROM task_departments WHERE task_id = $1`, [taskId]);
+      await client.query(`DELETE FROM departments WHERE id = $1`, [deptId]);
+      const afterDeptDel = await client.query<{ department_id: string | null }>(
+        `SELECT department_id FROM notifications WHERE id = $1`,
+        [notifId],
+      );
+      expect(afterDeptDel.rows[0]?.department_id).toBeNull();
+
+      // Deleting task cascades notifications
+      await client.query(`DELETE FROM tasks WHERE id = $1`, [taskId]);
+      const afterTaskDel = await client.query(`SELECT id FROM notifications WHERE id = $1`, [notifId]);
+      expect(afterTaskDel.rows).toHaveLength(0);
     });
   });
 });

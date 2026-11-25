@@ -18,6 +18,7 @@ const boardsHooksMock = vi.hoisted(() => ({
 const tasksHooksMock = vi.hoisted(() => ({
   useTaskDetailQuery: vi.fn(),
   useTaskAssigneeMembersQuery: vi.fn(),
+  useTaskDepartmentsQuery: vi.fn(),
   useCreateTaskMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useUpdateTaskMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
   useMoveTaskMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
@@ -27,6 +28,14 @@ const tasksHooksMock = vi.hoisted(() => ({
 
 const authHooksMock = vi.hoisted(() => ({
   useMeQuery: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock('@/features/boards/hooks/useBoards', async () => {
@@ -53,6 +62,7 @@ vi.mock('next/link', () => ({
 
 import { BoardDetailView } from '@/features/boards/components/BoardDetailView';
 import { ColumnDeleteModal } from '@/features/boards/components/ColumnModals';
+import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
 import { TaskDetailDrawer } from '@/features/tasks/components/TaskDetailDrawer';
 
 type BoardDetailDto = components['schemas']['BoardDetailDto'];
@@ -66,6 +76,7 @@ const TASK_URGENT_HIDDEN: TaskDto = {
   description: 'Chi tiết slide', dueAt: '2025-01-10T05:00:00Z', priority: 4, position: 1,
   isHidden: true, version: 3, deletedAt: null,
   assignees: [{ id: 'u-inactive', fullName: 'Vu Quoc F', isActive: false, leftAt: '2026-10-01T00:00:00Z', departments: [] }],
+  assignedDepartments: [],
   creator: { id: 'u-creator', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
   commentCount: 2, createdAt: '2026-11-20T02:00:00Z', updatedAt: '2026-11-20T02:00:00Z',
 };
@@ -73,7 +84,7 @@ const TASK_URGENT_HIDDEN: TaskDto = {
 const TASK_LOW: TaskDto = {
   id: 't-2', boardId: 'b-1', columnId: 'c-1', title: 'Mượn micro', description: null,
   dueAt: null, priority: 1, position: 2, isHidden: false, version: 1, deletedAt: null,
-  assignees: [], creator: { id: 'u-creator', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
+  assignees: [], assignedDepartments: [], creator: { id: 'u-creator', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
   commentCount: 0, createdAt: '2026-11-20T03:00:00Z', updatedAt: '2026-11-20T03:00:00Z',
 };
 
@@ -95,9 +106,19 @@ function renderWithIntl(node: ReactNode, options: { permissions?: PermissionCode
 
 describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
   beforeEach(() => {
-    authHooksMock.useMeQuery.mockReturnValue({ data: { profile: { id: 'u-viewer' } } });
+    authHooksMock.useMeQuery.mockReturnValue({ data: { profile: { id: 'u-viewer', departments: [] } } });
     boardsHooksMock.useBoardDetailQuery.mockReturnValue({ isPending: false, isError: false, error: null, data: { board: BOARD_DETAIL } });
     tasksHooksMock.useTaskAssigneeMembersQuery.mockReturnValue({ isPending: false, isError: false, data: { items: [] } });
+    tasksHooksMock.useTaskDepartmentsQuery.mockReturnValue({
+      isPending: false,
+      isError: false,
+      data: {
+        items: [
+          { id: 'd-1', name: 'Sự kiện', memberCount: 4, boardCount: 1, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+          { id: 'd-2', name: 'Truyền thông', memberCount: 3, boardCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+        ],
+      },
+    });
     tasksHooksMock.useTaskDetailQuery.mockReturnValue({ isPending: false, isError: false, error: null, refetch: vi.fn(), data: { task: TASK_URGENT_HIDDEN } });
   });
 
@@ -193,5 +214,70 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     expect(html).toContain('Task này vừa được người khác cập nhật.');
     expect(html).toContain('Tải lại dữ liệu mới');
     expect(html).toContain('req-v-409');
+  });
+
+  it('renders prominent department chips, department-based DnD/edit access, ?task drawer open, and CreateTaskModal department-first layout', () => {
+    const deptTask: TaskDto = {
+      ...TASK_LOW,
+      assignedDepartments: [{ id: 'd-2', name: 'Truyền thông' }],
+    };
+    boardsHooksMock.useBoardDetailQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      data: { board: { ...BOARD_DETAIL, tasks: [deptTask] } },
+    });
+    authHooksMock.useMeQuery.mockReturnValueOnce({
+      data: { profile: { id: 'u-dept-member', departments: [{ id: 'd-2', name: 'Truyền thông' }] } },
+    });
+    const boardHtml = renderWithIntl(
+      <BoardDetailView boardId="b-1" initialTaskId="t-1" />,
+      { permissions: ['task.update_assigned'] }
+    );
+    expect(boardHtml).toContain('task-dept-chip');
+    expect(boardHtml).toContain('Truyền thông');
+    expect(boardHtml).toContain('is-draggable');
+    expect(boardHtml).toContain('Chi tiết task');
+
+    tasksHooksMock.useTaskDetailQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      data: { task: deptTask },
+    });
+    authHooksMock.useMeQuery.mockReturnValueOnce({
+      data: { profile: { id: 'u-dept-member', departments: [{ id: 'd-2', name: 'Truyền thông' }] } },
+    });
+    const deptDrawerHtml = renderWithIntl(
+      <TaskDetailDrawer taskId="t-2" onClose={vi.fn()} />,
+      { permissions: ['task.update_assigned', 'task.assign'] }
+    );
+    expect(deptDrawerHtml).toContain('Lưu thay đổi');
+    expect(deptDrawerHtml).toContain('task-dept-chip');
+    expect(deptDrawerHtml).toContain('Giao cho ban');
+    expect(deptDrawerHtml).toContain('Gửi thông báo &amp; email cho thành viên của ban');
+    expect(deptDrawerHtml).toContain('class="task-individual-details"');
+    expect(deptDrawerHtml).toContain('Lưu phân công');
+
+    const createModalVi = renderWithIntl(
+      <CreateTaskModal boardId="b-1" columnId="c-1" columnName="Todo" onClose={vi.fn()} />,
+      { permissions: ['task.create', 'task.assign'] }
+    );
+    expect(createModalVi.indexOf('Giao cho ban')).toBeLessThan(
+      createModalVi.indexOf('Giao thêm cho từng thành viên (tùy chọn)')
+    );
+    expect(createModalVi).toContain('Gửi thông báo &amp; email cho thành viên của ban');
+    expect(createModalVi).toContain('Sự kiện');
+    expect(createModalVi).toContain('Truyền thông');
+    expect(createModalVi).not.toContain('class="task-individual-details" open');
+
+    const createModalEn = renderWithIntl(
+      <CreateTaskModal boardId="b-1" columnId="c-1" columnName="Todo" onClose={vi.fn()} />,
+      { permissions: ['task.create', 'task.assign'], locale: 'en' }
+    );
+    expect(createModalEn).toContain('Assigned departments');
+    expect(createModalEn).toContain('Send notification &amp; email to department members');
+    expect(createModalEn).toContain('Assign specific members (optional)');
   });
 });

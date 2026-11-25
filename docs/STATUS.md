@@ -1,7 +1,7 @@
 # STATUS
 
-Cập nhật: 2026-11-24 · Phiên: 7
-Epic hiện tại: CR-03 (`[RỦI RO CAO]`) · Item: CR-03-01, CR-03-02, CR-03-03 · Trạng thái: In progress trên nhánh `feat/CR03-department-assign-notifications` (đã merge `CR-04` vào `main`)
+Cập nhật: 2026-11-25 · Phiên: 8
+Epic hiện tại: CR-03 (`[RỦI RO CAO]`) · Item: CR-03-01, CR-03-02, CR-03-03 · Trạng thái: Ready for PR review trên nhánh `feat/CR03-department-assign-notifications` (chờ chủ dự án duyệt merge vào `main`)
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -34,8 +34,15 @@ Epic hiện tại: CR-03 (`[RỦI RO CAO]`) · Item: CR-03-01, CR-03-02, CR-03-0
   - Frontend (`CR-04-02`): Điều hướng `/archive` trên `AppShell`, trang [archive/page.tsx](../src/app/archive/page.tsx) và `src/features/archive/*` (3 tab lọc theo quyền, thanh hạn tự dọn 7/30/90 ngày chỉ Admin chỉnh, khôi phục & modal xóa vĩnh viễn, che PII, song ngữ `vi`/`en`, audit formatter `archive.*`).
   - Vận hành & QA (`CR-04-03` + Watchdog timeout): Bổ sung rule [task-timeout-loopback.md](../.agents/rules/task-timeout-loopback.md), đồng bộ 4 skill và siết [playwright.config.ts](../playwright.config.ts); `typecheck`, `lint`, `arch:check` (`248/1130`), `openapi:check`, **`228` unit test / `44` tệp**, **`20` integration PostgreSQL / `12` tệp**, `next build` (`32` trang/static), **`23/23` Chrome E2E** (gồm [archive.spec.ts](../tests/e2e/archive.spec.ts)) và audit `6A.8` đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor không chặn).
 
+- **Môi trường đa máy (Done, đã duyệt & merge `main`):** Chuẩn hóa đa HĐH (`macOS`/`Windows`/`Linux`): gỡ `.tmp/` khỏi git index, thêm [.gitattributes](../.gitattributes), [.editorconfig](../.editorconfig), [README.md](../README.md), script bootstrap & chẩn đoán [setup.mjs](../scripts/setup.mjs)/[doctor.mjs](../scripts/doctor.mjs) (`npm run setup`, `npm run doctor`, `npm run db:ensure`), hỗ trợ `POSTGRES_PORT`/`PLAYWRIGHT_PORT`/`PLAYWRIGHT_CHANNEL`, tự khởi tạo `beam_test` ở Docker và cô lập SMTP khi chạy E2E.
+- **CR-03 (`[RỦI RO CAO]` — Ready for PR review trên `feat/CR03-department-assign-notifications`, chờ duyệt merge `main`):**
+  - Hợp đồng & CSDL (`CR-03-01`): Migration cộng thêm [0005_task_departments_and_notifications.sql](../db/migrations/0005_task_departments_and_notifications.sql) (`task_departments`, `notifications`), cập nhật [ERD.md](ERD.md) (21 bảng miền), [openapi.yaml](openapi.yaml) & `schema.d.ts` (`TaskDto.assignedDepartments`, `departmentIds`/`notifyDepartmentMembers` ở `POST /tasks` & `PUT /tasks/{id}/assignees`, `departmentId` filter trên `/tasks` & `/me/tasks`, `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all`), `src/lib/{tasks,notifications}.ts`.
+  - Backend & Mailer (`CR-03-01`): `AuthActor.departmentIds` đọc tươi từ DB mỗi request; `SmtpMailer` thuần `node:net`/`node:tls` (`465` TLS / `587` STARTTLS / plain fallback + `AUTH PLAIN`/`LOGIN`, RFC 2047 UTF-8, chặn `\r\n\0` header injection + `NoopMailer` fallback); mở rộng `taskVisibilityPolicy` (`404` task ẩn & thu hồi tức thì khi rời ban), `/me/tasks`, `task_events` chỉ lưu UUID `department_ids`, module [notifications](../src/server/modules/notifications/index.ts) (khử trùng lặp theo ban, che tiêu đề task ẩn `WQ-27`, email song ngữ `vi`/`en`, lỗi SMTP không làm rollback task) và dọn `task_departments`/`notifications` khi Archive purge.
+  - Frontend (`CR-03-02`): Mặc định **Giao cho Ban** nổi bật kèm checkbox `notifyDepartmentMembers` (bật sẵn), thu gọn phần chọn thành viên cá nhân (`<details>`), giới hạn cuộn modal tạo task trên `1280x720`, badge Ban trên `S04` (`BoardTaskCard`) & `S06` (`MyTasksView` + lọc Ban), `task.update_assigned` cho phép sửa & kéo thả task giao cho Ban, chuông `NotificationBell` + `NotificationPopover` trên topbar (`AppShell` + `AuthGuard`), bấm thông báo đánh dấu đã đọc & mở `/boards/[id]?task=[id]`, che tiêu đề task ẩn `WQ-27`, đủ khóa `vi`/`en`.
+  - Kiểm thử & QA (`CR-03-03`, `qa-reviewer` ngữ cảnh sạch): `typecheck`, `lint`, `arch:check` (`268/1231`), `openapi:check`, **`242` unit test / `47` tệp** (gồm `smtp-mailer`, `notifications`, `notifications-bell`), **`22` integration PostgreSQL / `13` tệp**, `next build` (`34/34` route), **`27/27` Chrome E2E** (`1.4m`, gồm [department-notifications.spec.ts](../tests/e2e/department-notifications.spec.ts)) đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `1` Minor không chặn).
+
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Đang triển khai **`CR-03`** trên nhánh `feat/CR03-department-assign-notifications` theo duyệt của chủ dự án (`A2`, `A3`, `A5`). (Riêng đề xuất `/learn` ở phiên trước đang giữ nguyên chờ chủ dự án phản hồi.)
+- **PR `CR-03` (`[RỦI RO CAO]`) đã sẵn sàng chờ chủ dự án duyệt trước khi merge `feat/CR03-department-assign-notifications` vào `main`.** (Đề xuất `/learn` ở phiên trước giữ nguyên chờ chủ dự án phản hồi khi thuận tiện.)
 
 ## Việc tiếp theo
-- Hoàn tất **`CR-03`** (`CR-03-01..03`: Giao task cho Ban + SMTP Email & Chuông thông báo) kèm kiểm thử & review độc lập `qa-engineer` -> trình PR xin chủ dự án duyệt merge -> chuyển sang **`E6–E9`**.
+- Chờ chủ dự án duyệt & merge PR **`CR-03`** vào `main` -> chuyển sang **`E6–E9`**.

@@ -35,13 +35,14 @@ import {
   runTaskUpdateInTx,
   toTaskVisibilitySubject,
 } from './service-helpers';
-import type { TasksRepository } from './types';
+import type { TaskAssignmentNotifier, TasksRepository } from './types';
 
 export interface TasksServiceDeps {
   readonly tasksRepo: TasksRepository;
   readonly transactionRunner: TransactionRunner;
   readonly clock: Clock;
   readonly logger: Logger;
+  readonly notificationsDispatcher?: TaskAssignmentNotifier;
 }
 
 export class TasksService {
@@ -56,6 +57,7 @@ export class TasksService {
       boardId: query.boardId,
       columnId: query.columnId,
       assigneeId: query.assigneeId,
+      departmentId: query.departmentId,
       priority: query.priority,
       dueStatus: query.dueStatus,
       q: query.q,
@@ -86,6 +88,7 @@ export class TasksService {
     const cursor = query.cursor ? decodeMyTasksCursor(query.cursor) : undefined;
     const { rows, hasMore } = await this.deps.tasksRepo.listMyTasks(actor, {
       boardId: query.boardId,
+      departmentId: query.departmentId,
       q: query.q,
       includeDone: query.includeDone,
       priority: query.priority,
@@ -114,31 +117,23 @@ export class TasksService {
   ): Promise<TaskMutationResponseDto> {
     authorize(actor, 'task.create');
     const assigneeIds = dedupeSortedUuids(input.assigneeIds);
-    if (assigneeIds.length > 0) authorize(actor, 'task.assign');
+    const departmentIds = dedupeSortedUuids(input.departmentIds);
+    if (assigneeIds.length > 0 || departmentIds.length > 0) authorize(actor, 'task.assign');
     const now = this.deps.clock.now();
     const result = await this.deps.transactionRunner.runInTransaction((tx) =>
       this.deps.tasksRepo.createTaskWithEvent(
         {
-          boardId: input.boardId,
-          columnId: input.columnId,
-          title: input.title,
-          description: input.description,
-          dueAt: input.dueAt,
-          priority: input.priority,
-          assigneeIds,
-          isHidden: input.isHidden,
-          actorId: actor.id,
-          now,
+          boardId: input.boardId, columnId: input.columnId, title: input.title,
+          description: input.description, dueAt: input.dueAt, priority: input.priority,
+          assigneeIds, departmentIds, isHidden: input.isHidden, actorId: actor.id, now,
         },
         tx,
       ),
     );
-    this.deps.logger.info('Task created', {
-      actorId: actor.id,
-      taskId: result.task.id,
-      boardId: result.task.boardId,
-      isHidden: result.task.isHidden,
-    });
+    this.deps.logger.info('Task created', { actorId: actor.id, taskId: result.task.id, boardId: result.task.boardId, isHidden: result.task.isHidden });
+    if (input.notifyDepartmentMembers && departmentIds.length > 0) {
+      await this.dispatchDepartmentNotifications({ taskId: result.task.id, boardId: result.task.boardId, actorId: actor.id, departmentIds, isHiddenTask: result.task.isHidden, now });
+    }
     return toTaskMutationResponseDto(result);
   }
 
@@ -185,15 +180,13 @@ export class TasksService {
     input: ReplaceTaskAssigneesRequestInput,
   ): Promise<TaskMutationResponseDto> {
     assertActorActive(actor);
-    const nextAssigneeIds = dedupeSortedUuids(input.assigneeIds);
     const now = this.deps.clock.now();
     const result = await this.deps.transactionRunner.runInTransaction((tx) =>
       runTaskAssigneesInTx({
         tasksRepo: this.deps.tasksRepo,
         actor,
         taskId,
-        nextAssigneeIds,
-        version: input.version,
+        input,
         now,
         tx,
       }),
@@ -203,6 +196,16 @@ export class TasksService {
         actorId: actor.id,
         taskId,
         eventId: result.eventId,
+      });
+    }
+    if (input.notifyDepartmentMembers && result.addedDepartmentIds.length > 0) {
+      await this.dispatchDepartmentNotifications({
+        taskId: result.task.id,
+        boardId: result.task.boardId,
+        actorId: actor.id,
+        departmentIds: result.addedDepartmentIds,
+        isHiddenTask: result.task.isHidden,
+        now,
       });
     }
     return toTaskMutationResponseDto(result);
@@ -227,5 +230,27 @@ export class TasksService {
       eventId: result.eventId,
     });
     return toTaskMutationResponseDto(result);
+  }
+
+  private async dispatchDepartmentNotifications(input: {
+    readonly taskId: string;
+    readonly boardId: string;
+    readonly actorId: string;
+    readonly departmentIds: readonly string[];
+    readonly isHiddenTask: boolean;
+    readonly now: Date;
+  }): Promise<void> {
+    if (!this.deps.notificationsDispatcher) return;
+    try {
+      await this.deps.notificationsDispatcher.notifyDepartmentAssignment(input);
+    } catch (error) {
+      this.deps.logger.error('Failed to dispatch task department notifications', {
+        taskId: input.taskId,
+        boardId: input.boardId,
+        actorId: input.actorId,
+        departmentCount: input.departmentIds.length,
+        error,
+      });
+    }
   }
 }

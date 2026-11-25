@@ -234,6 +234,7 @@ describe('boards policy & BoardsService', () => {
       deletedAt: null,
       createdBy: ADMIN_ID,
       assignees: [],
+      assignedDepartments: [],
       creator: creatorSummary,
       commentCount: 0,
       createdAt: now,

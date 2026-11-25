@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, exists, ilike, inArray, isNotNull, isNull, lt, lte, or, type SQL, sql } from 'drizzle-orm';
-import { appSettings, auditLogs, boards, clubAssets, columns, comments, departments, memberDepartments, profiles, reminders, sessions, taskAssignees, taskEvents, tasks, userPermissions } from '@db/schema';
+import { appSettings, auditLogs, boards, clubAssets, columns, comments, departments, memberDepartments, notifications, profiles, reminders, sessions, taskAssignees, taskDepartments, taskEvents, tasks, userPermissions } from '@db/schema';
 import type { ArchiveRetentionDays } from '@/lib/archive';
 import { conflict } from '@/lib/errors';
 import type { BoardSummaryRecord } from '@/server/modules/boards';
@@ -23,11 +23,16 @@ const MEMBER_COLS = {
 function actorTaskVisibilitySql(db: DbExecutor, actor: AuthActor): SQL {
   if (!actor.isActive) return sql`false`;
   if (actor.isAdmin) return sql`true`;
-  return or(
+  const clauses: SQL[] = [
     eq(tasks.isHidden, false),
     eq(tasks.createdBy, actor.id),
     exists(db.select({ one: sql`1` }).from(taskAssignees).where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, actor.id)))),
-  ) ?? sql`false`;
+  ];
+  const deptIds = actor.departmentIds ?? [];
+  if (deptIds.length > 0) {
+    clauses.push(exists(db.select({ one: sql`1` }).from(taskDepartments).where(and(eq(taskDepartments.taskId, tasks.id), inArray(taskDepartments.departmentId, [...deptIds])))));
+  }
+  return or(...clauses) ?? sql`false`;
 }
 
 function buildTaskArchiveWhere(db: DbExecutor, params: Types.ListArchivedTasksParams): SQL {
@@ -70,11 +75,17 @@ function buildBoardArchiveWhere(params: Types.ListArchivedBoardsParams): SQL {
 
 const archivePurgeStore: Purge.ArchivePurgeStore = {
   lockTaskForPurge: async (taskId, tx) => (await tx.select({ id: tasks.id, boardId: tasks.boardId, deletedAt: tasks.deletedAt }).from(tasks).where(and(eq(tasks.id, taskId), isNull(tasks.purgedAt))).for('update').limit(1))[0] ?? null,
-  markTaskPurged: async (taskId, now, tx) => { await tx.update(tasks).set({ purgedAt: now, updatedAt: now }).where(and(eq(tasks.id, taskId), isNull(tasks.purgedAt))); },
+  async markTaskPurged(taskId, now, tx) {
+    await tx.update(tasks).set({ purgedAt: now, updatedAt: now }).where(and(eq(tasks.id, taskId), isNull(tasks.purgedAt)));
+    await tx.delete(taskDepartments).where(eq(taskDepartments.taskId, taskId));
+    await tx.delete(notifications).where(eq(notifications.taskId, taskId));
+  },
   lockBoardForPurge: async (boardId, tx) => (await tx.select({ id: boards.id, archivedAt: boards.archivedAt }).from(boards).where(and(eq(boards.id, boardId), isNull(boards.purgedAt))).for('update').limit(1))[0] ?? null,
   async markBoardAndCascadeTasksPurged(boardId, now, tx) {
     await tx.update(boards).set({ purgedAt: now, departmentId: null, updatedAt: now }).where(and(eq(boards.id, boardId), isNull(boards.purgedAt)));
     const rows = await tx.update(tasks).set({ deletedAt: sql`COALESCE(${tasks.deletedAt}, ${now.toISOString()}::timestamptz)`, purgedAt: now, updatedAt: now }).where(and(eq(tasks.boardId, boardId), isNull(tasks.purgedAt))).returning({ id: tasks.id });
+    if (rows.length > 0) await tx.delete(taskDepartments).where(inArray(taskDepartments.taskId, rows.map((r) => r.id)));
+    await tx.delete(notifications).where(eq(notifications.boardId, boardId));
     return rows.length;
   },
   lockMemberForPurge: async (memberId, tx) => (await tx.select({ id: profiles.id, isActive: profiles.isActive }).from(profiles).where(and(eq(profiles.id, memberId), isNull(profiles.purgedAt))).for('update').limit(1))[0] ?? null,
@@ -82,20 +93,32 @@ const archivePurgeStore: Purge.ArchivePurgeStore = {
     await tx.delete(sessions).where(eq(sessions.userId, memberId));
     await tx.delete(memberDepartments).where(eq(memberDepartments.userId, memberId));
     await tx.delete(userPermissions).where(eq(userPermissions.userId, memberId));
+    await tx.delete(notifications).where(eq(notifications.userId, memberId));
   },
   async hasProfileHistoryReferences(memberId, tx) {
     const [row] = await tx.select({
-      hasRef: sql<boolean>`(EXISTS (SELECT 1 FROM ${auditLogs} WHERE ${auditLogs.actorId} = ${memberId} OR ${auditLogs.targetUserId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${taskEvents} WHERE ${taskEvents.actorId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${tasks} WHERE ${tasks.createdBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${taskAssignees} WHERE ${taskAssignees.userId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${comments} WHERE ${comments.userId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${boards} WHERE ${boards.createdBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${reminders} WHERE ${reminders.userId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${appSettings} WHERE ${appSettings.updatedBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${clubAssets} WHERE ${clubAssets.updatedBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${userPermissions} WHERE ${userPermissions.grantedBy} = ${memberId}))`,
+      hasRef: sql<boolean>`(EXISTS (SELECT 1 FROM ${auditLogs} WHERE ${auditLogs.actorId} = ${memberId} OR ${auditLogs.targetUserId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${taskEvents} WHERE ${taskEvents.actorId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${tasks} WHERE ${tasks.createdBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${taskAssignees} WHERE ${taskAssignees.userId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${comments} WHERE ${comments.userId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${boards} WHERE ${boards.createdBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${reminders} WHERE ${reminders.userId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${notifications} WHERE ${notifications.actorId} = ${memberId}) OR EXISTS (SELECT 1 FROM ${appSettings} WHERE ${appSettings.updatedBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${clubAssets} WHERE ${clubAssets.updatedBy} = ${memberId}) OR EXISTS (SELECT 1 FROM ${userPermissions} WHERE ${userPermissions.grantedBy} = ${memberId}))`,
     }).from(sql`(SELECT 1) AS _probe`);
     return Boolean(row?.hasRef);
   },
   deleteProfilePhysically: async (memberId, tx) => { await tx.delete(profiles).where(eq(profiles.id, memberId)); },
   anonymizeProfile: async (memberId, patch, tx) => { await tx.update(profiles).set(patch).where(and(eq(profiles.id, memberId), isNull(profiles.purgedAt))); },
-  purgeExpiredTasks: async (cutoff, now, tx) => (await tx.update(tasks).set({ purgedAt: now, updatedAt: now }).where(and(isNotNull(tasks.deletedAt), lte(tasks.deletedAt, cutoff), isNull(tasks.purgedAt))).returning({ id: tasks.id })).length,
+  async purgeExpiredTasks(cutoff, now, tx) {
+    const rows = await tx.update(tasks).set({ purgedAt: now, updatedAt: now }).where(and(isNotNull(tasks.deletedAt), lte(tasks.deletedAt, cutoff), isNull(tasks.purgedAt))).returning({ id: tasks.id });
+    if (rows.length > 0) {
+      const taskIds = rows.map((r) => r.id);
+      await tx.delete(taskDepartments).where(inArray(taskDepartments.taskId, taskIds));
+      await tx.delete(notifications).where(inArray(notifications.taskId, taskIds));
+    }
+    return rows.length;
+  },
   async purgeExpiredBoardsAndCascade(cutoff, now, tx) {
     const purgedBoards = await tx.update(boards).set({ purgedAt: now, departmentId: null, updatedAt: now }).where(and(isNotNull(boards.archivedAt), lte(boards.archivedAt, cutoff), isNull(boards.purgedAt))).returning({ id: boards.id });
     if (purgedBoards.length > 0) {
-      await tx.update(tasks).set({ deletedAt: sql`COALESCE(${tasks.deletedAt}, ${now.toISOString()}::timestamptz)`, purgedAt: now, updatedAt: now }).where(and(inArray(tasks.boardId, purgedBoards.map((b) => b.id)), isNull(tasks.purgedAt)));
+      const boardIds = purgedBoards.map((b) => b.id);
+      const cascaded = await tx.update(tasks).set({ deletedAt: sql`COALESCE(${tasks.deletedAt}, ${now.toISOString()}::timestamptz)`, purgedAt: now, updatedAt: now }).where(and(inArray(tasks.boardId, boardIds), isNull(tasks.purgedAt))).returning({ id: tasks.id });
+      if (cascaded.length > 0) await tx.delete(taskDepartments).where(inArray(taskDepartments.taskId, cascaded.map((t) => t.id)));
+      await tx.delete(notifications).where(inArray(notifications.boardId, boardIds));
     }
     return purgedBoards.length;
   },
@@ -231,12 +254,13 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
   private async hydrateTasks(executor: DbExecutor, taskRows: readonly Purge.RawTaskRowBase[]): Promise<TaskRecord[]> {
     if (taskRows.length === 0) return [];
     const taskIds = taskRows.map((r) => r.id);
-    const [assigneeRows, commentCountRows] = await Promise.all([
+    const [assigneeRows, departmentRows, commentCountRows] = await Promise.all([
       executor.select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId }).from(taskAssignees).where(inArray(taskAssignees.taskId, taskIds)),
+      executor.select({ taskId: taskDepartments.taskId, id: departments.id, name: departments.name }).from(taskDepartments).innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(inArray(taskDepartments.taskId, taskIds)).orderBy(asc(departments.name), asc(departments.id)),
       executor.select({ taskId: comments.taskId, total: count() }).from(comments).where(inArray(comments.taskId, taskIds)).groupBy(comments.taskId),
     ]);
     const userMap = await this.loadUserSummaries(executor, Array.from(new Set([...taskRows.map((r) => r.createdBy), ...assigneeRows.map((a) => a.userId)])));
-    return Purge.assembleTaskRecords({ taskRows, assigneeRows, commentCountRows, userMap });
+    return Purge.assembleTaskRecords({ taskRows, assigneeRows, departmentRows, commentCountRows, userMap });
   }
 
   private async loadUserSummaries(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, Types.ArchiveUserSummaryRecord>> {

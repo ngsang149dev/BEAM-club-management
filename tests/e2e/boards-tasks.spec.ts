@@ -552,6 +552,9 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     await urgentModal.getByLabel(viMessages.tasks.priorityLabel).selectOption('4');
     await urgentModal.getByLabel(viMessages.tasks.dueAtLabel).fill('2025-01-10');
     await urgentModal
+      .locator('summary', { hasText: viMessages.tasks.individualAssigneesSummary })
+      .click();
+    await urgentModal
       .locator('label.dept-check-item', { hasText: basicFullName })
       .locator('input[type="checkbox"]')
       .check();

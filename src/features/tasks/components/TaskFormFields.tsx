@@ -12,6 +12,11 @@ export interface TaskAssigneeOption {
   readonly isActive: boolean;
 }
 
+export interface TaskDepartmentOption {
+  readonly id: string;
+  readonly name: string;
+}
+
 export function TaskErrorBanner({
   error,
   onReloadConflict,
@@ -115,6 +120,43 @@ export function TaskDueDateInput({
   );
 }
 
+export function TaskDepartmentPicker({
+  departments,
+  selectedIds,
+  disabled = false,
+  onToggle,
+}: {
+  departments: readonly TaskDepartmentOption[];
+  selectedIds: readonly string[];
+  disabled?: boolean;
+  onToggle: (departmentId: string) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+
+  if (departments.length === 0) {
+    return <p className="ui-field-hint">{tTasks('departmentsCatalogEmpty')}</p>;
+  }
+
+  return (
+    <div className="dept-checkbox-grid">
+      {departments.map((dept) => {
+        const checked = selectedIds.includes(dept.id);
+        return (
+          <label key={dept.id} className={checked ? 'dept-check-item is-checked' : 'dept-check-item'}>
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={disabled}
+              onChange={() => onToggle(dept.id)}
+            />
+            <span>{dept.name}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TaskAssigneePicker({
   members,
   canViewMembers,
@@ -158,5 +200,66 @@ export function TaskAssigneePicker({
         );
       })}
     </div>
+  );
+}
+
+export function TaskNotifyDepartmentToggle({
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+
+  return (
+    <div className="task-notify-box">
+      <label className="ui-check-inline">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span>{tTasks('notifyDepartmentMembersLabel')}</span>
+      </label>
+      <p className="ui-field-hint">{tTasks('notifyDepartmentMembersHint')}</p>
+    </div>
+  );
+}
+
+export function TaskIndividualAssigneesDetails({
+  members,
+  canViewMembers,
+  selectedIds,
+  disabled = false,
+  onToggle,
+}: {
+  members: readonly TaskAssigneeOption[];
+  canViewMembers: boolean;
+  selectedIds: readonly string[];
+  disabled?: boolean;
+  onToggle: (userId: string) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+
+  return (
+    <details className="task-individual-details">
+      <summary className="task-individual-summary">
+        <span>{tTasks('individualAssigneesSummary')}</span>
+        {selectedIds.length > 0 ? <span className="ui-chip">{selectedIds.length}</span> : null}
+      </summary>
+      <div className="task-individual-body">
+        <TaskAssigneePicker
+          members={members}
+          canViewMembers={canViewMembers}
+          selectedIds={selectedIds}
+          disabled={disabled}
+          onToggle={onToggle}
+        />
+      </div>
+    </details>
   );
 }

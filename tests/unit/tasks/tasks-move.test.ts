@@ -278,13 +278,13 @@ describe('TasksService.moveTask authorization, optimistic lock & noop', () => {
     repo.records.set(TASK_TARGET, {
       id: TASK_TARGET, boardId: BOARD_ID, columnId: COL_A, title: 'Visible', description: null,
       dueAt: null, priority: 2, position: '1000', isHidden: false, version: 1, deletedAt: null,
-      createdBy: CREATOR_ID, assignees: [makeUser(ASSIGNEE_ID, 'Assignee')], creator: makeUser(CREATOR_ID, 'Creator'),
+      createdBy: CREATOR_ID, assignees: [makeUser(ASSIGNEE_ID, 'Assignee')], assignedDepartments: [], creator: makeUser(CREATOR_ID, 'Creator'),
       commentCount: 0, createdAt: now, updatedAt: now,
     });
     repo.records.set(TASK_HIDDEN, {
       id: TASK_HIDDEN, boardId: BOARD_ID, columnId: COL_A, title: 'Hidden', description: null,
       dueAt: null, priority: 2, position: '2000', isHidden: true, version: 1, deletedAt: null,
-      createdBy: CREATOR_ID, assignees: [makeUser(ASSIGNEE_ID, 'Assignee')], creator: makeUser(CREATOR_ID, 'Creator'),
+      createdBy: CREATOR_ID, assignees: [makeUser(ASSIGNEE_ID, 'Assignee')], assignedDepartments: [], creator: makeUser(CREATOR_ID, 'Creator'),
       commentCount: 0, createdAt: now, updatedAt: now,
     });
     return { service: new TasksService({ tasksRepo: repo, transactionRunner: MOCK_TX_RUNNER, clock, logger }) };

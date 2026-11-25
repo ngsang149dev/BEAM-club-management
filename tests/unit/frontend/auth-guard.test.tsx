@@ -76,6 +76,7 @@ describe('AuthGuard', () => {
     const html = renderGuard();
     expect(html).toContain('Đang tải...');
     expect(html).not.toContain('protected-child');
+    expect(html).not.toContain('notif-bell-btn');
   });
 
   it('treats 401 session or 401 meQuery errors as unauthorized without rendering children or 500 error', () => {
@@ -210,6 +211,7 @@ describe('AuthGuard', () => {
     );
 
     expect(html).toContain('Tran Thi B');
+    expect(html).toContain('notif-bell-btn');
     expect(html).toContain('href="/members"');
     expect(html).toContain('href="/admin/departments"');
     expect(html).not.toContain('href="/admin/permissions"');

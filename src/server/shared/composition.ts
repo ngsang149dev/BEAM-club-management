@@ -35,6 +35,11 @@ import {
   MembersService,
 } from '@/server/modules/members';
 import {
+  DrizzleNotificationsRepository,
+  type NotificationsRepository,
+  NotificationsService,
+} from '@/server/modules/notifications';
+import {
   DrizzlePermissionsRepository,
   type PermissionsRepository,
   PermissionsService,
@@ -48,7 +53,7 @@ import { type Clock, SystemClock } from './clock';
 import { type Config, loadConfig } from './config';
 import { createDatabaseClient, type Database } from './db';
 import { type Logger, StructuredLogger } from './logger';
-import { type Mailer, NoopMailer } from './mailer';
+import { createMailerFromConfig, type Mailer } from './mailer';
 import { DrizzleTransactionRunner, type TransactionRunner } from './transaction';
 
 export interface ServerContainer {
@@ -66,6 +71,7 @@ export interface ServerContainer {
   readonly auditService: AuditService;
   readonly brandingService: BrandingService;
   readonly tasksService: TasksService;
+  readonly notificationsService: NotificationsService;
   readonly boardsService: BoardsService;
   readonly archiveService: ArchiveService;
   dispose(): Promise<void>;
@@ -93,6 +99,8 @@ export interface ContainerOverrides {
   readonly permissionsService?: PermissionsService;
   readonly tasksRepo?: TasksRepository;
   readonly tasksService?: TasksService;
+  readonly notificationsRepo?: NotificationsRepository;
+  readonly notificationsService?: NotificationsService;
   readonly boardsRepo?: BoardsRepository;
   readonly boardsService?: BoardsService;
   readonly archiveRepo?: ArchiveRepository;
@@ -124,7 +132,7 @@ function buildSharedInfra(overrides: ContainerOverrides) {
   const config = overrides.config ?? loadConfig();
   const clock = overrides.clock ?? new SystemClock();
   const logger = overrides.logger ?? new StructuredLogger();
-  const mailer = overrides.mailer ?? new NoopMailer();
+  const mailer = overrides.mailer ?? createMailerFromConfig(config);
   const { db, dispose } = resolveDatabase(config, overrides.db);
   const transactionRunner =
     overrides.transactionRunner ?? new DrizzleTransactionRunner(db);
@@ -206,7 +214,24 @@ function buildGovernanceServices(infra: SharedInfra, overrides: ContainerOverrid
   return { permissionsService, auditService, brandingService };
 }
 
+function buildNotificationsService(infra: SharedInfra, overrides: ContainerOverrides) {
+  const notificationsRepo =
+    overrides.notificationsRepo ?? new DrizzleNotificationsRepository(infra.db);
+  return (
+    overrides.notificationsService ??
+    new NotificationsService({
+      notificationsRepo,
+      transactionRunner: infra.transactionRunner,
+      mailer: infra.mailer,
+      clock: infra.clock,
+      config: infra.config,
+      logger: infra.logger,
+    })
+  );
+}
+
 function buildWorkstreamServices(infra: SharedInfra, overrides: ContainerOverrides) {
+  const notificationsService = buildNotificationsService(infra, overrides);
   const tasksRepo = overrides.tasksRepo ?? new DrizzleTasksRepository(infra.db);
   const tasksService =
     overrides.tasksService ??
@@ -215,6 +240,7 @@ function buildWorkstreamServices(infra: SharedInfra, overrides: ContainerOverrid
       transactionRunner: infra.transactionRunner,
       clock: infra.clock,
       logger: infra.logger,
+      notificationsDispatcher: notificationsService,
     });
   const boardsService =
     overrides.boardsService ??
@@ -236,7 +262,7 @@ function buildWorkstreamServices(infra: SharedInfra, overrides: ContainerOverrid
       config: infra.config,
       logger: infra.logger,
     });
-  return { tasksService, boardsService, archiveService };
+  return { tasksService, notificationsService, boardsService, archiveService };
 }
 
 export function createContainer(overrides: ContainerOverrides = {}): ServerContainer {

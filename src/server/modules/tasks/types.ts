@@ -31,6 +31,7 @@ export interface TaskRecord {
   readonly deletedAt: Date | null;
   readonly createdBy: string;
   readonly assignees: readonly TaskMemberSummaryRecord[];
+  readonly assignedDepartments: readonly TaskDepartmentSummaryRecord[];
   readonly creator: TaskMemberSummaryRecord;
   readonly commentCount: number;
   readonly createdAt: Date;
@@ -41,6 +42,7 @@ export interface ListVisibleTasksParams {
   readonly boardId?: string;
   readonly columnId?: string;
   readonly assigneeId?: string;
+  readonly departmentId?: string;
   readonly priority?: TaskPriority;
   readonly dueStatus?: TaskDueStatus;
   readonly q?: string;
@@ -53,6 +55,7 @@ export interface ListVisibleTasksParams {
 
 export interface ListMyTasksParams {
   readonly boardId?: string;
+  readonly departmentId?: string;
   readonly q?: string;
   readonly includeDone: boolean;
   readonly priority?: TaskPriority;
@@ -68,6 +71,7 @@ export interface CreateTaskRepoParams {
   readonly dueAt?: Date | null;
   readonly priority: TaskPriority;
   readonly assigneeIds: readonly string[];
+  readonly departmentIds: readonly string[];
   readonly isHidden: boolean;
   readonly actorId: string;
   readonly now: Date;
@@ -92,8 +96,21 @@ export interface ReplaceAssigneesRepoParams {
   readonly actorId: string;
   readonly currentAssigneeIds: readonly string[];
   readonly nextAssigneeIds: readonly string[];
+  readonly currentDepartmentIds: readonly string[];
+  readonly nextDepartmentIds: readonly string[];
   readonly expectedVersion?: number;
   readonly now: Date;
+}
+
+export interface TaskAssignmentNotifier {
+  notifyDepartmentAssignment(input: {
+    readonly taskId: string;
+    readonly boardId: string;
+    readonly actorId: string;
+    readonly departmentIds: readonly string[];
+    readonly isHiddenTask: boolean;
+    readonly now: Date;
+  }): Promise<void>;
 }
 
 export interface SoftDeleteTaskRepoParams {

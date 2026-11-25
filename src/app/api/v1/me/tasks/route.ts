@@ -17,6 +17,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     const searchParams = new URL(request.url).searchParams;
     const query = listMyTasksQuerySchema.parse({
       boardId: searchParams.get('boardId'),
+      departmentId: searchParams.get('departmentId'),
       q: searchParams.get('q'),
       includeDone: searchParams.get('includeDone'),
       priority: searchParams.get('priority'),

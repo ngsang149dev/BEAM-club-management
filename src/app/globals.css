@@ -2275,6 +2275,9 @@ svg {
 .ui-modal {
   width: 100%;
   max-width: 440px;
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
   border: 1.5px solid var(--ink);
   border-radius: 12px;
   background: var(--surface);
@@ -2306,6 +2309,7 @@ svg {
 
 .ui-modal-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -2325,6 +2329,11 @@ svg {
   display: grid;
   gap: 14px;
   padding: 16px;
+}
+
+.ui-modal-body {
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .ui-modal-copy {
@@ -2375,6 +2384,12 @@ svg {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 6px;
+}
+
+.ui-modal .dept-checkbox-grid {
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .dept-check-item {
@@ -4072,6 +4087,285 @@ svg {
   background: var(--paper);
   font-size: 12px;
   color: var(--ink-2);
+}
+
+/* ---------- CR-03 Department Task Assignment & Notification Bell ---------- */
+
+.task-dept-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.task-dept-chip {
+  background: var(--pink-soft);
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.task-notify-box {
+  display: grid;
+  gap: 4px;
+  padding: 9px 11px;
+  border: 1.5px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.task-individual-details {
+  border: 1.5px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.task-individual-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.task-individual-summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-individual-summary::before {
+  content: "▸";
+  font-size: 11px;
+  color: var(--pink-deep);
+  margin-right: 4px;
+  transition: transform 0.14s ease;
+}
+
+.task-individual-details[open] .task-individual-summary::before {
+  transform: rotate(90deg);
+}
+
+.task-individual-summary span:first-child {
+  flex: 1;
+}
+
+.task-individual-body {
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line-2);
+}
+
+.notif-bell-wrap {
+  position: relative;
+  flex: none;
+}
+
+.notif-bell-btn {
+  position: relative;
+  border-color: var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop-xs);
+}
+
+.notif-bell-btn:hover:not(:disabled) {
+  background: var(--pink-soft);
+  border-color: var(--ink);
+}
+
+.notif-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--pink-strong);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.notif-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 55;
+  width: 372px;
+  max-width: calc(100vw - 24px);
+  max-height: 460px;
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop-lg);
+  overflow: hidden;
+  animation: beamModalPop 0.14s ease both;
+}
+
+@media (max-width: 639px) {
+  .notif-popover {
+    position: fixed;
+    top: 58px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 84px);
+  }
+}
+
+.notif-popover-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper);
+}
+
+.notif-popover-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-popover-title-wrap h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.notif-unread-pill {
+  background: var(--pink-soft);
+  font-size: 11px;
+}
+
+.notif-popover-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.notif-list li:last-child .notif-item {
+  border-bottom: 0;
+}
+
+.notif-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease;
+}
+
+.notif-item:hover {
+  background: var(--paper);
+}
+
+.notif-item.is-unread {
+  background: var(--paper-2);
+}
+
+.notif-item.is-unread:hover {
+  background: var(--surface-2);
+}
+
+.notif-unread-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  background: var(--pink-strong);
+}
+
+.notif-read-spacer {
+  width: 8px;
+  flex: none;
+}
+
+.notif-item-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.notif-item-msg {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.notif-item.is-unread .notif-item-msg {
+  font-weight: 700;
+}
+
+.notif-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.notif-empty {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding: 20px 16px;
+  font-size: 12.5px;
+}
+
+.notif-empty b {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.notif-empty p,
+.notif-state-msg {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.notif-state-msg {
+  padding: 18px 16px;
+}
+
+.notif-error-text {
+  color: var(--danger) !important;
+  font-weight: 600;
 }
 
 @media (prefers-reduced-motion: reduce) {

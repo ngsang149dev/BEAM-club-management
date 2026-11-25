@@ -19,11 +19,15 @@ export type UpdateTaskRequest = components['schemas']['UpdateTaskRequest'];
 export type MoveTaskRequest = components['schemas']['MoveTaskRequest'];
 export type ReplaceTaskAssigneesRequest = components['schemas']['ReplaceTaskAssigneesRequest'];
 export type MemberPublicSummary = components['schemas']['MemberPublicSummary'];
+export type DepartmentSummaryDto = components['schemas']['DepartmentSummary'];
+export type DepartmentDto = components['schemas']['DepartmentDto'];
+export type NotificationDto = components['schemas']['NotificationDto'];
 export type BoardDetailResponse = components['schemas']['BoardDetailResponse'];
 
 export interface MyTasksFiltersState {
   readonly q: string;
   readonly priority: '' | TaskPriority;
+  readonly departmentId: string;
   readonly includeDone: boolean;
   readonly boardId?: string;
   readonly limit?: number;
@@ -32,6 +36,7 @@ export interface MyTasksFiltersState {
 export const DEFAULT_MY_TASKS_FILTERS: MyTasksFiltersState = {
   q: '',
   priority: '',
+  departmentId: '',
   includeDone: false,
   limit: 20,
 };
@@ -41,6 +46,7 @@ export const TASKS_QUERY_KEYS = {
   myTasksRoot: ['myTasks'] as const,
   myTasksList: (filters: MyTasksFiltersState) => ['myTasks', 'list', filters] as const,
   assigneeMembers: ['tasks', 'assigneeMembers'] as const,
+  departments: ['tasks', 'departments'] as const,
 };
 
 async function invalidateTaskQueries(
@@ -77,6 +83,7 @@ function buildMyTasksQuery(filters: MyTasksFiltersState, cursor?: string) {
   return {
     ...(trimmedQ ? { q: trimmedQ } : {}),
     ...(filters.priority ? { priority: filters.priority } : {}),
+    ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
     ...(filters.boardId ? { boardId: filters.boardId } : {}),
     includeDone: filters.includeDone,
     ...(cursor ? { cursor } : {}),
@@ -103,13 +110,24 @@ export function useTaskAssigneeMembersQuery(enabled: boolean) {
   });
 }
 
+export function useTaskDepartmentsQuery(enabled = true) {
+  return useQuery({
+    queryKey: TASKS_QUERY_KEYS.departments,
+    queryFn: ({ signal }) => apiFetch('/departments', { signal }),
+    enabled,
+  });
+}
+
 export function useCreateTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (payload: CreateTaskRequest) => apiFetch('/tasks', { method: 'post', body: payload }),
     onSuccess: async (data) => {
-      await invalidateTaskQueries(queryClient, data.task.boardId, data.task.id);
+      await Promise.all([
+        invalidateTaskQueries(queryClient, data.task.boardId, data.task.id),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
     },
   });
 }
@@ -133,7 +151,10 @@ export function useReplaceTaskAssigneesMutation() {
     mutationFn: ({ id, payload }: { id: string; payload: ReplaceTaskAssigneesRequest }) =>
       apiFetch('/tasks/{id}/assignees', { method: 'put', params: { id }, body: payload }),
     onSuccess: async (data) => {
-      await invalidateTaskQueries(queryClient, data.task.boardId, data.task.id);
+      await Promise.all([
+        invalidateTaskQueries(queryClient, data.task.boardId, data.task.id),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
     },
   });
 }

@@ -20,6 +20,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       boardId: searchParams.get('boardId'),
       columnId: searchParams.get('columnId'),
       assigneeId: searchParams.get('assigneeId'),
+      departmentId: searchParams.get('departmentId'),
       priority: searchParams.get('priority'),
       dueStatus: searchParams.get('dueStatus'),
       q: searchParams.get('q'),

@@ -17,6 +17,7 @@ import {
 import {
   MemberInlineName,
   TaskAssigneeChips,
+  TaskDepartmentChips,
   TaskDueBadge,
   TaskPriorityBadge,
 } from './TaskPriorityBadge';
@@ -39,16 +40,23 @@ function resolveCanEditTask({
   isAdmin,
   can,
   currentUserId,
+  currentDepartmentIds,
   assignees,
+  assignedDepartments,
 }: {
   isAdmin: boolean;
   can: ReturnType<typeof usePermissions>['can'];
   currentUserId: string | null | undefined;
+  currentDepartmentIds: readonly string[];
   assignees: TaskDto['assignees'];
+  assignedDepartments: TaskDto['assignedDepartments'];
 }): boolean {
   if (isAdmin || can('task.update_any')) return true;
   if (!can('task.update_assigned') || !currentUserId) return false;
-  return assignees.some((assignee) => assignee.id === currentUserId);
+  return (
+    assignees.some((assignee) => assignee.id === currentUserId) ||
+    assignedDepartments.some((dept) => currentDepartmentIds.includes(dept.id))
+  );
 }
 
 function TaskDrawerHiddenBanner({ isHidden }: { isHidden: boolean }) {
@@ -77,11 +85,14 @@ function TaskDrawerLoaded({
   const tTasks = useTranslations('tasks');
   const { isAdmin, can } = usePermissions();
   const meQuery = useMeQuery(true);
+  const currentDepartmentIds = meQuery.data?.profile.departments?.map((dept) => dept.id) ?? [];
   const canEdit = resolveCanEditTask({
     isAdmin,
     can,
     currentUserId: meQuery.data?.profile.id,
+    currentDepartmentIds,
     assignees: task.assignees,
+    assignedDepartments: task.assignedDepartments,
   });
 
   return (
@@ -97,6 +108,10 @@ function TaskDrawerLoaded({
         <div><span>{tTasks('createdAtLabel')}</span><b className="mono">{formatTaskDateTime(task.createdAt, locale)}</b></div>
       </div>
       {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
+      <section className="task-drawer-section">
+        <h3 className="task-section-title">{tTasks('departmentsLabel')}</h3>
+        <TaskDepartmentChips departments={task.assignedDepartments} emptyLabel={tTasks('departmentsEmpty')} />
+      </section>
       <section className="task-drawer-section">
         <h3 className="task-section-title">{tTasks('assigneesLabel')}</h3>
         <TaskAssigneeChips assignees={task.assignees} />
