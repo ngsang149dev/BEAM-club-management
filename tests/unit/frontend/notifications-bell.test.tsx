@@ -182,20 +182,44 @@ describe('NotificationBell (CR-03)', () => {
       taskTitle: 'SECRET_EXECUTIVE_PLAN',
       isHiddenTask: true,
     };
+    const directHiddenItem: NotificationDto = {
+      ...DIRECT_ASSIGNED_NOTIF,
+      id: 'n-direct-secret',
+      taskTitle: 'SECRET_DIRECT_TASK',
+      isHiddenTask: true,
+    };
     notifHooksMock.useNotificationsQuery.mockReturnValueOnce({
       isPending: false,
       isError: false,
       refetch: vi.fn(),
       data: {
-        items: [leakedGuardItem],
-        unreadCount: 1,
+        items: [leakedGuardItem, DIRECT_ASSIGNED_NOTIF, directHiddenItem],
+        unreadCount: 2,
         meta: { nextCursor: null, limit: 20 },
       },
     });
     const htmlEn = renderBell(<NotificationBell defaultOpen />, { locale: 'en' });
     expect(htmlEn).toContain('A hidden task was assigned to Truyền thông');
+    expect(htmlEn).toContain('Tran Thi Lead assigned &quot;Kiểm tra âm thanh&quot; to you');
+    expect(htmlEn).toContain('A hidden task was assigned to you');
     expect(htmlEn).not.toContain('SECRET_EXECUTIVE_PLAN');
+    expect(htmlEn).not.toContain('SECRET_DIRECT_TASK');
     expect(htmlEn).toContain('Mark all read');
+
+    notifHooksMock.useNotificationsQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: {
+        items: [DIRECT_ASSIGNED_NOTIF, directHiddenItem],
+        unreadCount: 2,
+        meta: { nextCursor: null, limit: 20 },
+      },
+    });
+    const directViHtml = renderBell(<NotificationBell defaultOpen />, { locale: 'vi' });
+    expect(directViHtml).toContain('Tran Thi Lead đã giao &quot;Kiểm tra âm thanh&quot; cho bạn');
+    expect(directViHtml).toContain('Một công việc ẩn đã được giao cho bạn');
+    expect(directViHtml).not.toContain('SECRET_DIRECT_TASK');
 
     const fakeT = ((key: string) => key) as unknown as Parameters<typeof resolveNotificationMessage>[1];
     expect(resolveNotificationMessage(leakedGuardItem, fakeT)).toBe('hiddenTaskDepartmentAssigned');

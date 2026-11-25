@@ -4,7 +4,7 @@ import { assertActorActive } from '@/server/modules/tasks';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
-import type { Logger } from '@/server/shared/logger';
+import { type Logger, scrubPiiText } from '@/server/shared/logger';
 import type { Mailer } from '@/server/shared/mailer';
 import type { TransactionRunner } from '@/server/shared/transaction';
 import { buildDepartmentAssignedEmail } from './email-template';
@@ -49,7 +49,7 @@ function buildDepartmentNotificationRows(params: {
 }): CreateNotificationRowInput[] {
   return params.recipients.map((recipient) => ({
     userId: recipient.userId,
-    type: 'task.department_assigned' as const,
+    type: recipient.type,
     taskId: params.context.task.id,
     boardId: params.context.board.id,
     departmentId: recipient.representativeDepartmentId,
@@ -65,45 +65,69 @@ function buildDepartmentNotificationRows(params: {
   }));
 }
 
+function resolveDispatchInput(input: NotifyDepartmentAssignmentInput) {
+  const notifyInApp = input.notifyInApp ?? true;
+  const notifyEmail = input.notifyEmail ?? true;
+  const assigneeIds = input.assigneeIds ?? [];
+  const shouldRun =
+    (notifyInApp || notifyEmail) &&
+    (input.departmentIds.length > 0 || assigneeIds.length > 0);
+  return { notifyInApp, notifyEmail, assigneeIds, shouldRun };
+}
+
+function formatSubError(item: unknown): string {
+  return item instanceof Error ? item.message : String(item);
+}
+
+function extractAggregateMessages(error: Error): string {
+  if (!('errors' in error) || !Array.isArray(error.errors)) return '';
+  return error.errors
+    .map(formatSubError)
+    .filter((msg) => msg.trim().length > 0)
+    .join('; ');
+}
+
+function extractSafeMailErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Mail delivery error';
+  if (error.message.trim().length > 0) return scrubPiiText(error.message);
+  const aggregateMessage = extractAggregateMessages(error);
+  if (aggregateMessage.length > 0) return scrubPiiText(aggregateMessage);
+  return scrubPiiText(error.name || 'Mail delivery error');
+}
+
 export class NotificationsService implements NotificationsDispatcher {
   constructor(private readonly deps: NotificationsServiceDeps) {}
 
-  async notifyDepartmentAssignment(
-    input: NotifyDepartmentAssignmentInput,
-  ): Promise<void> {
-    if (input.departmentIds.length === 0) return;
-    const context =
-      await this.deps.notificationsRepo.loadDepartmentAssignmentContext({
-        taskId: input.taskId,
-        boardId: input.boardId,
-        actorId: input.actorId,
-        departmentIds: input.departmentIds,
-      });
+  async notifyDepartmentAssignment(input: NotifyDepartmentAssignmentInput): Promise<void> {
+    const resolved = resolveDispatchInput(input);
+    if (!resolved.shouldRun) return;
+    const context = await this.deps.notificationsRepo.loadDepartmentAssignmentContext({
+      taskId: input.taskId,
+      boardId: input.boardId,
+      actorId: input.actorId,
+      departmentIds: input.departmentIds,
+      assigneeIds: resolved.assigneeIds,
+    });
     if (!context) return;
-
     const recipients = dedupeDepartmentRecipients({
       departments: context.departments,
       members: context.members,
+      directAssignees: context.directAssignees,
       actorId: input.actorId,
     });
     if (recipients.length === 0) return;
-
     const isHiddenTask = context.task.isHidden || input.isHiddenTask;
-    const rows = buildDepartmentNotificationRows({
-      context,
-      recipients,
-      actorId: input.actorId,
-      isHiddenTask,
-      now: input.now,
-    });
-    const inserted = await this.deps.notificationsRepo.insertNotifications(rows);
-    const idByUser = new Map(inserted.map((row) => [row.userId, row.id]));
-    await this.deliverEmails({ context, recipients, isHiddenTask, idByUser });
+    const idByUser = resolved.notifyInApp
+      ? await this.persistNotificationRows({ context, recipients, actorId: input.actorId, isHiddenTask, now: input.now })
+      : new Map<string, string>();
+    if (resolved.notifyEmail) await this.deliverEmails({ context, recipients, isHiddenTask, idByUser });
     this.deps.logger.info('Department assignment notifications dispatched', {
       taskId: context.task.id,
       boardId: context.board.id,
       actorId: input.actorId,
       recipientCount: recipients.length,
+      notifyInApp: resolved.notifyInApp,
+      notifyEmail: resolved.notifyEmail,
       isHiddenTask,
     });
   }
@@ -164,6 +188,18 @@ export class NotificationsService implements NotificationsDispatcher {
     return toNotificationReadAllResponseDto(result);
   }
 
+  private async persistNotificationRows(params: {
+    readonly context: DepartmentAssignmentContextRecord;
+    readonly recipients: readonly DeduplicatedDepartmentRecipient[];
+    readonly actorId: string;
+    readonly isHiddenTask: boolean;
+    readonly now: Date;
+  }): Promise<Map<string, string>> {
+    const rows = buildDepartmentNotificationRows(params);
+    const inserted = await this.deps.notificationsRepo.insertNotifications(rows);
+    return new Map(inserted.map((row) => [row.userId, row.id]));
+  }
+
   private async deliverEmails(params: {
     readonly context: DepartmentAssignmentContextRecord;
     readonly recipients: readonly DeduplicatedDepartmentRecipient[];
@@ -195,7 +231,7 @@ export class NotificationsService implements NotificationsDispatcher {
           notificationId: params.idByUser.get(recipient.userId) ?? null,
           userId: recipient.userId,
           taskId: params.context.task.id,
-          error,
+          errorMessage: extractSafeMailErrorMessage(error),
         });
       }
     }

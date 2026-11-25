@@ -15,7 +15,9 @@
 | **CR-02B** | Vào thẳng `/login` ở `/`, chặn Admin tự gỡ quyền Admin, và căn chỉnh bố cục toàn hệ thống (`S03`–`S10`) | Hoàn thiện UX & Bảo mật | Done |
 | **CR-04** | Kho lưu trữ tập trung (Archive): Task, User & Board + tự dọn 7/30/90 ngày, xóa vĩnh viễn, khôi phục (`A1`–`A5`, `[RỦI RO CAO]`) | Nâng cấp `Q39`, `S15` | Done |
 | **CR-03** | Giao task cho Ban (`task_departments`) + Email & Thông báo chuông (`A2`, `A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-20`–`23` | Done |
-| **E6** | Lọc & tìm kiếm board/task nâng cao (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Backlog |
+| **CR-05** | Tinh gọn UX: bỏ chọn ngôn ngữ ở Hồ sơ, ẩn thành viên đã rời ở Phân quyền, gọn lời giải thích tự nhiên, làm đẹp ô `select` | Hoàn thiện UX & UI | Done (chờ duyệt merge `main`) |
+| **CR-06** | Thiết kế lại trình chỉnh sửa Task 2 cột (`~900px` / modal `720px`) & tách riêng tùy chọn Thông báo trên web / Email cho cả Ban & thành viên lẻ (`A1`–`A3`, `[RỦI RO CAO]`) | Nâng cấp `S04`, `S05`, `CR-03` | Done (chờ duyệt merge `main`) |
+| **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Ready (đã duyệt đặc tả) |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Backlog |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
@@ -318,3 +320,65 @@
 - **`CR-03-01` (`backend-db`, `[RỦI RO CAO]` — `Done`):** Migration cộng thêm `0005_task_departments_and_notifications.sql` (`task_departments`, `notifications`), cập nhật `docs/ERD.md` (21 bảng miền), `docs/openapi.yaml` & `schema.d.ts` (`TaskDto.assignedDepartments`, `departmentIds` + `notifyDepartmentMembers` ở `POST /tasks` & `PUT /tasks/{id}/assignees`, `departmentId` ở `GET /tasks` & `GET /me/tasks`, `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all`), đưa `departmentIds` tươi vào `AuthActor`, mở rộng `taskVisibilityPolicy` & `/me/tasks` cho thành viên thuộc ban được giao, dựng `SmtpMailer` thuần Node (`net`/`tls` + `NoopMailer` fallback + chặn CRLF/NUL) và module `notifications` (che tiêu đề task ẩn `WQ-27`, không PII, cập nhật dọn dẹp khi Archive purge).
 - **`CR-03-02` (`frontend` — `Done`):** Đặt bộ chọn **Giao cho Ban** làm mặc định nổi bật kèm checkbox bật/tắt thông báo & email, thu gọn bộ chọn từng thành viên ở `CreateTaskModal` & `TaskDrawerSections` (và cuộn modal an toàn `1280x720`); hiện badge Ban trên `BoardTaskCard` (`S04`) & `MyTasksView` (`S06` + lọc Ban); mở rộng quyền `task.update_assigned` cho thành viên Ban; thêm chuông `NotificationBell` + `NotificationPopover` trên topbar (`AppShell` + `AuthGuard`, bấm mở `/boards/[id]?task=[id]`, che tiêu đề ẩn `WQ-27`) và đủ chuỗi `vi`/`en`.
 - **`CR-03-03` (`qa-reviewer` ngữ cảnh sạch — `Done`):** Đủ 8 cổng (`typecheck`, `lint`, `arch:check 268/1231`, `openapi:check`, **`242` unit test / `47` tệp**, **`22` integration PostgreSQL / `13` tệp**, `next build 34/34` route, **`27/27` Chrome E2E** gồm `tests/e2e/department-notifications.spec.ts`) và audit `6A.8`/`§7`/`§8` đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `1` Minor không chặn).
+
+### CR-05: Tinh gọn UX, Ẩn thành viên đã rời ở Phân quyền & Làm đẹp ô Select *(Done trên `feat/CR05-CR06-unified` — chờ duyệt merge vào `main`)*
+- **`CR-05-01` (`frontend` — `Done`):** Xóa thẻ chọn ngôn ngữ khỏi `/profile` (`ProfileView.tsx`, `ProfileSideCards.tsx`; giữ `LanguageSwitch` ở `AppShell` và `profile.languageSaveError` cho `AuthGuard.tsx`); lọc chỉ thành viên đang hoạt động tại `/admin/permissions` (`buildPermissionMembersQuery` `isActive: true` + filter phòng thủ ở `usePermissionsEditorState.ts`, `PermissionsAdminView.tsx`, `PermissionsMemberList.tsx`); lược bỏ lời giải thích thừa và viết lại chuỗi ngắn gọn, tự nhiên trên `vi`/`en` (`messages/{vi,en}.json`, giữ 100% tương thích khóa với `NotificationPopover`/`BoardDetailParts`); thiết kế lại `.ui-select` trong `src/app/globals.css` (`appearance: none`, SVG chevron đồng bộ hover/focus/disabled, tách `@media (min-width: 1024px)` bảo toàn `padding-right`).
+- **`CR-05-02` (`qa-reviewer` ngữ cảnh sạch — `Done`):** Cập nhật unit test frontend (`profile-view`, `permissions-admin`, `i18n-parity`, `archive-view`, `audit-logs`, `departments-admin`, `login-form`, `member-admin`) và E2E (`auth.spec.ts` đổi ngôn ngữ ở thanh trái & xác nhận không còn thẻ ngôn ngữ ở `/profile`; `permissions-audit.spec.ts` xác nhận ẩn thành viên đã rời ở Phân quyền & kiểm tra computed style `.ui-select` không tràn ở `1280x720`).
+
+### CR-06 (`[RỦI RO CAO]`): Mở rộng trình chỉnh sửa Task 2 cột & Tách riêng tùy chọn Thông báo / Email (`A1`–`A3`) *(Done trên `feat/CR05-CR06-unified` — chờ duyệt merge vào `main`)*
+- **`CR-06-01` (`backend-db`, `[RỦI RO CAO]` — `Done`):** Hợp nhất trên nền `origin/main`: cập nhật cộng thêm `docs/openapi.yaml` (`notifyInApp`, `notifyEmail` ở `CreateTaskRequest` & `ReplaceTaskAssigneesRequest`, tái sinh `schema.d.ts`, bảo toàn 100% `NotificationDto` phẳng & cập nhật từng phần `assigneeIds`/`departmentIds`), bổ sung `resolveTaskNotificationChannels` trong `src/lib/tasks.ts`, mở rộng `runTaskAssigneesInTx` trả về `addedDepartmentIds` & `addedAssigneeIds`, mở rộng `dedupeDepartmentRecipients` / `NotificationsService` hỗ trợ cả Ban (`task.department_assigned`) lẫn thành viên lẻ mới gán (`task.assigned`, email gán trực tiếp tự nhiên `vi`/`en`), loại trừ `actorId`, khử trùng lặp mỗi người tối đa `1` chuông + `1` email, giữ che tiêu đề task ẩn `WQ-27` và lọc PII khi lỗi SMTP (`extractSafeMailErrorMessage` + `scrubPiiText`).
+- **`CR-06-02` (`frontend` — `Done`):** Tách khối độc lập `TaskNotificationOptions.tsx` (`Tùy chọn gửi thông báo`: `Thông báo trên web` + `Gửi email`), mở rộng `TaskDetailDrawer.tsx` sang bố cục 2 cột rộng `~900px` (`ui-drawer-task`, `task-drawer-grid`, `task-drawer-col-main`, `task-drawer-col-side` với `.task-assigned-summary` và nút `Cập nhật giao việc`), nới rộng `CreateTaskModal.tsx` (`ui-modal-lg` `720px`, textarea mô tả `6` dòng), và cập nhật đủ khóa `vi`/`en`.
+- **`CR-06-03` (`qa-reviewer` ngữ cảnh sạch, `[RỦI RO CAO]` — `Done`):** Kiểm định độc lập toàn bộ bản hợp nhất `CR-05` + `CR-06` trên nền `origin/main`: vượt 8/8 cổng (`typecheck`, `lint` `0`/`0`, `arch:check` `269` module / `1,233` phụ thuộc, `openapi:check`, **`244` unit test / `47` tệp**, **`22` integration PostgreSQL / `13` tệp**, `next build` `34/34` route, **`28/28` Chrome E2E** gồm `department-notifications.spec.ts`), audit `6A.8` (`13/13`) & bảo mật `§7` đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `1` Minor không chặn).
+
+---
+
+## Epic E6 — Lọc, tìm kiếm & sắp xếp board/task nâng cao; thay thế kéo thả *(Ready — đã chốt đặc tả từ máy Mac)*
+
+### E6-01
+- **ID:** `E6-01`
+- **Tiêu đề:** API đếm/tìm kiếm board theo quyền xem & chuẩn hóa lọc/sắp xếp task (`overdue` loại cột cuối) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `FR-03`, `FR-25`, `FR-27`, `AC-15`, `S03`, `S04`
+- **Phụ thuộc:** `CR-03`, `CR-05`, `CR-06` (`Done`), chủ dự án duyệt bổ sung cộng thêm `docs/openapi.yaml` (2026-11-25)
+- **Mục tài liệu cần đọc:** `HANDOFF` (`FR-22`, `FR-25`, `FR-27`, `AC-15`, `S03`, `S04`, `GET /tasks`), `wireframes/s03-boards.html`, `wireframes/s04-board.html`, `docs/openapi.yaml`, `docs/DECISIONS.md`
+- **Phạm vi file được sửa:** `docs/openapi.yaml`, `src/features/shared/api/schema.d.ts`, `src/lib/{boards,tasks}.ts`, `src/server/modules/{boards,tasks,archive}/*`, `src/app/api/v1/boards/route.ts`, `tests/unit/{boards,tasks}/*`, `tests/integration/{boards,tasks}/*`
+- **Tiêu chí chấp nhận:**
+  1. Bổ sung cộng thêm `GET /boards?q=` (tìm `boards.name` phía server, thoát ký tự LIKE) và mở rộng `BoardSummaryDto`/`BoardDetailDto` thêm `visibleTaskCount` & `overdueTaskCount` tính theo quyền người xem (loại bỏ task đã xóa mềm/purge, task ẩn không được xem, và task cột cuối `Done`).
+  2. Tinh chỉnh `GET /tasks?dueStatus=overdue` loại bỏ task ở cột cuối `Done`, giữ lọc kết hợp (`boardId`, `columnId`, `assigneeId`, `departmentId`, `priority`, `dueStatus`, `q`, `sortBy`, `sortOrder`) không rò rỉ task ẩn hay PII.
+  3. Tách `taskAccessSqlCondition` & `notDoneColumnSqlCondition` tại `src/server/modules/tasks/repository.ts` để `tasks` và `archive` dùng chung 1 nguồn sự thật.
+- **Kiểm thử bắt buộc:** Unit test policy/service & integration test trên `beam_test` cho `GET /boards?q=`, đếm `visibleTaskCount`/`overdueTaskCount` theo quyền xem & cột `Done`, và `GET /tasks?dueStatus=overdue` + filter/sort kết hợp; `openapi:generate` + `openapi:check`.
+- **Ngoài phạm vi:** Full-text search ngoài `q`, nhãn (label), lưu preset bộ lọc trên DB.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready`
+
+### E6-02
+- **ID:** `E6-02`
+- **Tiêu đề:** Giao diện lọc/tìm kiếm/sắp xếp Board & Task (`S03`/`S04`), nút chuyển cột bàn phím/mobile & chuẩn hóa badge quá hạn
+- **Sub-agent phụ trách:** `frontend`
+- **Liên quan:** `FR-22`, `FR-25`, `FR-27`, `AC-15`, `S03`, `S04`
+- **Phụ thuộc:** `E6-01` (`Done` và đã khóa `docs/openapi.yaml` + `schema.d.ts`)
+- **Mục tài liệu cần đọc:** `wireframes/s03-boards.html`, `wireframes/s04-board.html`, `docs/openapi.yaml`, `HANDOFF` (`FR-22`, `FR-25`, `FR-27`, `S03`, `S04`)
+- **Phạm vi file được sửa:** `src/features/boards/*`, `src/features/tasks/*`, `src/app/boards/[id]/page.tsx`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:**
+  1. `S04` (`/boards/[id]`): thanh lọc/tìm kiếm/sắp xếp (`q`, Ban, Người được giao — tôn trọng `member.view`, Priority `1..4`, Hạn, Cột, Sắp xếp + thứ tự `asc`/`desc`, xóa lọc, đồng bộ query URL); khi lọc hoặc sắp xếp khác `position asc` thì tạm dừng kéo thả kèm thông báo rõ ràng; badge cột đếm theo task hiển thị.
+  2. `BoardTaskCard`: menu `⋯` **"Chuyển tới cột…"** (`POST /tasks/{id}/move`) cho người có quyền di chuyển thẻ (`FR-22`), không hiện cảnh báo quá hạn ở cột cuối `Done`.
+  3. `S03` (`/boards`): tìm kiếm `q` qua `GET /boards?q=` và hiển thị `visibleTaskCount`/`overdueTaskCount` trên `BoardTileCard`.
+  4. 100% chuỗi UI qua `messages/{vi,en}.json`.
+- **Kiểm thử bắt buộc:** Unit test `board-filters`, `boards-view`, `board-detail`, `i18n-parity`.
+- **Ngoài phạm vi:** Đổi hợp đồng API hoặc sửa file ngoài phạm vi `frontend`.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Ready`
+
+### E6-03
+- **ID:** `E6-03`
+- **Tiêu đề:** Kiểm thử E2E & kiểm định kiến trúc/bảo mật độc lập Epic E6 `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-22`, `FR-25`, `FR-27`, `AC-15`, `S03`, `S04`
+- **Phụ thuộc:** `E6-01`, `E6-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `HANDOFF` (`FR-22`, `FR-25`, `FR-27`, `AC-15`), `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `tests/e2e/board-filters-and-move.spec.ts` (và bổ sung test trong `tests/*` nếu cần phủ AC)
+- **Tiêu chí chấp nhận:** E2E Chrome xác minh `S03` search/count không lộ task ẩn, `S04` filter/sort/URL reload, menu `⋯` chuyển cột ghi `task_events`, cột `Done` không cảnh báo quá hạn, `AC-15` (`404` task ẩn) & không PII; đạt đủ 8 cổng (`typecheck`, `lint`, `arch:check`, `openapi:check`, `test:unit`, `test:integration`, `build`, `test:e2e`) và audit §6A.8/§7/§8 `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
+- **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready`

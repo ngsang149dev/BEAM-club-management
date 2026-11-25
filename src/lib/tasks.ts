@@ -41,6 +41,8 @@ export const createTaskRequestSchema = z
     assigneeIds: z.array(z.uuid()).default([]),
     departmentIds: z.array(z.uuid()).default([]),
     notifyDepartmentMembers: z.boolean().default(true),
+    notifyInApp: z.boolean().optional(),
+    notifyEmail: z.boolean().optional(),
     isHidden: z.boolean().default(false),
   })
   .strict();
@@ -75,6 +77,8 @@ export const replaceTaskAssigneesRequestSchema = z
     assigneeIds: z.array(z.uuid()).optional(),
     departmentIds: z.array(z.uuid()).optional(),
     notifyDepartmentMembers: z.boolean().default(true),
+    notifyInApp: z.boolean().optional(),
+    notifyEmail: z.boolean().optional(),
     version: z.number().int().min(1).optional(),
   })
   .strict()
@@ -89,6 +93,23 @@ export const replaceTaskAssigneesRequestSchema = z
 export type ReplaceTaskAssigneesRequestInput = z.infer<
   typeof replaceTaskAssigneesRequestSchema
 >;
+
+export interface TaskNotificationChannels {
+  readonly notifyInApp: boolean;
+  readonly notifyEmail: boolean;
+}
+
+export function resolveTaskNotificationChannels(input: {
+  readonly notifyDepartmentMembers?: boolean;
+  readonly notifyInApp?: boolean;
+  readonly notifyEmail?: boolean;
+}): TaskNotificationChannels {
+  const fallback = input.notifyDepartmentMembers ?? true;
+  return {
+    notifyInApp: input.notifyInApp ?? fallback,
+    notifyEmail: input.notifyEmail ?? fallback,
+  };
+}
 
 export function emptyToUndefined(value: unknown): unknown {
   if (value === null || value === undefined) {

@@ -108,6 +108,9 @@ export interface TaskAssignmentNotifier {
     readonly boardId: string;
     readonly actorId: string;
     readonly departmentIds: readonly string[];
+    readonly assigneeIds?: readonly string[];
+    readonly notifyInApp?: boolean;
+    readonly notifyEmail?: boolean;
     readonly isHiddenTask: boolean;
     readonly now: Date;
   }): Promise<void>;

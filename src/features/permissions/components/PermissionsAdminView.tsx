@@ -63,11 +63,9 @@ function PermissionsHeaderBar({
 }
 
 function PermissionsBanners({
-  isActive,
   isMemberAdmin,
   saveError,
 }: {
-  isActive: boolean;
   isMemberAdmin: boolean;
   saveError: unknown;
 }) {
@@ -75,17 +73,12 @@ function PermissionsBanners({
   const tErr = useTranslations('errors');
   const err = describePermissionsError(saveError);
 
-  if (isActive && !isMemberAdmin && !err) {
+  if (!isMemberAdmin && !err) {
     return null;
   }
 
   return (
     <>
-      {!isActive ? (
-        <div className="ui-banner is-warn" role="status">
-          <div className="ui-banner-body"><span className="ui-banner-text">{t('inactiveWarning')}</span></div>
-        </div>
-      ) : null}
       {isMemberAdmin ? (
         <div className="ui-banner" role="status">
           <div className="ui-banner-body"><span className="ui-banner-text">{t('adminAccessNotice')}</span></div>
@@ -200,7 +193,7 @@ function PermissionsMainColumn({
   return (
     <section className="perm-main">
       <PermissionsHeaderBar member={member} isAdminFlag={isMemberAdmin} presets={presets} onPickPreset={(p) => { state.presetMutation.reset(); state.setPendingPreset(p); }} />
-      <PermissionsBanners isActive={member.isActive} isMemberAdmin={isMemberAdmin} saveError={state.replaceMutation.error} />
+      <PermissionsBanners isMemberAdmin={isMemberAdmin} saveError={state.replaceMutation.error} />
       <AdminFlagPanel memberName={member.fullName} isAdmin={isMemberAdmin} isSelf={member.id === currentUserId} isUpdating={state.adminMutation.isPending} error={state.adminMutation.error} onToggleAdmin={state.toggleAdminFlag} />
       <PermissionMatrixGroups catalogItems={state.catalogQuery.data?.items} selectedCodes={state.effectiveCodes} disabled={state.memberPermQuery.isPending || state.replaceMutation.isPending} isLoading={state.memberPermQuery.isPending} onTogglePermission={state.togglePermission} />
       <PermissionsSaveBar effectiveCount={state.effectiveCodes.length} isDirty={state.isDirty} isSaving={state.replaceMutation.isPending} onDiscard={state.discardDraft} onSave={state.savePermissions} />
@@ -233,7 +226,6 @@ export function PermissionsAdminView() {
 
   return (
     <div className="admin-page-stack">
-      <p className="page-subtitle">{t('subtitle')}</p>
       <div className="perm-layout">
         <PermissionsMemberList
           members={state.members}

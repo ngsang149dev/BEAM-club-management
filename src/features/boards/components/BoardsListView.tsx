@@ -305,14 +305,12 @@ function BoardsListBody({
 
 export function BoardsListView() {
   const { isAdmin } = usePermissions();
-  const t = useTranslations('boards');
   const state = useBoardsListState(isAdmin);
   const departments = state.departmentsQuery.data?.items ?? [];
   const openCreate = () => { state.createMutation.reset(); state.setModal({ kind: 'create' }); };
 
   return (
     <div className="admin-page-stack">
-      <p className="page-subtitle">{t('subtitle')}</p>
       <BoardsToolbar filters={state.filters} isAdmin={isAdmin} departments={departments} onFiltersChange={state.setFilters} onOpenCreate={openCreate} />
       <BoardsListBody state={state} onOpenCreate={openCreate} />
       <BoardsModalHost state={state} departments={departments} />

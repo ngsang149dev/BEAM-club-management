@@ -37,14 +37,12 @@ function DepartmentRow({
 
 function DepartmentSection({
   title,
-  hint,
   departments,
   emptyText,
   onRename,
   onDelete,
 }: {
   title: string;
-  hint: string;
   departments: DepartmentDto[];
   emptyText: string;
   onRename: (dept: DepartmentDto) => void;
@@ -55,7 +53,6 @@ function DepartmentSection({
       <div className="admin-card-header">
         <div>
           <h2 className="admin-card-title">{title}</h2>
-          <p className="admin-card-hint">{hint}</p>
         </div>
         <span className="ui-chip">{departments.length}</span>
       </div>
@@ -104,7 +101,6 @@ export function DepartmentsLoadedList({
     <div className="admin-sections-stack">
       <DepartmentSection
         title={t('inUseSectionTitle')}
-        hint={t('inUseSectionHint')}
         departments={inUse}
         emptyText={t('emptySectionText')}
         onRename={onRename}
@@ -112,7 +108,6 @@ export function DepartmentsLoadedList({
       />
       <DepartmentSection
         title={t('unusedSectionTitle')}
-        hint={t('unusedSectionHint')}
         departments={unused}
         emptyText={t('emptySectionText')}
         onRename={onRename}

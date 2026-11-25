@@ -83,7 +83,6 @@ export function LoginShowcase() {
           />
         </div>
       </div>
-      <p className="login-caption">{tAuth('caption')}</p>
     </section>
   );
 }

@@ -260,7 +260,6 @@ export function MembersDirectoryView() {
     <div className="admin-page-stack">
       <div className="directory-header-row">
         <div>
-          <p className="page-subtitle">{t('subtitle')}</p>
           {!canViewDetail ? <p className="directory-privacy-note">{t('privacyHint')}</p> : null}
         </div>
         <span className="ui-chip">{t('summaryCount', { count: members.length })}</span>

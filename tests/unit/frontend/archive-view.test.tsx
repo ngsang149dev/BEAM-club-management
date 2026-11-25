@@ -376,7 +376,7 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
       />
     );
     expect(nonAdminHtml).toContain('Không tự xóa');
-    expect(nonAdminHtml).toContain('Chỉ admin mới có thể thay đổi chính sách tự động xóa.');
+    expect(nonAdminHtml).toContain('Chỉ admin mới được thay đổi.');
     expect(nonAdminHtml).not.toContain('<select');
     expect(nonAdminHtml).not.toContain('Lưu chính sách');
 
@@ -425,7 +425,7 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
     expect(purgeModalEnHtml).toContain('role="dialog"');
     expect(purgeModalEnHtml).toContain('Confirm permanent purge');
     expect(purgeModalEnHtml).toContain('Pham Minh Hieu');
-    expect(purgeModalEnHtml).toContain('Personal identifiable data (PII) will be removed or anonymized');
+    expect(purgeModalEnHtml).toContain('Personal details are removed or anonymized while activity history is preserved.');
     expect(purgeModalEnHtml).toContain('Only items currently in the Archive can be permanently purged.');
     expect(purgeModalEnHtml).toContain('req-purge-409');
 

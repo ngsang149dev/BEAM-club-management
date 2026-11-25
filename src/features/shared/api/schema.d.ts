@@ -1773,7 +1773,7 @@ export interface paths {
          * Create a new task
          * @description Requires `task.create` (or admin). Supplying non-empty `assigneeIds` or `departmentIds` also requires `task.assign` (or admin).
          *     Creates the task and records a `task.created` event in `task_events` inside the same transaction, returning `eventId`.
-         *     When `notifyDepartmentMembers` is `true` (default) and `departmentIds` is non-empty, dispatches in-app notifications and bilingual emails to active members of those departments post-commit (with `WQ-27` hidden-task title redaction).
+         *     Post-commit, dispatches notifications to active members of newly assigned departments (`task.department_assigned`) and newly assigned individual members (`task.assigned`), deduplicated per user (excluding `actorId`), controlled independently by `notifyInApp` and `notifyEmail` (inheriting `notifyDepartmentMembers`, default `true`), with `WQ-27` hidden-task title redaction.
          */
         post: {
             parameters: {
@@ -1985,7 +1985,7 @@ export interface paths {
          * @description Requires `task.assign` (or admin) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
          *     At least one of `assigneeIds` or `departmentIds` is required; omitting one preserves its existing assignments.
          *     Records `task.assignees_changed` with IDs only (no names/MSSV/email) in `task_events` and returns `eventId`.
-         *     When `notifyDepartmentMembers` is `true` (default) and new departments are added, dispatches in-app notifications and bilingual emails post-commit.
+         *     Post-commit, dispatches notifications to active members of newly assigned departments (`task.department_assigned`) and newly assigned individual members (`task.assigned`), deduplicated per user (excluding `actorId`), controlled independently by `notifyInApp` and `notifyEmail` (inheriting `notifyDepartmentMembers`, default `true`), with `WQ-27` hidden-task title redaction.
          */
         put: {
             parameters: {
@@ -3399,8 +3399,12 @@ export interface components {
             assigneeIds: string[];
             /** @description Department UUIDs assigned to the task (defaults to `[]` on the server). */
             departmentIds?: string[];
-            /** @description Whether to dispatch notifications and emails to active members of assigned departments (defaults to `true` on the server). */
+            /** @description Whether to dispatch notifications and emails to active members of assigned departments and assigned individual members unless overridden by `notifyInApp` / `notifyEmail` (defaults to `true` on the server). */
             notifyDepartmentMembers?: boolean;
+            /** @description Optional toggle for in-app bell notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`). */
+            notifyInApp?: boolean;
+            /** @description Optional toggle for bilingual email notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`). */
+            notifyEmail?: boolean;
             /** @default false */
             isHidden: boolean;
         };
@@ -3425,8 +3429,12 @@ export interface components {
         ReplaceTaskAssigneesRequest: {
             assigneeIds?: string[];
             departmentIds?: string[];
-            /** @description Whether to dispatch notifications and emails to active members of newly added departments (defaults to `true` on the server). */
+            /** @description Whether to dispatch notifications and emails to active members of newly added departments and newly added individual assignees unless overridden by `notifyInApp` / `notifyEmail` (defaults to `true` on the server). */
             notifyDepartmentMembers?: boolean;
+            /** @description Optional toggle for in-app bell notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`). */
+            notifyInApp?: boolean;
+            /** @description Optional toggle for bilingual email notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`). */
+            notifyEmail?: boolean;
             version?: number;
         };
         UpdateTaskHiddenRequest: {

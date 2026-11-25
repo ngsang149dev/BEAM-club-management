@@ -82,6 +82,7 @@ export async function runTaskUpdateInTx(params: {
 
 export interface RunTaskAssigneesResult extends TaskOptionalEventMutationResult {
   readonly addedDepartmentIds: readonly string[];
+  readonly addedAssigneeIds: readonly string[];
 }
 
 function computeNextAssignments(
@@ -97,8 +98,17 @@ function computeNextAssignments(
   const changed =
     !sameStringSet(currentAssigneeIds, nextAssigneeIds) ||
     !sameStringSet(currentDepartmentIds, nextDepartmentIds);
+  const addedAssigneeIds = nextAssigneeIds.filter((id) => !currentAssigneeIds.includes(id));
   const addedDepartmentIds = nextDepartmentIds.filter((id) => !currentDepartmentIds.includes(id));
-  return { currentAssigneeIds, currentDepartmentIds, nextAssigneeIds, nextDepartmentIds, changed, addedDepartmentIds };
+  return {
+    currentAssigneeIds,
+    currentDepartmentIds,
+    nextAssigneeIds,
+    nextDepartmentIds,
+    changed,
+    addedAssigneeIds,
+    addedDepartmentIds,
+  };
 }
 
 export async function runTaskAssigneesInTx(params: {
@@ -117,7 +127,9 @@ export async function runTaskAssigneesInTx(params: {
     throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
   }
   const next = computeNextAssignments(target, params.input);
-  if (!next.changed) return { task: target, eventId: null, addedDepartmentIds: [] };
+  if (!next.changed) {
+    return { task: target, eventId: null, addedDepartmentIds: [], addedAssigneeIds: [] };
+  }
   const mutated = await params.tasksRepo.replaceAssigneesWithEvent(
     {
       id: params.taskId,
@@ -132,7 +144,11 @@ export async function runTaskAssigneesInTx(params: {
     },
     params.tx,
   );
-  return { ...mutated, addedDepartmentIds: next.addedDepartmentIds };
+  return {
+    ...mutated,
+    addedDepartmentIds: next.addedDepartmentIds,
+    addedAssigneeIds: next.addedAssigneeIds,
+  };
 }
 
 export async function runTaskMoveInTx(params: {

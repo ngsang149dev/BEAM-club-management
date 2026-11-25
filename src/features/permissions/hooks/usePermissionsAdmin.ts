@@ -58,6 +58,16 @@ export function usePermissionPresetsQuery(enabled: boolean) {
   });
 }
 
+export function buildPermissionMembersQuery(q: string, cursor?: string) {
+  const trimmed = q.trim();
+  return {
+    isActive: true,
+    ...(trimmed ? { q: trimmed } : {}),
+    ...(cursor ? { cursor } : {}),
+    limit: 50,
+  };
+}
+
 export function usePermissionMembersQuery(q: string, enabled: boolean) {
   const trimmed = q.trim();
   return useInfiniteQuery({
@@ -65,11 +75,7 @@ export function usePermissionMembersQuery(q: string, enabled: boolean) {
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       apiFetch('/members', {
-        query: {
-          ...(trimmed ? { q: trimmed } : {}),
-          ...(pageParam ? { cursor: pageParam } : {}),
-          limit: 50,
-        },
+        query: buildPermissionMembersQuery(q, pageParam),
         signal,
       }),
     getNextPageParam: (lastPage) => lastPage.meta.nextCursor ?? undefined,

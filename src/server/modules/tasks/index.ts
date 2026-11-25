@@ -43,7 +43,7 @@ export {
 } from './positioning';
 export { DrizzleTasksRepository, visibleTaskSqlCondition } from './repository';
 export { TasksService, type TasksServiceDeps } from './service';
-export { toTaskVisibilitySubject } from './service-helpers';
+export { type RunTaskAssigneesResult, toTaskVisibilitySubject } from './service-helpers';
 export type {
   CreateTaskRepoParams,
   ListMyTasksParams,

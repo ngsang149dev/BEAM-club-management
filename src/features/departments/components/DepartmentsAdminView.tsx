@@ -191,7 +191,6 @@ function DepartmentsBody({ state }: { state: ReturnType<typeof useDepartmentsAdm
 export function DepartmentsAdminView() {
   const { can } = usePermissions();
   const canManage = can('department.manage');
-  const t = useTranslations('departmentsAdmin');
   const tCommon = useTranslations('common');
   const tErr = useTranslations('errors');
   const state = useDepartmentsAdminState(canManage);
@@ -210,7 +209,6 @@ export function DepartmentsAdminView() {
 
   return (
     <div className="admin-page-stack">
-      <p className="page-subtitle">{t('subtitle')}</p>
       {state.feedbackMessage ? <div className="ui-banner" role="status"><div className="ui-banner-body"><span className="ui-banner-text">{state.feedbackMessage}</span></div></div> : null}
       <DepartmentsBody state={state} />
     </div>

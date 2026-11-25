@@ -101,7 +101,6 @@ function MyTasksToolbar({
           <span>{t('includeDoneLabel')}</span>
         </label>
       </div>
-      <p className="ui-field-hint">{t('doneNote')}</p>
     </div>
   );
 }
@@ -215,8 +214,7 @@ export function MyTasksView() {
 
   return (
     <div className="admin-page-stack">
-      <div className="directory-header-row">
-        <p className="page-subtitle">{t('subtitle')}</p>
+      <div className="directory-header-row is-end">
         <span className="ui-chip">{t('summaryCount', { count })}</span>
       </div>
       <MyTasksToolbar

@@ -15,6 +15,7 @@ import {
   useTaskAssigneeMembersQuery,
   useTaskDepartmentsQuery,
   useUpdateTaskMutation,
+  type ReplaceTaskAssigneesRequest,
   type TaskDto,
 } from '../hooks/useTasks';
 import {
@@ -22,11 +23,11 @@ import {
   TaskDueDateInput,
   TaskErrorBanner,
   TaskIndividualAssigneesDetails,
-  TaskNotifyDepartmentToggle,
   TaskPrioritySelect,
   type TaskAssigneeOption,
   type TaskDepartmentOption,
 } from './TaskFormFields';
+import { TaskNotificationOptions } from './TaskNotificationOptions';
 
 const editTaskSchema = z.object({
   title: taskTitleSchema,
@@ -81,7 +82,7 @@ export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReloa
       </div>
       <div className="ui-field">
         <label className="ui-label" htmlFor={`${baseId}-desc`}>{tTasks('descriptionLabel')}</label>
-        <textarea id={`${baseId}-desc`} className="ui-textarea" rows={4} {...register('description')} />
+        <textarea id={`${baseId}-desc`} className="ui-textarea" rows={6} {...register('description')} />
       </div>
       <div className="task-form-two-col">
         <TaskPrioritySelect value={priority} onChange={(next) => setValue('priority', next)} />
@@ -118,6 +119,27 @@ function toggleId(prev: string[], id: string): string[] {
   return prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
 }
 
+export function buildReplaceTaskAssigneesPayload(params: {
+  readonly departmentIds: readonly string[];
+  readonly assigneeIds?: readonly string[];
+  readonly canViewMembers?: boolean;
+  readonly notifyInApp: boolean;
+  readonly notifyEmail: boolean;
+  readonly version: number;
+}): ReplaceTaskAssigneesRequest {
+  const includeAssignees = params.canViewMembers ?? params.assigneeIds !== undefined;
+  return {
+    departmentIds: [...params.departmentIds],
+    ...(includeAssignees && params.assigneeIds !== undefined
+      ? { assigneeIds: [...params.assigneeIds] }
+      : {}),
+    notifyInApp: params.notifyInApp,
+    notifyEmail: params.notifyEmail,
+    notifyDepartmentMembers: params.notifyInApp || params.notifyEmail,
+    version: params.version,
+  };
+}
+
 function useTaskAssigneesController(task: TaskDto) {
   const tTasks = useTranslations('tasks');
   const { can } = usePermissions();
@@ -125,23 +147,24 @@ function useTaskAssigneesController(task: TaskDto) {
   const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>(() =>
     task.assignedDepartments.map((dept) => dept.id)
   );
-  const [notifyDepartmentMembers, setNotifyDepartmentMembers] = useState<boolean>(true);
+  const [notifyInApp, setNotifyInApp] = useState<boolean>(true);
+  const [notifyEmail, setNotifyEmail] = useState<boolean>(true);
   const [selectedIds, setSelectedIds] = useState<string[]>(() => task.assignees.map((a) => a.id));
   const departmentsQuery = useTaskDepartmentsQuery(true);
   const membersQuery = useTaskAssigneeMembersQuery(canViewMembers);
   const assigneesMutation = useReplaceTaskAssigneesMutation();
 
   const handleSaveAssignees = () => {
+    const payload = buildReplaceTaskAssigneesPayload({
+      departmentIds: selectedDeptIds,
+      assigneeIds: selectedIds,
+      canViewMembers,
+      notifyInApp,
+      notifyEmail,
+      version: task.version,
+    });
     assigneesMutation.mutate(
-      {
-        id: task.id,
-        payload: {
-          departmentIds: selectedDeptIds,
-          ...(canViewMembers ? { assigneeIds: selectedIds } : {}),
-          notifyDepartmentMembers,
-          version: task.version,
-        },
-      },
+      { id: task.id, payload },
       { onSuccess: () => toast.success(tTasks('departmentsUpdatedToast')) }
     );
   };
@@ -150,8 +173,10 @@ function useTaskAssigneesController(task: TaskDto) {
     canViewMembers,
     selectedDeptIds,
     toggleDept: (id: string) => setSelectedDeptIds((prev) => toggleId(prev, id)),
-    notifyDepartmentMembers,
-    setNotifyDepartmentMembers,
+    notifyInApp,
+    setNotifyInApp,
+    notifyEmail,
+    setNotifyEmail,
     selectedIds,
     toggleMember: (id: string) => setSelectedIds((prev) => toggleId(prev, id)),
     pickerDepartments: mergeDepartmentOptions(departmentsQuery.data?.items ?? [], task.assignedDepartments),
@@ -168,18 +193,12 @@ export function TaskAssigneesSection({ task, onReload }: { task: TaskDto; onRelo
   return (
     <section className="task-drawer-section">
       <h3 className="task-section-title">{tTasks('departmentsLabel')}</h3>
-      <p className="ui-field-hint">{tTasks('departmentsHint')}</p>
       <TaskErrorBanner error={ctrl.assigneesMutation.error} onReloadConflict={onReload} />
       <TaskDepartmentPicker
         departments={ctrl.pickerDepartments}
         selectedIds={ctrl.selectedDeptIds}
         disabled={ctrl.assigneesMutation.isPending}
         onToggle={ctrl.toggleDept}
-      />
-      <TaskNotifyDepartmentToggle
-        checked={ctrl.notifyDepartmentMembers}
-        disabled={ctrl.assigneesMutation.isPending}
-        onChange={ctrl.setNotifyDepartmentMembers}
       />
       <TaskIndividualAssigneesDetails
         members={ctrl.pickerMembers}
@@ -188,9 +207,16 @@ export function TaskAssigneesSection({ task, onReload }: { task: TaskDto; onRelo
         disabled={ctrl.assigneesMutation.isPending}
         onToggle={ctrl.toggleMember}
       />
+      <TaskNotificationOptions
+        notifyInApp={ctrl.notifyInApp}
+        onToggleNotifyInApp={ctrl.setNotifyInApp}
+        notifyEmail={ctrl.notifyEmail}
+        onToggleNotifyEmail={ctrl.setNotifyEmail}
+        disabled={ctrl.assigneesMutation.isPending}
+      />
       <div className="task-section-actions">
-        <button type="button" className="ui-btn ghost is-sm" disabled={ctrl.assigneesMutation.isPending} onClick={ctrl.handleSaveAssignees}>
-          {ctrl.assigneesMutation.isPending ? tTasks('savingAssignees') : tTasks('departmentsSaveButton')}
+        <button type="button" className="ui-btn secondary" disabled={ctrl.assigneesMutation.isPending} onClick={ctrl.handleSaveAssignees}>
+          {ctrl.assigneesMutation.isPending ? tTasks('savingAssignees') : tTasks('saveAssignments')}
         </button>
       </div>
     </section>

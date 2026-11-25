@@ -269,7 +269,6 @@ export function ChangePasswordCard({
     <section id="change-password" className={`profile-section${showForceAlert ? ' is-highlighted' : ''}`} aria-labelledby={`${baseId}-heading`}>
       <div className="profile-password-head">
         <h3 id={`${baseId}-heading`}>{tProfile('changePasswordTitle')}</h3>
-        <p>{tProfile('changePasswordSubtitle')}</p>
       </div>
       <form className="profile-password-form" method="post" onSubmit={form.handleSubmit(handleValidSubmit)} noValidate>
         <ChangePasswordStatusBanners showForceAlert={showForceAlert} serverErrorKey={serverErrorKey} showSuccess={showSuccess} />

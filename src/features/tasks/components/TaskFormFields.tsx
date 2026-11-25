@@ -115,7 +115,6 @@ export function TaskDueDateInput({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       />
-      <p className="ui-field-hint">{tTasks('dueAtHint')}</p>
     </div>
   );
 }
@@ -199,33 +198,6 @@ export function TaskAssigneePicker({
           </label>
         );
       })}
-    </div>
-  );
-}
-
-export function TaskNotifyDepartmentToggle({
-  checked,
-  disabled = false,
-  onChange,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  const tTasks = useTranslations('tasks');
-
-  return (
-    <div className="task-notify-box">
-      <label className="ui-check-inline">
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span>{tTasks('notifyDepartmentMembersLabel')}</span>
-      </label>
-      <p className="ui-field-hint">{tTasks('notifyDepartmentMembersHint')}</p>
     </div>
   );
 }
