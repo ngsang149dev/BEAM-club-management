@@ -825,7 +825,10 @@
     "moveError": "Không thể chuyển task.",
     "taskActionsMenu": "Tùy chọn task",
     "moveToColumnMenu": "Chuyển tới cột…",
-    "movedToColumnToast": "Đã chuyển task sang cột {column}."
+    "movedToColumnToast": "Đã chuyển task sang cột {column}.",
+    "tabsAriaLabel": "Mục chi tiết task",
+    "tabDetails": "Chi tiết",
+    "tabComments": "Bình luận"
   },
   "comments": {
     "title": "Bình luận",
@@ -834,6 +837,11 @@
     "empty": "Chưa có bình luận nào.",
     "loadMore": "Tải thêm bình luận",
     "loadingMore": "Đang tải thêm...",
+    "sortNewestFirst": "Mới nhất trước",
+    "showingCount": "Đang hiện {shown} / {total}",
+    "loadOlder": "Xem thêm bình luận cũ hơn",
+    "showMore": "Xem thêm",
+    "showLess": "Thu gọn",
     "composerLabel": "Viết bình luận",
     "composerPlaceholder": "Viết bình luận...",
     "submit": "Gửi",

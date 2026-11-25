@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
@@ -96,7 +96,7 @@ function CommentsListBody(props: CommentsListBodyProps) {
             onClick={() => commentsQuery.fetchNextPage()}
             disabled={commentsQuery.isFetchingNextPage}
           >
-            {commentsQuery.isFetchingNextPage ? tComments('loadingMore') : tComments('loadMore')}
+            {commentsQuery.isFetchingNextPage ? tComments('loadingMore') : tComments('loadOlder')}
           </button>
         </div>
       ) : null}
@@ -104,7 +104,46 @@ function CommentsListBody(props: CommentsListBodyProps) {
   );
 }
 
-function useCommentsController(taskId: string, boardId: string) {
+function CommentsPanelHeader({
+  commentCount,
+  loadedCount,
+  showPartialCount,
+}: {
+  readonly commentCount: number;
+  readonly loadedCount: number;
+  readonly showPartialCount: boolean;
+}) {
+  const tComments = useTranslations('comments');
+
+  return (
+    <div className="task-comments-header">
+      <div className="task-comments-title-group">
+        <h3 className="task-section-title">{tComments('title')}</h3>
+        <span className="ui-chip">{commentCount}</span>
+      </div>
+      <div className="task-comments-meta">
+        <span>{tComments('sortNewestFirst')}</span>
+        {showPartialCount ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>
+              {tComments('showingCount', {
+                shown: loadedCount,
+                total: Math.max(commentCount, loadedCount),
+              })}
+            </span>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function useCommentsController(
+  taskId: string,
+  boardId: string,
+  onCreated?: () => void,
+) {
   const tComments = useTranslations('comments');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const commentsQuery = useTaskCommentsInfiniteQuery(taskId, true);
@@ -114,7 +153,13 @@ function useCommentsController(taskId: string, boardId: string) {
   const submitBody = (body: string, resetForm: () => void) => {
     createMutation.mutate(
       { body: body.trim() },
-      { onSuccess: () => { resetForm(); toast.success(tComments('createdToast')); } },
+      {
+        onSuccess: () => {
+          resetForm();
+          onCreated?.();
+          toast.success(tComments('createdToast'));
+        },
+      },
     );
   };
 
@@ -137,38 +182,49 @@ export function TaskCommentsSection({
   readonly commentCount: number;
 }) {
   const locale = useLocale();
-  const tComments = useTranslations('comments');
   const { isAdmin, can } = usePermissions();
   const meQuery = useMeQuery(true);
-  const ctrl = useCommentsController(taskId, boardId);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const ctrl = useCommentsController(taskId, boardId, () => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  });
   const canCreate = isAdmin || can('comment.create');
+  const loadedCount =
+    ctrl.commentsQuery.data?.pages.reduce((sum, page) => sum + page.items.length, 0) ?? 0;
+  const showPartialCount =
+    loadedCount > 0 && (ctrl.commentsQuery.hasNextPage || loadedCount < commentCount);
 
   return (
-    <section className="task-drawer-section task-comments-section">
-      <div className="task-comments-header">
-        <h3 className="task-section-title">{tComments('title')}</h3>
-        <span className="ui-chip">{commentCount}</span>
-      </div>
-      {ctrl.deleteMutation.error ? <TaskErrorBanner error={ctrl.deleteMutation.error} /> : null}
-      <CommentsListBody
-        commentsQuery={ctrl.commentsQuery}
-        locale={locale}
-        isAdmin={isAdmin}
-        canDeleteAny={can('comment.delete_any')}
-        currentUserId={meQuery.data?.profile.id}
-        confirmingId={ctrl.confirmingId}
-        isDeleting={ctrl.deleteMutation.isPending}
-        onRequestDelete={ctrl.setConfirmingId}
-        onCancelDelete={() => ctrl.setConfirmingId(null)}
-        onConfirmDelete={ctrl.confirmDelete}
+    <section className="task-comments-panel task-comments-section">
+      <CommentsPanelHeader
+        commentCount={commentCount}
+        loadedCount={loadedCount}
+        showPartialCount={showPartialCount}
       />
+      {ctrl.deleteMutation.error ? <TaskErrorBanner error={ctrl.deleteMutation.error} /> : null}
       {canCreate ? (
-        <CommentComposerForm
-          isPending={ctrl.createMutation.isPending}
-          apiError={ctrl.createMutation.error}
-          onSubmitBody={ctrl.submitBody}
-        />
+        <div className="task-comments-composer-pin">
+          <CommentComposerForm
+            isPending={ctrl.createMutation.isPending}
+            apiError={ctrl.createMutation.error}
+            onSubmitBody={ctrl.submitBody}
+          />
+        </div>
       ) : null}
+      <div className="task-comments-scroll" ref={scrollRef}>
+        <CommentsListBody
+          commentsQuery={ctrl.commentsQuery}
+          locale={locale}
+          isAdmin={isAdmin}
+          canDeleteAny={can('comment.delete_any')}
+          currentUserId={meQuery.data?.profile.id}
+          confirmingId={ctrl.confirmingId}
+          isDeleting={ctrl.deleteMutation.isPending}
+          onRequestDelete={ctrl.setConfirmingId}
+          onCancelDelete={() => ctrl.setConfirmingId(null)}
+          onConfirmDelete={ctrl.confirmDelete}
+        />
+      </div>
     </section>
   );
 }

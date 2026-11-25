@@ -101,6 +101,20 @@ function getTaskDrawer(page: Page): Locator {
   return page.locator('aside.ui-drawer-task[role="dialog"]');
 }
 
+async function openCommentsTab(drawer: Locator): Promise<void> {
+  await drawer
+    .getByRole('tab', { name: new RegExp(viMessages.tasks.tabComments) })
+    .click();
+  await expect(drawer.locator('.task-comments-panel')).toBeVisible();
+}
+
+async function openDetailsTab(drawer: Locator): Promise<void> {
+  await drawer
+    .getByRole('tab', { name: new RegExp(viMessages.tasks.tabDetails) })
+    .click();
+  await expect(drawer.locator('.task-drawer-grid')).toBeVisible();
+}
+
 function formatVisibleTaskCount(count: number): string {
   return viMessages.boards.visibleTaskCount.replace('{count}', String(count));
 }
@@ -600,7 +614,8 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       expect((await assignResPromise).status()).toBe(200);
       await expect(creatorDrawer.getByText(viMessages.tasks.hiddenUnassignedWarnTitle)).toHaveCount(0);
 
-      // Creator also posts one comment on the hidden task for Member C's 404 comment delete probe
+      // Creator also posts one comment on the hidden task (via Comments tab) for Member C's 404 comment delete probe
+      await openCommentsTab(creatorDrawer);
       await creatorDrawer.getByLabel(viMessages.comments.composerLabel).fill(hiddenCommentBody);
       const hiddenCommentResPromise = creatorPage.waitForResponse(
         (res) =>
@@ -625,8 +640,9 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       const assigneeDrawer = getTaskDrawer(assigneePage);
       await expect(assigneeDrawer).toBeVisible();
       await expect(assigneeDrawer.getByText(viMessages.tasks.hiddenBannerTitle)).toBeVisible();
-      await expect(assigneeDrawer.getByText(hiddenCommentBody)).toBeVisible();
       await expect(assigneeDrawer.getByRole('switch')).toHaveCount(0);
+      await openCommentsTab(assigneeDrawer);
+      await expect(assigneeDrawer.getByText(hiddenCommentBody)).toBeVisible();
 
       const assigneeToggleAttempt = await assigneePage.request.put(
         `/api/v1/tasks/${createdTaskId}/hidden`,
@@ -749,7 +765,10 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       const revealedCard = getTaskCard(outsiderPage, createdTaskTitle);
       await expect(revealedCard).toBeVisible();
       await revealedCard.locator('.kanban-card-open').click();
-      await expect(getTaskDrawer(outsiderPage).getByText(hiddenCommentBody)).toBeVisible();
+      const outsiderRevealedDrawer = getTaskDrawer(outsiderPage);
+      await expect(outsiderRevealedDrawer.locator('.task-comments-panel')).toHaveCount(0);
+      await openCommentsTab(outsiderRevealedDrawer);
+      await expect(outsiderRevealedDrawer.getByText(hiddenCommentBody)).toBeVisible();
 
       // 6. Verify task_events recorded task.hidden_changed without PII
       const hiddenEvents = await db
@@ -841,6 +860,9 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       await cardOnBoard.locator('.kanban-card-open').click();
       const assigneeDrawer = getTaskDrawer(assigneePage);
       await expect(assigneeDrawer).toBeVisible();
+      await expect(assigneeDrawer.locator('.task-comments-panel')).toHaveCount(0);
+      await expect(assigneeDrawer.locator('.task-drawer-tab-count')).toHaveText('2');
+      await openCommentsTab(assigneeDrawer);
       await expect(assigneeDrawer).toContainText(`${inactiveFullName} ${viMessages.member.leftBadge}`);
       await expect(assigneeDrawer.getByText(inactiveCommentBody)).toBeVisible();
       await expect(assigneeDrawer.getByText(creatorCommentBody)).toBeVisible();
@@ -878,10 +900,13 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       const liveCommentId = createdCommentJson.comment.id;
 
       await expect(assigneeDrawer.getByText(liveCommentBody)).toBeVisible();
+      await expect(assigneeDrawer.locator('li.task-comment-item').first()).toContainText(liveCommentBody);
+      await expect(assigneeDrawer.locator('.task-drawer-tab-count')).toHaveText('3');
+      await expect(assigneeDrawer.locator('.task-comments-header .ui-chip')).toHaveText('3');
+      await openDetailsTab(assigneeDrawer);
       await expect(assigneeDrawer.locator('.task-drawer-badges')).toContainText(
         formatCommentsCount(3),
       );
-      await expect(assigneeDrawer.locator('.task-comments-header .ui-chip')).toHaveText('3');
       await expect(getTaskCard(assigneePage, commentsTaskTitle)).toContainText(
         formatCommentsCount(3),
       );
@@ -892,16 +917,20 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
         formatCommentsCount(3),
       );
       await getTaskCard(assigneePage, commentsTaskTitle).locator('.kanban-card-open').click();
-      await expect(getTaskDrawer(assigneePage).getByText(liveCommentBody)).toBeVisible();
-      await expect(getTaskDrawer(assigneePage).locator('.task-drawer-badges')).toContainText(
+      const reloadedAssigneeDrawer = getTaskDrawer(assigneePage);
+      await expect(reloadedAssigneeDrawer.locator('.task-drawer-badges')).toContainText(
         formatCommentsCount(3),
       );
+      await reloadedAssigneeDrawer.locator('.task-comments-jump-chip').click();
+      await expect(reloadedAssigneeDrawer.locator('.task-comments-panel')).toBeVisible();
+      await expect(reloadedAssigneeDrawer.getByText(liveCommentBody)).toBeVisible();
 
       // 2. Member D (without comment.create) sees comments cleanly, NO composer, NO Delete button, gets 403 on POST/DELETE
       const readOnlyPage = readOnlySession.page;
       await readOnlyPage.reload();
       const readOnlyDrawer = getTaskDrawer(readOnlyPage);
       await expect(readOnlyDrawer).toBeVisible();
+      await openCommentsTab(readOnlyDrawer);
       await expect(readOnlyDrawer.getByText(liveCommentBody)).toBeVisible();
       await expect(readOnlyDrawer.getByLabel(viMessages.comments.composerLabel)).toHaveCount(0);
       await expect(
@@ -943,9 +972,7 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       expect((await deleteOwnResPromise).status()).toBe(200);
 
       await expect(getTaskDrawer(assigneePage).getByText(liveCommentBody)).toHaveCount(0);
-      await expect(getTaskDrawer(assigneePage).locator('.task-drawer-badges')).toContainText(
-        formatCommentsCount(2),
-      );
+      await expect(getTaskDrawer(assigneePage).locator('.task-drawer-tab-count')).toHaveText('2');
       await expect(getTaskCard(assigneePage, commentsTaskTitle)).toContainText(
         formatCommentsCount(2),
       );
@@ -955,6 +982,7 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       await outsiderPage.reload();
       const outsiderDrawer = getTaskDrawer(outsiderPage);
       await expect(outsiderDrawer).toBeVisible();
+      await openCommentsTab(outsiderDrawer);
       const outsiderTargetItem = outsiderDrawer.locator('li.task-comment-item', {
         hasText: creatorCommentBody,
       });
@@ -972,9 +1000,7 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       expect((await deleteAnyResPromise).status()).toBe(200);
 
       await expect(outsiderDrawer.getByText(creatorCommentBody)).toHaveCount(0);
-      await expect(outsiderDrawer.locator('.task-drawer-badges')).toContainText(
-        formatCommentsCount(1),
-      );
+      await expect(outsiderDrawer.locator('.task-drawer-tab-count')).toHaveText('1');
       await expect(getTaskCard(outsiderPage, commentsTaskTitle)).toContainText(
         formatCommentsCount(1),
       );
@@ -1029,6 +1055,92 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
         readOnlySession.context.close(),
         outsiderSession.context.close(),
       ]);
+    }
+  });
+
+  test('Comments tab paginates 10 newest-first items, pins composer inside scrollable panel, and collapses long comments', async ({
+    browser,
+  }) => {
+    const bulkTaskId = randomUUID();
+    trackedTaskIds.push(bulkTaskId);
+    const bulkTaskTitle = `E7 Bulk Comments ${suffix}`;
+    const longNewestBody = [
+      `E7 long comment #12 ${suffix}`,
+      'Line 2 detail for scrolling check',
+      'Line 3 detail for scrolling check',
+      'Line 4 detail for scrolling check',
+      'Line 5 detail for scrolling check',
+      'Line 6 extra detail should collapse',
+      'Line 7 extra detail should collapse',
+    ].join('\n');
+
+    await db.insert(tasks).values({
+      id: bulkTaskId,
+      boardId: commentsBoardId,
+      columnId: commentsTodoColId,
+      title: bulkTaskTitle,
+      description: 'Pagination and collapse verification task',
+      priority: 2,
+      position: '2000',
+      isHidden: false,
+      createdBy: creatorUserId,
+    });
+
+    const baseTime = new Date('2026-11-25T01:00:00.000Z').getTime();
+    await db.insert(comments).values(
+      Array.from({ length: 12 }, (_, idx) => ({
+        id: randomUUID(),
+        taskId: bulkTaskId,
+        userId: idx % 2 === 0 ? assigneeUserId : creatorUserId,
+        body: idx === 11 ? longNewestBody : `E7 bulk comment #${idx + 1} ${suffix}`,
+        createdAt: new Date(baseTime + idx * 60_000),
+      })),
+    );
+
+    const session = await openSignedInContext(
+      browser,
+      assigneeStudentId,
+      `/boards/${commentsBoardId}?task=${bulkTaskId}`,
+    );
+
+    try {
+      const page = session.page;
+      const drawer = getTaskDrawer(page);
+      await expect(drawer).toBeVisible();
+      await expect(drawer.locator('.task-comments-panel')).toHaveCount(0);
+      await expect(drawer.locator('.task-drawer-tab-count')).toHaveText('12');
+
+      await openCommentsTab(drawer);
+      await expect(drawer.locator('.task-comments-composer-pin')).toBeVisible();
+      await expect(drawer.locator('.task-comments-scroll')).toBeVisible();
+
+      const items = drawer.locator('li.task-comment-item');
+      await expect(items).toHaveCount(10);
+      await expect(items.first()).toContainText(`E7 long comment #12 ${suffix}`);
+      await expect(drawer).toContainText('Đang hiện 10 / 12');
+
+      const expandBtn = items.first().locator('.task-comment-expand-btn');
+      await expect(expandBtn).toHaveAttribute('aria-expanded', 'false');
+      await expect(expandBtn).toHaveText(viMessages.comments.showMore);
+      await expandBtn.click();
+      await expect(expandBtn).toHaveAttribute('aria-expanded', 'true');
+      await expect(expandBtn).toHaveText(viMessages.comments.showLess);
+      await expandBtn.click();
+      await expect(expandBtn).toHaveAttribute('aria-expanded', 'false');
+
+      const loadOlderBtn = drawer.getByRole('button', {
+        name: viMessages.comments.loadOlder,
+        exact: true,
+      });
+      await expect(loadOlderBtn).toBeVisible();
+      await loadOlderBtn.click();
+      await expect(items).toHaveCount(12);
+      await expect(items.last()).toContainText(`E7 bulk comment #1 ${suffix}`);
+      await expect(loadOlderBtn).toHaveCount(0);
+
+      await session.tracker.assertClean();
+    } finally {
+      await session.context.close();
     }
   });
 });

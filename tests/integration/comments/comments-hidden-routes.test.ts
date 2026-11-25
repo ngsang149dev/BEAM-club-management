@@ -512,7 +512,7 @@ describe('Comments & Task Hidden Toggle Route Handlers integration', () => {
         taskId,
         userId: inactiveAuthorId,
         body: 'Legacy comment from left member',
-        createdAt: new Date('2026-11-26T05:00:00.000Z'),
+        createdAt: new Date('2026-11-20T05:00:00.000Z'),
       });
       const creatorCommentRes = await taskCommentsPost(
         new Request(`http://localhost:3000/api/v1/tasks/${taskId}/comments`, {
@@ -539,7 +539,7 @@ describe('Comments & Task Hidden Toggle Route Handlers integration', () => {
         ((await taskDetailRes.json()) as { task: { commentCount: number } }).task.commentCount,
       ).toBe(3);
 
-      // 5. Cursor pagination + inactive author metadata without PII
+      // 5. Cursor pagination (newest first) + inactive author metadata without PII
       const page1Res = await taskCommentsGet(
         new Request(`http://localhost:3000/api/v1/tasks/${taskId}/comments?limit=2`, {
           headers: { cookie: plainCookie },
@@ -548,10 +548,11 @@ describe('Comments & Task Hidden Toggle Route Handlers integration', () => {
       );
       expect(page1Res.status).toBe(200);
       const page1 = (await page1Res.json()) as {
-        items: Array<{ id: string; author: Record<string, unknown> }>;
+        items: Array<{ id: string; createdAt: string; author: Record<string, unknown> }>;
         meta: { nextCursor: string | null; limit: number };
       };
       expect(page1.items).toHaveLength(2);
+      expect(page1.items[0]?.id).toBe(creatorCommentId);
       expect(page1.meta.nextCursor).toBeTruthy();
 
       const page2Res = await taskCommentsGet(
@@ -563,12 +564,17 @@ describe('Comments & Task Hidden Toggle Route Handlers integration', () => {
       );
       expect(page2Res.status).toBe(200);
       const page2 = (await page2Res.json()) as {
-        items: Array<{ id: string; author: Record<string, unknown> }>;
+        items: Array<{ id: string; createdAt: string; author: Record<string, unknown> }>;
         meta: { nextCursor: string | null };
       };
       expect(page2.items).toHaveLength(1);
       expect(page2.meta.nextCursor).toBeNull();
       const allCommentItems = [...page1.items, ...page2.items];
+      for (let i = 1; i < allCommentItems.length; i += 1) {
+        expect(
+          new Date(allCommentItems[i - 1]!.createdAt).getTime(),
+        ).toBeGreaterThanOrEqual(new Date(allCommentItems[i]!.createdAt).getTime());
+      }
       const inactiveItem = allCommentItems.find((i) => i.id === inactiveCommentId);
       expect(inactiveItem?.author).toMatchObject({
         id: inactiveAuthorId,

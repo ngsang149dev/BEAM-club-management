@@ -61,11 +61,13 @@ export function CommentComposerForm({
     });
   const bodyLength = useWatch({ control, name: 'body', defaultValue: '' }).length;
 
+  const submitForm = handleSubmit((values) => onSubmitBody(values.body, () => reset({ body: '' })));
+
   return (
     <form
       className="task-comment-composer"
       method="post"
-      onSubmit={handleSubmit((values) => onSubmitBody(values.body, () => reset({ body: '' })))}
+      onSubmit={submitForm}
       noValidate
     >
       <TaskErrorBanner error={apiError} />
@@ -74,10 +76,16 @@ export function CommentComposerForm({
         <textarea
           id={inputId}
           className="ui-textarea"
-          rows={3}
+          rows={2}
           placeholder={tComments('composerPlaceholder')}
           disabled={isPending}
           aria-invalid={Boolean(errors.body)}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !isPending) {
+              event.preventDefault();
+              void submitForm();
+            }
+          }}
           {...register('body')}
         />
         {errors.body ? (

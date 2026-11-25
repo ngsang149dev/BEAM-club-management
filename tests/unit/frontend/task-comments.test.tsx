@@ -27,10 +27,15 @@ vi.mock('@/features/comments/hooks/useComments', async () => {
 vi.mock('@/features/auth/hooks/useAuth', () => authHooksMock);
 
 import {
+  COMMENT_COLLAPSE_CHAR_THRESHOLD,
+  COMMENT_COLLAPSE_LINE_THRESHOLD,
+  isLongCommentBody,
+} from '@/features/comments/components/CommentItemRow';
+import {
   canDeleteComment,
   TaskCommentsSection,
 } from '@/features/comments/components/TaskCommentsSection';
-import { COMMENTS_QUERY_KEYS } from '@/features/comments/hooks/useComments';
+import { COMMENTS_PAGE_SIZE, COMMENTS_QUERY_KEYS } from '@/features/comments/hooks/useComments';
 
 type CommentDto = components['schemas']['CommentDto'];
 
@@ -116,6 +121,12 @@ describe('TaskCommentsSection (E7-02)', () => {
       { permissions: ['comment.create'] }
     );
     expect(withPermHtml).toContain('task-comment-composer');
+    expect(withPermHtml).toContain('task-comments-composer-pin');
+    expect(withPermHtml).toContain('task-comments-scroll');
+    expect(withPermHtml.indexOf('task-comment-composer')).toBeLessThan(
+      withPermHtml.indexOf('task-comments-scroll')
+    );
+    expect(withPermHtml).toContain('Mới nhất trước');
     expect(withPermHtml).toContain('0 / 4000');
     expect(withPermHtml).toContain('Gửi');
 
@@ -124,8 +135,10 @@ describe('TaskCommentsSection (E7-02)', () => {
       { isAdmin: true, locale: 'en' }
     );
     expect(adminEnHtml).toContain('Comments');
+    expect(adminEnHtml).toContain('Newest first');
     expect(adminEnHtml).toContain('task-comment-composer');
     expect(adminEnHtml).toContain('Send');
+    expect(COMMENTS_PAGE_SIZE).toBe(10);
   });
 
   it('gates delete action for author, comment.delete_any, and admin while hiding for others', () => {
@@ -184,7 +197,7 @@ describe('TaskCommentsSection (E7-02)', () => {
     const emptyHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={0} />);
     expect(emptyHtml).toContain('Chưa có bình luận nào.');
 
-    commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValueOnce({
+    const loadMorePage = {
       isPending: false,
       isError: false,
       error: null,
@@ -193,12 +206,22 @@ describe('TaskCommentsSection (E7-02)', () => {
       fetchNextPage: vi.fn(),
       refetch: vi.fn(),
       data: {
-        pages: [{ items: [ACTIVE_AUTHOR_COMMENT], meta: { nextCursor: 'cur-2', limit: 20 } }],
+        pages: [{ items: [ACTIVE_AUTHOR_COMMENT], meta: { nextCursor: 'cur-2', limit: 10 } }],
         pageParams: [undefined],
       },
-    });
+    };
+    commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValueOnce(loadMorePage);
     const loadMoreHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={5} />);
-    expect(loadMoreHtml).toContain('Tải thêm bình luận');
+    expect(loadMoreHtml).toContain('Xem thêm bình luận cũ hơn');
+    expect(loadMoreHtml).toContain('Đang hiện 1 / 5');
+
+    commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValueOnce(loadMorePage);
+    const loadMoreEnHtml = renderWithIntl(
+      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={5} />,
+      { locale: 'en' }
+    );
+    expect(loadMoreEnHtml).toContain('Load older comments');
+    expect(loadMoreEnHtml).toContain('Showing 1 of 5');
 
     commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValueOnce({
       isPending: false,
@@ -213,5 +236,40 @@ describe('TaskCommentsSection (E7-02)', () => {
     const errorHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={0} />);
     expect(errorHtml).toContain('req-cm-403');
     expect(errorHtml).toContain('Thử lại');
+  });
+
+  it('collapses long comments by char or line threshold and omits expand toggle for short comments', () => {
+    expect(COMMENT_COLLAPSE_CHAR_THRESHOLD).toBe(320);
+    expect(COMMENT_COLLAPSE_LINE_THRESHOLD).toBe(5);
+    expect(isLongCommentBody('Short text')).toBe(false);
+    expect(isLongCommentBody('a'.repeat(321))).toBe(true);
+    expect(isLongCommentBody('1\n2\n3\n4\n5\n6')).toBe(true);
+
+    const longComment: CommentDto = {
+      ...ACTIVE_AUTHOR_COMMENT,
+      id: 'cm-long',
+      body: 'Dòng 1\nDòng 2\nDòng 3\nDòng 4\nDòng 5\nDòng 6 chi tiết dài',
+    };
+    commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: {
+        pages: [{ items: [longComment], meta: { nextCursor: null, limit: 10 } }],
+        pageParams: [undefined],
+      },
+    });
+    const longHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={1} />);
+    expect(longHtml).toContain('task-comment-body is-clamped');
+    expect(longHtml).toContain('task-comment-expand-btn');
+    expect(longHtml).toContain('Xem thêm');
+
+    const shortHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />);
+    expect(shortHtml).not.toContain('task-comment-body is-clamped');
+    expect(shortHtml).not.toContain('task-comment-expand-btn');
   });
 });

@@ -245,12 +245,18 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     expect(assignedEditHtml).toContain('Gửi email');
     expect(assignedEditHtml).toContain('Cập nhật giao việc');
     expect(assignedEditHtml).toContain('Xóa task');
-    expect(assignedEditHtml).toContain('task-comments-section');
+    expect(assignedEditHtml).toContain('task-drawer-tabs');
+    expect(assignedEditHtml).toContain('role="tablist"');
+    expect(assignedEditHtml).toContain('Chi tiết');
+    expect(assignedEditHtml).toContain('Bình luận');
+    expect(assignedEditHtml).toContain('task-comments-jump-chip');
+    expect(assignedEditHtml).not.toContain('task-comments-section');
     expect(assignedEditHtml).not.toContain('task-hidden-section');
 
     const creatorDrawerHtml = renderWithIntl(<TaskDetailDrawer taskId="t-1" onClose={vi.fn()} />, { isAdmin: true });
     expect(creatorDrawerHtml).toContain('task-hidden-section');
-    expect(creatorDrawerHtml).toContain('task-comments-section');
+    expect(creatorDrawerHtml).toContain('task-drawer-tabs');
+    expect(creatorDrawerHtml).not.toContain('task-comments-section');
 
     tasksHooksMock.useTaskAssigneeMembersQuery.mockReturnValueOnce({
       isPending: false,

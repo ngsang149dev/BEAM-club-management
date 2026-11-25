@@ -60,14 +60,14 @@ class InMemoryCommentsRepository implements CommentsRepository {
       .filter((c) => c.taskId === params.taskId)
       .sort(
         (a, b) =>
-          a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id),
+          b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id),
       );
     const filtered = params.cursor
       ? ordered.filter(
           (c) =>
-            c.createdAt.getTime() > params.cursor!.createdAt.getTime() ||
+            c.createdAt.getTime() < params.cursor!.createdAt.getTime() ||
             (c.createdAt.getTime() === params.cursor!.createdAt.getTime() &&
-              c.id > params.cursor!.id),
+              c.id < params.cursor!.id),
         )
       : ordered;
     const hasMore = filtered.length > params.limit;
@@ -310,14 +310,14 @@ describe('comments schemas, policy & CommentsService', () => {
     ]);
 
     const page1 = await service.listComments(NO_PERM_OUTSIDER, TASK_PUBLIC, { limit: 2 });
-    expect(page1.items.map((i) => i.id)).toEqual([c1.comment.id, c2.comment.id]);
+    expect(page1.items.map((i) => i.id)).toEqual([c3.comment.id, c2.comment.id]);
     expect(page1.meta.nextCursor).toBeTruthy();
 
     const page2 = await service.listComments(NO_PERM_OUTSIDER, TASK_PUBLIC, {
       cursor: page1.meta.nextCursor!,
       limit: 2,
     });
-    expect(page2.items.map((i) => i.id)).toEqual([c3.comment.id]);
+    expect(page2.items.map((i) => i.id)).toEqual([c1.comment.id]);
     expect(page2.meta.nextCursor).toBeNull();
 
     // Seed comment on hidden task by creator, verify DELETE on hidden task returns 404 for outsider WITH comment.delete_any!

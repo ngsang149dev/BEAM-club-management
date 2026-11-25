@@ -825,7 +825,10 @@
     "moveError": "Could not move task.",
     "taskActionsMenu": "Task options",
     "moveToColumnMenu": "Move to column…",
-    "movedToColumnToast": "Moved task to {column}."
+    "movedToColumnToast": "Moved task to {column}.",
+    "tabsAriaLabel": "Task detail sections",
+    "tabDetails": "Details",
+    "tabComments": "Comments"
   },
   "comments": {
     "title": "Comments",
@@ -834,6 +837,11 @@
     "empty": "No comments yet.",
     "loadMore": "Load more comments",
     "loadingMore": "Loading more...",
+    "sortNewestFirst": "Newest first",
+    "showingCount": "Showing {shown} of {total}",
+    "loadOlder": "Load older comments",
+    "showMore": "Show more",
+    "showLess": "Show less",
     "composerLabel": "Write a comment",
     "composerPlaceholder": "Write a comment...",
     "submit": "Send",

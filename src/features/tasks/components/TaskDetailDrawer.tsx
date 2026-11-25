@@ -1,15 +1,20 @@
 'use client';
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { ErrorState } from '@/components/ErrorState';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
 import { TaskCommentsSection } from '@/features/comments/components/TaskCommentsSection';
 import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
 import { usePermissions } from '@/features/shared/permissions/can';
-import { describeTaskError } from '../error-mapping';
 import { formatTaskDateTime } from '../formatters';
 import { useTaskDetailQuery, type TaskDto } from '../hooks/useTasks';
+import {
+  type DrawerTab,
+  TaskDrawerErrorBody,
+  TaskDrawerHiddenBanner,
+  TaskDrawerReadOnlyBody,
+  TaskDrawerTabBar,
+} from './TaskDrawerChrome';
 import {
   TaskAssigneesSection,
   TaskDeleteSection,
@@ -23,20 +28,6 @@ import {
   TaskDueBadge,
   TaskPriorityBadge,
 } from './TaskPriorityBadge';
-
-function TaskDrawerReadOnlyBody({ task }: { task: TaskDto }) {
-  const tTasks = useTranslations('tasks');
-
-  return (
-    <div className="task-readonly-box">
-      <div className="ui-banner" role="status">
-        <div className="ui-banner-body"><span className="ui-banner-text">{tTasks('readOnlyNotice')}</span></div>
-      </div>
-      <h3 className="task-detail-title">{task.title}</h3>
-      <p className="task-detail-desc">{task.description || '—'}</p>
-    </div>
-  );
-}
 
 function resolveCanEditTask({
   isAdmin,
@@ -61,16 +52,38 @@ function resolveCanEditTask({
   );
 }
 
-function TaskDrawerHiddenBanner({ isHidden }: { isHidden: boolean }) {
+function TaskDrawerSidebar({
+  task,
+  canAssign,
+  canToggleHidden,
+  canDelete,
+  onReload,
+  onClose,
+}: {
+  task: TaskDto;
+  canAssign: boolean;
+  canToggleHidden: boolean;
+  canDelete: boolean;
+  onReload: () => void;
+  onClose: () => void;
+}) {
   const tTasks = useTranslations('tasks');
-  if (!isHidden) return null;
 
   return (
-    <div className="ui-banner is-warn" role="status">
-      <div className="ui-banner-body">
-        <span className="ui-banner-title">{tTasks('hiddenBannerTitle')}</span>
-        <span className="ui-banner-text">{tTasks('hiddenBannerBody')}</span>
-      </div>
+    <div className="task-drawer-col-side">
+      <section className="task-assigned-summary">
+        <div className="task-assigned-summary-group">
+          <h3 className="task-section-title">{tTasks('assignedDepartmentsLabel')}</h3>
+          <TaskDepartmentChips departments={task.assignedDepartments} emptyLabel={tTasks('departmentsEmpty')} />
+        </div>
+        <div className="task-assigned-summary-group">
+          <h3 className="task-section-title">{tTasks('assigneesLabel')}</h3>
+          <TaskAssigneeChips assignees={task.assignees} />
+        </div>
+      </section>
+      {canAssign ? <TaskAssigneesSection task={task} onReload={onReload} /> : null}
+      {canToggleHidden ? <TaskHiddenSection task={task} onReload={onReload} /> : null}
+      {canDelete ? <TaskDeleteSection task={task} onDeleted={onClose} /> : null}
     </div>
   );
 }
@@ -79,10 +92,12 @@ function TaskDrawerLoaded({
   task,
   onReload,
   onClose,
+  onOpenComments,
 }: {
   task: TaskDto;
   onReload: () => void;
   onClose: () => void;
+  onOpenComments: () => void;
 }) {
   const locale = useLocale();
   const tTasks = useTranslations('tasks');
@@ -101,73 +116,94 @@ function TaskDrawerLoaded({
   const canToggleHidden = canToggleTaskHidden({ isAdmin, creatorId: task.creator.id, currentUserId });
 
   return (
-    <div className="ui-drawer-body">
-      <div className="task-drawer-grid">
-        <div className="task-drawer-col-main">
-          <TaskDrawerHiddenBanner isHidden={task.isHidden} />
-          <div className="task-drawer-badges">
-            <TaskPriorityBadge priority={task.priority} />
-            <TaskDueBadge dueAt={task.dueAt} />
-            <span className="ui-chip">{tTasks('commentsCount', { count: task.commentCount })}</span>
-          </div>
-          <div className="task-drawer-meta-grid">
-            <div><span>{tTasks('creatorLabel')}</span><b><MemberInlineName member={task.creator} /></b></div>
-            <div><span>{tTasks('createdAtLabel')}</span><b className="mono">{formatTaskDateTime(task.createdAt, locale)}</b></div>
-          </div>
-          {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
-          <TaskCommentsSection taskId={task.id} boardId={task.boardId} commentCount={task.commentCount} />
+    <div className="task-drawer-grid">
+      <div className="task-drawer-col-main">
+        <TaskDrawerHiddenBanner isHidden={task.isHidden} />
+        <div className="task-drawer-badges">
+          <TaskPriorityBadge priority={task.priority} />
+          <TaskDueBadge dueAt={task.dueAt} />
+          <button
+            type="button"
+            className="ui-chip task-comments-jump-chip"
+            onClick={onOpenComments}
+          >
+            {tTasks('commentsCount', { count: task.commentCount })}
+          </button>
         </div>
-        <div className="task-drawer-col-side">
-          <section className="task-assigned-summary">
-            <div className="task-assigned-summary-group">
-              <h3 className="task-section-title">{tTasks('assignedDepartmentsLabel')}</h3>
-              <TaskDepartmentChips departments={task.assignedDepartments} emptyLabel={tTasks('departmentsEmpty')} />
-            </div>
-            <div className="task-assigned-summary-group">
-              <h3 className="task-section-title">{tTasks('assigneesLabel')}</h3>
-              <TaskAssigneeChips assignees={task.assignees} />
-            </div>
-          </section>
-          {can('task.assign') ? <TaskAssigneesSection task={task} onReload={onReload} /> : null}
-          {canToggleHidden ? <TaskHiddenSection task={task} onReload={onReload} /> : null}
-          {can('task.delete') ? <TaskDeleteSection task={task} onDeleted={onClose} /> : null}
+        <div className="task-drawer-meta-grid">
+          <div><span>{tTasks('creatorLabel')}</span><b><MemberInlineName member={task.creator} /></b></div>
+          <div><span>{tTasks('createdAtLabel')}</span><b className="mono">{formatTaskDateTime(task.createdAt, locale)}</b></div>
         </div>
+        {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
       </div>
+      <TaskDrawerSidebar
+        task={task}
+        canAssign={can('task.assign')}
+        canToggleHidden={canToggleHidden}
+        canDelete={can('task.delete')}
+        onReload={onReload}
+        onClose={onClose}
+      />
     </div>
   );
 }
 
-function TaskDrawerErrorBody({
-  error,
+function TaskDrawerTabsShell({
+  task,
+  onReload,
   onClose,
-  onRetry,
 }: {
-  error: unknown;
+  task: TaskDto;
+  onReload: () => void;
   onClose: () => void;
-  onRetry: () => void;
 }) {
-  const tTasks = useTranslations('tasks');
-  const tCommon = useTranslations('common');
-  const tErr = useTranslations('errors');
-  const err = describeTaskError(error);
-  const isNotFound = err?.key === 'notFound';
+  const [activeTab, setActiveTab] = useState<DrawerTab>('details');
+  const detailsTabId = useId();
+  const commentsTabId = useId();
+  const detailsPanelId = useId();
+  const commentsPanelId = useId();
 
   return (
-    <div className="ui-drawer-body">
-      <ErrorState
-        variant={isNotFound ? '404' : '500'}
-        code={isNotFound ? tErr('404.code') : undefined}
-        title={isNotFound ? tErr('404.title') : tTasks('loadError')}
-        description={isNotFound ? tErr('404.description') : tErr(err?.key ?? 'unknown')}
-        requestId={err?.requestId}
-        requestIdLabel={tErr('requestIdLabel')}
-        actions={
-          <button type="button" className="ui-btn primary" onClick={() => (isNotFound ? onClose() : onRetry())}>
-            {isNotFound ? tCommon('close') : tCommon('retry')}
-          </button>
-        }
+    <>
+      <TaskDrawerTabBar
+        activeTab={activeTab}
+        commentCount={task.commentCount}
+        detailsTabId={detailsTabId}
+        commentsTabId={commentsTabId}
+        detailsPanelId={detailsPanelId}
+        commentsPanelId={commentsPanelId}
+        onSelect={setActiveTab}
       />
-    </div>
+      {activeTab === 'details' ? (
+        <div
+          id={detailsPanelId}
+          role="tabpanel"
+          aria-labelledby={detailsTabId}
+          className="ui-drawer-body task-drawer-tabpanel"
+        >
+          <TaskDrawerLoaded
+            key={`${task.id}-v${task.version}`}
+            task={task}
+            onReload={onReload}
+            onClose={onClose}
+            onOpenComments={() => setActiveTab('comments')}
+          />
+        </div>
+      ) : (
+        <div
+          id={commentsPanelId}
+          role="tabpanel"
+          aria-labelledby={commentsTabId}
+          className="task-drawer-comments-panel"
+        >
+          <TaskCommentsSection
+            taskId={task.id}
+            boardId={task.boardId}
+            commentCount={task.commentCount}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -198,7 +234,7 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
         ) : taskQuery.isError ? (
           <TaskDrawerErrorBody error={taskQuery.error} onClose={onClose} onRetry={() => taskQuery.refetch()} />
         ) : task ? (
-          <TaskDrawerLoaded key={`${task.id}-v${task.version}`} task={task} onReload={() => taskQuery.refetch()} onClose={onClose} />
+          <TaskDrawerTabsShell key={task.id} task={task} onReload={() => taskQuery.refetch()} onClose={onClose} />
         ) : null}
       </aside>
     </div>

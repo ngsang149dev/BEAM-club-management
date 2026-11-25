@@ -16,6 +16,8 @@ export type CreateCommentRequest = components['schemas']['CreateCommentRequest']
 export type CreateCommentResponse = components['schemas']['CreateCommentResponse'];
 export type DeleteCommentResponse = components['schemas']['DeleteCommentResponse'];
 
+export const COMMENTS_PAGE_SIZE = 10;
+
 export const COMMENTS_QUERY_KEYS = {
   root: ['comments'] as const,
   byTask: (taskId: string) => ['comments', 'task', taskId] as const,
@@ -56,7 +58,7 @@ export function useTaskCommentsInfiniteQuery(taskId: string | null, enabled = tr
     queryFn: ({ pageParam, signal }) =>
       apiFetch('/tasks/{id}/comments', {
         params: { id: taskId ?? '' },
-        query: { ...(pageParam ? { cursor: pageParam } : {}), limit: 20 },
+        query: { ...(pageParam ? { cursor: pageParam } : {}), limit: COMMENTS_PAGE_SIZE },
         signal,
       }),
     getNextPageParam: (lastPage) => lastPage.meta.nextCursor ?? undefined,

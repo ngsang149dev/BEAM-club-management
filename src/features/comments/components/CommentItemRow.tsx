@@ -1,10 +1,21 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { MemberInlineName } from '@/features/tasks/components/TaskPriorityBadge';
 import { formatTaskDateTime } from '@/features/tasks/formatters';
 import type { CommentDto } from '../hooks/useComments';
+
+export const COMMENT_COLLAPSE_CHAR_THRESHOLD = 320;
+export const COMMENT_COLLAPSE_LINE_THRESHOLD = 5;
+
+export function isLongCommentBody(body: string): boolean {
+  return (
+    body.length > COMMENT_COLLAPSE_CHAR_THRESHOLD ||
+    body.split('\n').length > COMMENT_COLLAPSE_LINE_THRESHOLD
+  );
+}
 
 function CommentDeleteControls({
   isConfirming,
@@ -67,6 +78,11 @@ export function CommentItemRow({
   onCancelDelete,
   onConfirmDelete,
 }: CommentItemRowProps) {
+  const tComments = useTranslations('comments');
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isLong = isLongCommentBody(comment.body);
+  const bodyClassName = isLong && !isExpanded ? 'task-comment-body is-clamped' : 'task-comment-body';
+
   return (
     <li className="task-comment-item">
       <MemberAvatar
@@ -96,7 +112,19 @@ export function CommentItemRow({
             />
           ) : null}
         </div>
-        <p className="task-comment-body">{comment.body}</p>
+        <p className={bodyClassName}>{comment.body}</p>
+        {isLong ? (
+          <div>
+            <button
+              type="button"
+              className="task-comment-expand-btn"
+              aria-expanded={isExpanded}
+              onClick={() => setIsExpanded((prev) => !prev)}
+            >
+              {isExpanded ? tComments('showLess') : tComments('showMore')}
+            </button>
+          </div>
+        ) : null}
       </div>
     </li>
   );

@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, or, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm';
 import { comments, departments, memberDepartments, profiles, taskEvents } from '@db/schema';
 import { notFound } from '@/lib/errors';
 import { buildUserSummariesMap, type TaskMemberSummaryRecord } from '@/server/modules/tasks';
@@ -23,8 +23,8 @@ function buildListWhere(params: ListCommentsRepoParams): SQL {
   return and(
     eq(comments.taskId, params.taskId),
     or(
-      gt(comments.createdAt, createdAt),
-      and(eq(comments.createdAt, createdAt), gt(comments.id, id)),
+      lt(comments.createdAt, createdAt),
+      and(eq(comments.createdAt, createdAt), lt(comments.id, id)),
     ),
   )!;
 }
@@ -45,7 +45,7 @@ export class DrizzleCommentsRepository implements CommentsRepository {
       })
       .from(comments)
       .where(buildListWhere(params))
-      .orderBy(asc(comments.createdAt), asc(comments.id))
+      .orderBy(desc(comments.createdAt), desc(comments.id))
       .limit(params.limit + 1);
 
     const hasMore = fetched.length > params.limit;
