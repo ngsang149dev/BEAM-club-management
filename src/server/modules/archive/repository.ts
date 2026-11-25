@@ -1,11 +1,10 @@
-import { and, asc, count, desc, eq, exists, ilike, inArray, isNotNull, isNull, lt, lte, or, type SQL, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, lt, lte, or, type SQL, sql } from 'drizzle-orm';
 import { appSettings, auditLogs, boards, clubAssets, columns, comments, departments, memberDepartments, notifications, profiles, reminders, sessions, taskAssignees, taskDepartments, taskEvents, tasks, userPermissions } from '@db/schema';
 import type { ArchiveRetentionDays } from '@/lib/archive';
 import { conflict } from '@/lib/errors';
 import type { BoardSummaryRecord } from '@/server/modules/boards';
 import type { MemberProfileRecord } from '@/server/modules/members';
-import type { TaskRecord } from '@/server/modules/tasks';
-import type { AuthActor } from '@/server/shared/authorize';
+import { taskAccessSqlCondition, type TaskRecord } from '@/server/modules/tasks';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { type ArchiveBoardsCursor, type ArchiveMembersCursor, type ArchiveTasksCursor, escapeLikePattern, parseStoredRetentionDays } from './policy';
@@ -20,23 +19,8 @@ const MEMBER_COLS = {
   leftAt: profiles.leftAt, locale: profiles.locale, mustChangePassword: profiles.mustChangePassword,
 };
 
-function actorTaskVisibilitySql(db: DbExecutor, actor: AuthActor): SQL {
-  if (!actor.isActive) return sql`false`;
-  if (actor.isAdmin) return sql`true`;
-  const clauses: SQL[] = [
-    eq(tasks.isHidden, false),
-    eq(tasks.createdBy, actor.id),
-    exists(db.select({ one: sql`1` }).from(taskAssignees).where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, actor.id)))),
-  ];
-  const deptIds = actor.departmentIds ?? [];
-  if (deptIds.length > 0) {
-    clauses.push(exists(db.select({ one: sql`1` }).from(taskDepartments).where(and(eq(taskDepartments.taskId, tasks.id), inArray(taskDepartments.departmentId, [...deptIds])))));
-  }
-  return or(...clauses) ?? sql`false`;
-}
-
 function buildTaskArchiveWhere(db: DbExecutor, params: Types.ListArchivedTasksParams): SQL {
-  const filters: SQL[] = [isNotNull(tasks.deletedAt), isNull(tasks.purgedAt), isNull(boards.purgedAt), actorTaskVisibilitySql(db, params.actor)];
+  const filters: SQL[] = [isNotNull(tasks.deletedAt), isNull(tasks.purgedAt), isNull(boards.purgedAt), taskAccessSqlCondition(db, params.actor)];
   if (params.q) {
     const pattern = `%${escapeLikePattern(params.q)}%`;
     filters.push(or(ilike(tasks.title, pattern), ilike(tasks.description, pattern))!);
@@ -167,7 +151,7 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
     const [userMap, countRows] = await Promise.all([
       this.loadUserSummaries(this.db, Array.from(new Set(pageRows.map((r) => r.createdBy)))),
       this.db.select({ boardId: tasks.boardId, total: count() }).from(tasks)
-        .where(and(inArray(tasks.boardId, pageRows.map((r) => r.id)), isNull(tasks.deletedAt), isNull(tasks.purgedAt), actorTaskVisibilitySql(this.db, params.actor)))
+        .where(and(inArray(tasks.boardId, pageRows.map((r) => r.id)), isNull(tasks.deletedAt), isNull(tasks.purgedAt), taskAccessSqlCondition(this.db, params.actor)))
         .groupBy(tasks.boardId),
     ]);
     return { rows: Purge.assembleArchiveBoardItems({ boardRows: pageRows, userMap, taskCountMap: new Map(countRows.map((r) => [r.boardId, Number(r.total)])) }), hasMore };
@@ -228,7 +212,7 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
       this.loadUserSummaries(tx, [updated.createdBy]),
       updated.departmentId ? tx.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.id, updated.departmentId)).limit(1) : Promise.resolve([]),
     ]);
-    return { id: updated.id, name: updated.name, department: deptRows[0] ?? null, archivedAt: updated.archivedAt, createdBy: userMap.get(updated.createdBy)!, createdAt: updated.createdAt, updatedAt: updated.updatedAt };
+    return { id: updated.id, name: updated.name, department: deptRows[0] ?? null, archivedAt: updated.archivedAt, createdBy: userMap.get(updated.createdBy)!, visibleTaskCount: 0, overdueTaskCount: 0, createdAt: updated.createdAt, updatedAt: updated.updatedAt };
   }
 
   purgeTask(taskId: string, now: Date, tx: TransactionContext) { return Purge.executePurgeTaskTx(taskId, now, tx, archivePurgeStore); }

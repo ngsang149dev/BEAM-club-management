@@ -6,7 +6,7 @@ import type { AuthActor } from '@/server/shared/authorize';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { escapeLikePattern, type TaskListCursor } from './policy';
-import { assembleTaskRecords, buildAssigneesDiffChanges, buildUserSummariesMap, groupTaskIdStrings, type RawTaskRow } from './repository-helpers';
+import { assembleTaskRecords, buildAssigneesDiffChanges, buildCreateTaskEventChanges, buildTaskUpdatePatch, buildUserSummariesMap, groupTaskIdStrings, type RawTaskRow } from './repository-helpers';
 import { executeMoveTaskWithEvent, type RawMoveSibling } from './repository-move';
 import type { CreateTaskRepoParams, ListMyTasksParams, ListVisibleTasksParams, MoveTaskRepoParams, ReplaceAssigneesRepoParams, SoftDeleteTaskRepoParams, TaskMemberSummaryRecord, TaskMutationResult, TaskOptionalEventMutationResult, TaskRecord, TasksRepository, UpdateTaskRepoParams } from './types';
 
@@ -18,10 +18,9 @@ function assignedDepartmentExistsSql(db: DbExecutor, departmentIds: readonly str
   return exists(db.select({ one: sql`1` }).from(taskDepartments).where(and(eq(taskDepartments.taskId, tasks.id), inArray(taskDepartments.departmentId, [...departmentIds]))));
 }
 
-export function visibleTaskSqlCondition(db: DbExecutor, actor: AuthActor): SQL {
+export function taskAccessSqlCondition(db: DbExecutor, actor: AuthActor): SQL {
   if (!actor.isActive) return sql`false`;
-  const notDeleted = and(isNull(tasks.deletedAt), isNull(tasks.purgedAt))!;
-  if (actor.isAdmin) return notDeleted;
+  if (actor.isAdmin) return sql`true`;
   const clauses: SQL[] = [
     eq(tasks.isHidden, false),
     eq(tasks.createdBy, actor.id),
@@ -29,12 +28,30 @@ export function visibleTaskSqlCondition(db: DbExecutor, actor: AuthActor): SQL {
   ];
   const deptIds = actor.departmentIds ?? [];
   if (deptIds.length > 0) clauses.push(assignedDepartmentExistsSql(db, deptIds));
-  const visible = or(...clauses);
-  return visible ? and(notDeleted, visible) ?? notDeleted : notDeleted;
+  return or(...clauses) ?? sql`false`;
 }
 
-function buildDueStatusCondition(dueStatus: TaskDueStatus, now: Date): SQL | undefined {
-  if (dueStatus === 'overdue') return and(isNotNull(tasks.dueAt), lt(tasks.dueAt, now));
+export function visibleTaskSqlCondition(db: DbExecutor, actor: AuthActor): SQL {
+  if (!actor.isActive) return sql`false`;
+  return and(isNull(tasks.deletedAt), isNull(tasks.purgedAt), taskAccessSqlCondition(db, actor))!;
+}
+
+export function notDoneColumnSqlCondition(db: DbExecutor): SQL {
+  return notExists(
+    db.select({ one: sql`1` }).from(columns).where(
+      and(
+        eq(columns.id, tasks.columnId),
+        or(
+          sql`lower(btrim(${columns.name})) = 'done'`,
+          eq(columns.orderIndex, sql`(SELECT max(c2.order_index) FROM columns c2 WHERE c2.board_id = ${tasks.boardId})`),
+        ),
+      ),
+    ),
+  );
+}
+
+function buildDueStatusCondition(db: DbExecutor, dueStatus: TaskDueStatus, now: Date): SQL | undefined {
+  if (dueStatus === 'overdue') return and(isNotNull(tasks.dueAt), lt(tasks.dueAt, now), notDoneColumnSqlCondition(db));
   if (dueStatus === 'upcoming') return and(isNotNull(tasks.dueAt), gte(tasks.dueAt, now));
   return isNull(tasks.dueAt);
 }
@@ -74,9 +91,9 @@ function buildSearchCond(q: string | undefined): SQL | undefined {
   return or(ilike(tasks.title, pattern), ilike(tasks.description, pattern));
 }
 
-function appendCommonVisibleFilters(filters: SQL[], params: ListVisibleTasksParams): void {
+function appendCommonVisibleFilters(db: DbExecutor, filters: SQL[], params: ListVisibleTasksParams): void {
   if (params.dueStatus) {
-    const dueCond = buildDueStatusCondition(params.dueStatus, params.now);
+    const dueCond = buildDueStatusCondition(db, params.dueStatus, params.now);
     if (dueCond) filters.push(dueCond);
   }
   const searchCond = buildSearchCond(params.q);
@@ -96,7 +113,7 @@ function buildVisibleTaskFilters(db: DbExecutor, actor: AuthActor, params: ListV
   }
   if (params.departmentId) filters.push(assignedDepartmentExistsSql(db, [params.departmentId]));
   if (params.priority !== undefined) filters.push(eq(tasks.priority, params.priority));
-  appendCommonVisibleFilters(filters, params);
+  appendCommonVisibleFilters(db, filters, params);
   return and(...filters) ?? sql`true`;
 }
 
@@ -122,9 +139,7 @@ function buildMyTasksFilters(db: DbExecutor, actor: AuthActor, params: ListMyTas
   if (params.priority !== undefined) filters.push(eq(tasks.priority, params.priority));
   const searchCond = buildSearchCond(params.q);
   if (searchCond) filters.push(searchCond);
-  if (!params.includeDone) {
-    filters.push(notExists(db.select({ one: sql`1` }).from(columns).where(and(eq(columns.id, tasks.columnId), or(sql`lower(btrim(${columns.name})) = 'done'`, eq(columns.orderIndex, sql`(SELECT max(c2.order_index) FROM columns c2 WHERE c2.board_id = ${tasks.boardId})`))))));
-  }
+  if (!params.includeDone) filters.push(notDoneColumnSqlCondition(db));
   appendMyTasksCursorFilter(filters, params.cursor);
   return and(...filters) ?? sql`true`;
 }
@@ -171,16 +186,12 @@ export class DrizzleTasksRepository implements TasksRepository {
     if (!created) throw new Error('Failed to insert task');
     if (input.assigneeIds.length > 0) await tx.insert(taskAssignees).values(input.assigneeIds.map((userId) => ({ taskId: created.id, userId, createdAt: input.now })));
     if (input.departmentIds.length > 0) await tx.insert(taskDepartments).values(input.departmentIds.map((departmentId) => ({ taskId: created.id, departmentId, createdAt: input.now })));
-    const eventId = await this.insertTaskEvent({ taskId: created.id, boardId: input.boardId, actorId: input.actorId, type: 'task.created', changes: { column_id: input.columnId, priority: input.priority, is_hidden: input.isHidden, assignee_ids: input.assigneeIds, department_ids: input.departmentIds }, now: input.now }, tx);
+    const eventId = await this.insertTaskEvent({ taskId: created.id, boardId: input.boardId, actorId: input.actorId, type: 'task.created', changes: buildCreateTaskEventChanges(input), now: input.now }, tx);
     return { task: (await this.hydrateTasks(tx, [created]))[0]!, eventId };
   }
 
   async updateTaskWithEvent(input: UpdateTaskRepoParams, tx: TransactionContext): Promise<TaskMutationResult> {
-    const patch: Partial<typeof tasks.$inferInsert> = { updatedAt: input.now };
-    if (input.title !== undefined) patch.title = input.title;
-    if (input.description !== undefined) patch.description = input.description;
-    if (input.dueAt !== undefined) patch.dueAt = input.dueAt;
-    if (input.priority !== undefined) patch.priority = input.priority;
+    const patch = buildTaskUpdatePatch(input);
     const [updated] = await tx.update(tasks).set({ ...patch, version: sql`${tasks.version} + 1` }).where(and(eq(tasks.id, input.id), eq(tasks.version, input.version), isNull(tasks.deletedAt))).returning();
     if (!updated) throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
     const eventId = await this.insertTaskEvent({ taskId: updated.id, boardId: input.boardId, actorId: input.actorId, type: 'task.updated', changes: { ...input.changes }, now: input.now }, tx);

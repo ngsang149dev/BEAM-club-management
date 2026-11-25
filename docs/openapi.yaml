@@ -931,6 +931,11 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 200
         - $ref: "#/components/parameters/CursorParam"
         - $ref: "#/components/parameters/LimitParam"
       responses:
@@ -1202,6 +1207,7 @@ paths:
             maximum: 4
         - name: dueStatus
           in: query
+          description: "`overdue` excludes tasks in the board's final (`Done`) column."
           schema:
             type: string
             enum: [overdue, upcoming, no_due]
@@ -2651,7 +2657,7 @@ components:
 
     BoardSummaryDto:
       type: object
-      required: [id, name, department, archivedAt, createdBy, createdAt, updatedAt]
+      required: [id, name, department, archivedAt, createdBy, visibleTaskCount, overdueTaskCount, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -2667,6 +2673,12 @@ components:
           format: date-time
         createdBy:
           $ref: "#/components/schemas/MemberPublicSummary"
+        visibleTaskCount:
+          type: integer
+          minimum: 0
+        overdueTaskCount:
+          type: integer
+          minimum: 0
         createdAt:
           type: string
           format: date-time
@@ -2676,7 +2688,7 @@ components:
 
     BoardDetailDto:
       type: object
-      required: [id, name, department, archivedAt, createdBy, columns, tasks, createdAt, updatedAt]
+      required: [id, name, department, archivedAt, createdBy, columns, tasks, visibleTaskCount, overdueTaskCount, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -2700,6 +2712,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskDto"
+        visibleTaskCount:
+          type: integer
+          minimum: 0
+        overdueTaskCount:
+          type: integer
+          minimum: 0
         createdAt:
           type: string
           format: date-time

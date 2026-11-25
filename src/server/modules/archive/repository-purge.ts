@@ -186,6 +186,8 @@ export function assembleArchiveBoardItems(params: {
       department: row.departmentId && row.departmentName ? { id: row.departmentId, name: row.departmentName } : null,
       archivedAt: row.archivedAt,
       createdBy: creator,
+      visibleTaskCount: 0,
+      overdueTaskCount: 0,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

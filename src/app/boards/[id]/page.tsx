@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { AuthGuard } from '@/features/auth/components/AuthGuard';
@@ -31,7 +32,9 @@ export default async function BoardDetailPage({
       breadcrumb={tBoards('kicker')}
       title={tBoards('title')}
     >
-      <BoardDetailView boardId={id} initialTaskId={initialTaskId} />
+      <Suspense fallback={null}>
+        <BoardDetailView boardId={id} initialTaskId={initialTaskId} />
+      </Suspense>
     </AuthGuard>
   );
 }

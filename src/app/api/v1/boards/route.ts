@@ -19,6 +19,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     const query = listBoardsQuerySchema.parse({
       departmentId: searchParams.get('departmentId'),
       includeArchived: searchParams.get('includeArchived'),
+      q: searchParams.get('q'),
       cursor: searchParams.get('cursor'),
       limit: searchParams.get('limit'),
     });

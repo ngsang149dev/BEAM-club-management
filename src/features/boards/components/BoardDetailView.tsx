@@ -1,146 +1,87 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { DndContext } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { TaskDetailDrawer } from '@/features/tasks/components/TaskDetailDrawer';
-import { useMoveTaskMutation } from '@/features/tasks/hooks/useTasks';
-import type { UpdateColumnRequestInput } from '@/lib/boards';
 import { canDragTask, compareTasksByPosition, toColumnDragId } from '../dnd-helpers';
+import { isDoneColumn } from '../filters';
+import { useBoardDetailController } from '../hooks/useBoardDetailController';
 import { useBoardDnd } from '../hooks/useBoardDnd';
-import {
-  useBoardDetailQuery,
-  useCreateColumnMutation,
-  useDeleteColumnMutation,
-  useRenameColumnMutation,
-  useReorderColumnsMutation,
-  type BoardDetailDto,
-  type ColumnDto,
-} from '../hooks/useBoards';
+import type { BoardDetailDto } from '../hooks/useBoards';
 import { BoardColumnLane } from './BoardColumnLane';
 import {
   BoardDetailErrorState,
   BoardDetailHeader,
   BoardDetailModals,
   BoardDndOverlay,
-  type BoardDetailModalState,
 } from './BoardDetailParts';
+import { BoardFilterBar } from './BoardFilterBar';
 import { BoardErrorBanner } from './BoardModals';
 
-function swapColumnOrder(columns: readonly ColumnDto[], fromIndex: number, toIndex: number): string[] {
-  const next = [...columns];
-  const current = next[fromIndex];
-  const target = next[toIndex];
-  if (!current || !target) return next.map((c) => c.id);
-  next[fromIndex] = target;
-  next[toIndex] = current;
-  return next.map((c) => c.id);
-}
+function BoardColumnsTrack({
+  board,
+  ctrl,
+  dnd,
+}: {
+  readonly board: BoardDetailDto;
+  readonly ctrl: ReturnType<typeof useBoardDetailController>;
+  readonly dnd: ReturnType<typeof useBoardDnd>;
+}) {
+  const { isAdmin, can } = usePermissions();
+  const meQuery = useMeQuery(true);
+  const currentUserId = meQuery.data?.profile.id;
+  const currentDepartmentIds = meQuery.data?.profile.departments?.map((dept) => dept.id) ?? [];
 
-function useBoardColumnActions(
-  boardId: string,
-  modal: BoardDetailModalState,
-  closeModal: () => void
-) {
-  const t = useTranslations('boards');
-  const createColMutation = useCreateColumnMutation(boardId);
-  const renameColMutation = useRenameColumnMutation(boardId);
-  const deleteColMutation = useDeleteColumnMutation(boardId);
-  const reorderMutation = useReorderColumnsMutation(boardId);
+  const sortedColumns = [...board.columns].sort((a, b) => a.orderIndex - b.orderIndex);
+  const selectedColumnId = ctrl.filterState.filters.columnId;
+  const visibleColumns = selectedColumnId
+    ? sortedColumns.filter((c) => c.id === selectedColumnId)
+    : sortedColumns;
+  const useFilteredSource = ctrl.filterState.queryDndPaused;
+  const displayedTasks = useFilteredSource
+    ? (ctrl.filteredTasksQuery.data?.items ?? [])
+    : board.tasks;
 
-  const resetMutations = () => {
-    createColMutation.reset();
-    renameColMutation.reset();
-    deleteColMutation.reset();
-  };
+  return (
+    <SortableContext items={visibleColumns.map((c) => toColumnDragId(c.id))} strategy={horizontalListSortingStrategy}>
+      <div className="kanban-cols">
+        {visibleColumns.map((column) => {
+          const colIdx = sortedColumns.findIndex((c) => c.id === column.id);
+          const rawTasks = displayedTasks.filter((t) => t.columnId === column.id);
+          const colTasks = useFilteredSource ? rawTasks : [...rawTasks].sort(compareTasksByPosition);
+          const totalInColumn = board.tasks.filter((t) => t.columnId === column.id).length;
 
-  const handleColumnUpsert = (values: UpdateColumnRequestInput) => {
-    if (modal.kind === 'createColumn') {
-      createColMutation.mutate(values, {
-        onSuccess: (res) => { toast.success(t('columnCreatedToast', { name: res.column.name })); closeModal(); },
-      });
-      return;
-    }
-    if (modal.kind === 'renameColumn') {
-      renameColMutation.mutate({ columnId: modal.column.id, payload: values }, {
-        onSuccess: (res) => { toast.success(t('columnRenamedToast', { name: res.column.name })); closeModal(); },
-      });
-    }
-  };
-
-  const handleColumnDelete = () => {
-    if (modal.kind !== 'deleteColumn') return;
-    deleteColMutation.mutate(modal.column.id, {
-      onSuccess: () => { toast.success(t('columnDeletedToast')); closeModal(); },
-    });
-  };
-
-  const handleMoveColumn = (columns: readonly ColumnDto[], fromIdx: number, toIdx: number) => {
-    reorderMutation.reset();
-    reorderMutation.mutate(
-      { columnIds: swapColumnOrder(columns, fromIdx, toIdx) },
-      { onSuccess: () => toast.success(t('columnReorderedToast')) }
-    );
-  };
-
-  return {
-    createColMutation,
-    renameColMutation,
-    deleteColMutation,
-    reorderMutation,
-    resetMutations,
-    handleColumnUpsert,
-    handleColumnDelete,
-    handleMoveColumn,
-  };
-}
-
-function useBoardDetailController(boardId: string, initialTaskId: string | null) {
-  const router = useRouter();
-  const [modal, setModal] = useState<BoardDetailModalState>({ kind: 'closed' });
-  const [prevInitialTaskId, setPrevInitialTaskId] = useState<string | null>(initialTaskId);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTaskId);
-  const boardQuery = useBoardDetailQuery(boardId);
-  const moveTaskMutation = useMoveTaskMutation(boardId);
-
-  if (initialTaskId !== prevInitialTaskId) {
-    setPrevInitialTaskId(initialTaskId);
-    if (initialTaskId) {
-      setSelectedTaskId(initialTaskId);
-    }
-  }
-
-  const closeModal = () => setModal({ kind: 'closed' });
-  const colActions = useBoardColumnActions(boardId, modal, closeModal);
-
-  const handleCloseModal = () => {
-    colActions.resetMutations();
-    closeModal();
-  };
-
-  const closeTaskDrawer = () => {
-    setSelectedTaskId(null);
-    if (initialTaskId) {
-      router.replace(`/boards/${boardId}`, { scroll: false });
-    }
-  };
-
-  return {
-    modal,
-    setModal,
-    selectedTaskId,
-    setSelectedTaskId,
-    closeTaskDrawer,
-    boardQuery,
-    moveTaskMutation,
-    closeModal: handleCloseModal,
-    ...colActions,
-  };
+          return (
+            <BoardColumnLane
+              key={column.id}
+              column={column}
+              allColumns={sortedColumns}
+              tasks={colTasks}
+              columnIndex={colIdx}
+              columnCount={sortedColumns.length}
+              isDoneColumn={isDoneColumn(column, sortedColumns)}
+              dndPaused={ctrl.filterState.dndPaused}
+              isReordering={ctrl.reorderMutation.isPending}
+              isMovingTask={ctrl.moveTaskMutation.isPending}
+              canReorderColumns={can('board.update')}
+              isDropTarget={!ctrl.filterState.dndPaused && dnd.activeDrag?.kind === 'task' && dnd.overColumnId === column.id}
+              canDragTask={(task) => canDragTask({ task, isAdmin, can, currentUserId, currentDepartmentIds })}
+              onMoveLeft={() => ctrl.handleMoveColumn(sortedColumns, colIdx, colIdx - 1)}
+              onMoveRight={() => ctrl.handleMoveColumn(sortedColumns, colIdx, colIdx + 1)}
+              onRename={() => { ctrl.renameColMutation.reset(); ctrl.setModal({ kind: 'renameColumn', column }); }}
+              onDelete={() => { ctrl.deleteColMutation.reset(); ctrl.setModal({ kind: 'deleteColumn', column, visibleTaskCount: totalInColumn }); }}
+              onAddTask={() => ctrl.setModal({ kind: 'createTask', column })}
+              onOpenTask={ctrl.setSelectedTaskId}
+              onMoveTaskToColumn={ctrl.handleMoveTaskToColumn}
+            />
+          );
+        })}
+      </div>
+    </SortableContext>
+  );
 }
 
 function BoardKanbanWorkspace({
@@ -150,10 +91,6 @@ function BoardKanbanWorkspace({
   readonly board: BoardDetailDto;
   readonly ctrl: ReturnType<typeof useBoardDetailController>;
 }) {
-  const { isAdmin, can } = usePermissions();
-  const meQuery = useMeQuery(true);
-  const currentUserId = meQuery.data?.profile.id;
-  const currentDepartmentIds = meQuery.data?.profile.departments?.map((dept) => dept.id) ?? [];
   const sortedColumns = [...board.columns].sort((a, b) => a.orderIndex - b.orderIndex);
   const dnd = useBoardDnd({
     board,
@@ -171,34 +108,82 @@ function BoardKanbanWorkspace({
       onDragEnd={dnd.onDragEnd}
       onDragCancel={dnd.onDragCancel}
     >
-      <SortableContext items={sortedColumns.map((c) => toColumnDragId(c.id))} strategy={horizontalListSortingStrategy}>
-        <div className="kanban-cols">
-          {sortedColumns.map((column, index) => {
-            const colTasks = board.tasks.filter((t) => t.columnId === column.id).sort(compareTasksByPosition);
-            return (
-              <BoardColumnLane
-                key={column.id}
-                column={column}
-                tasks={colTasks}
-                columnIndex={index}
-                columnCount={sortedColumns.length}
-                isReordering={ctrl.reorderMutation.isPending}
-                canReorderColumns={can('board.update')}
-                isDropTarget={dnd.activeDrag?.kind === 'task' && dnd.overColumnId === column.id}
-                canDragTask={(task) => canDragTask({ task, isAdmin, can, currentUserId, currentDepartmentIds })}
-                onMoveLeft={() => ctrl.handleMoveColumn(sortedColumns, index, index - 1)}
-                onMoveRight={() => ctrl.handleMoveColumn(sortedColumns, index, index + 1)}
-                onRename={() => { ctrl.renameColMutation.reset(); ctrl.setModal({ kind: 'renameColumn', column }); }}
-                onDelete={() => { ctrl.deleteColMutation.reset(); ctrl.setModal({ kind: 'deleteColumn', column, visibleTaskCount: colTasks.length }); }}
-                onAddTask={() => ctrl.setModal({ kind: 'createTask', column })}
-                onOpenTask={ctrl.setSelectedTaskId}
-              />
-            );
-          })}
-        </div>
-      </SortableContext>
+      <BoardColumnsTrack board={board} ctrl={ctrl} dnd={dnd} />
       <BoardDndOverlay board={board} dnd={dnd} />
     </DndContext>
+  );
+}
+
+function resolveDetailDisplayState(
+  board: BoardDetailDto,
+  ctrl: ReturnType<typeof useBoardDetailController>
+) {
+  const sortedColumns = [...board.columns].sort((a, b) => a.orderIndex - b.orderIndex);
+  const departments = ctrl.departmentsQuery.data?.items ?? [];
+  const members = ctrl.membersQuery.data?.items ?? [];
+  const bannerError =
+    ctrl.reorderMutation.error ?? ctrl.moveTaskMutation.error ?? ctrl.filteredTasksQuery.error;
+  const upsertError =
+    ctrl.modal.kind === 'createColumn' ? ctrl.createColMutation.error : ctrl.renameColMutation.error;
+  const isUpserting = ctrl.createColMutation.isPending || ctrl.renameColMutation.isPending;
+  const isFiltering = ctrl.filterState.queryDndPaused && ctrl.filteredTasksQuery.isFetching;
+
+  return {
+    sortedColumns,
+    departments,
+    members,
+    bannerError,
+    upsertError,
+    isUpserting,
+    isFiltering,
+  };
+}
+
+function BoardDetailContent({
+  board,
+  ctrl,
+}: {
+  readonly board: BoardDetailDto;
+  readonly ctrl: ReturnType<typeof useBoardDetailController>;
+}) {
+  const view = resolveDetailDisplayState(board, ctrl);
+
+  return (
+    <div className="board-detail-stack">
+      <BoardDetailHeader
+        name={board.name}
+        departmentName={board.department?.name ?? null}
+        archived={Boolean(board.archivedAt)}
+        visibleTaskCount={board.visibleTaskCount}
+        overdueTaskCount={board.overdueTaskCount}
+        onAddColumn={() => { ctrl.createColMutation.reset(); ctrl.setModal({ kind: 'createColumn' }); }}
+      />
+      <BoardFilterBar
+        filters={ctrl.filterState.filters}
+        columns={view.sortedColumns}
+        departments={view.departments}
+        members={view.members}
+        canViewMembers={ctrl.canViewMembers}
+        dndPaused={ctrl.filterState.dndPaused}
+        isFiltering={view.isFiltering}
+        onUpdateFilters={ctrl.filterState.updateFilters}
+        onResetFilters={ctrl.filterState.resetFilters}
+      />
+      <BoardErrorBanner error={view.bannerError} />
+      <BoardKanbanWorkspace board={board} ctrl={ctrl} />
+      <BoardDetailModals
+        boardId={board.id}
+        modal={ctrl.modal}
+        isUpserting={view.isUpserting}
+        upsertError={view.upsertError}
+        isDeleting={ctrl.deleteColMutation.isPending}
+        deleteError={ctrl.deleteColMutation.error}
+        onClose={ctrl.closeModal}
+        onUpsert={ctrl.handleColumnUpsert}
+        onDelete={ctrl.handleColumnDelete}
+      />
+      <TaskDetailDrawer taskId={ctrl.selectedTaskId} onClose={ctrl.closeTaskDrawer} />
+    </div>
   );
 }
 
@@ -219,30 +204,5 @@ export function BoardDetailView({
     return <BoardDetailErrorState error={ctrl.boardQuery.error} />;
   }
 
-  const { board } = ctrl.boardQuery.data;
-
-  return (
-    <div className="board-detail-stack">
-      <BoardDetailHeader
-        name={board.name}
-        departmentName={board.department?.name ?? null}
-        archived={Boolean(board.archivedAt)}
-        onAddColumn={() => { ctrl.createColMutation.reset(); ctrl.setModal({ kind: 'createColumn' }); }}
-      />
-      <BoardErrorBanner error={ctrl.reorderMutation.error ?? ctrl.moveTaskMutation.error} />
-      <BoardKanbanWorkspace board={board} ctrl={ctrl} />
-      <BoardDetailModals
-        boardId={boardId}
-        modal={ctrl.modal}
-        isUpserting={ctrl.createColMutation.isPending || ctrl.renameColMutation.isPending}
-        upsertError={ctrl.modal.kind === 'createColumn' ? ctrl.createColMutation.error : ctrl.renameColMutation.error}
-        isDeleting={ctrl.deleteColMutation.isPending}
-        deleteError={ctrl.deleteColMutation.error}
-        onClose={ctrl.closeModal}
-        onUpsert={ctrl.handleColumnUpsert}
-        onDelete={ctrl.handleColumnDelete}
-      />
-      <TaskDetailDrawer taskId={ctrl.selectedTaskId} onClose={ctrl.closeTaskDrawer} />
-    </div>
-  );
+  return <BoardDetailContent board={ctrl.boardQuery.data.board} ctrl={ctrl} />;
 }

@@ -69,6 +69,10 @@ export const listBoardsQuerySchema = z.object({
     parseStrictBooleanInput,
     z.boolean().default(false),
   ),
+  q: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().min(1).max(200).optional(),
+  ),
   cursor: z.preprocess(
     emptyToUndefined,
     z.string().trim().min(1).max(512).optional(),

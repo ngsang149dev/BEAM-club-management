@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
 import { Can } from '@/features/shared/permissions/can';
 import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
+import { isDoneColumn } from '../filters';
 import { describeBoardError } from '../error-mapping';
 import type { useBoardDnd } from '../hooks/useBoardDnd';
 import type { BoardDetailDto, ColumnDto } from '../hooks/useBoards';
@@ -95,11 +96,15 @@ export function BoardDetailHeader({
   name,
   departmentName,
   archived,
+  visibleTaskCount,
+  overdueTaskCount,
   onAddColumn,
 }: {
   readonly name: string;
   readonly departmentName: string | null;
   readonly archived: boolean;
+  readonly visibleTaskCount: number;
+  readonly overdueTaskCount: number;
   readonly onAddColumn: () => void;
 }) {
   const t = useTranslations('boards');
@@ -110,6 +115,10 @@ export function BoardDetailHeader({
         <Link href="/boards" className="ui-btn ghost is-sm">← {t('backToBoards')}</Link>
         <h1 className="board-detail-heading">{name}</h1>
         <span className="ui-chip">{departmentName ?? t('clubWideLabel')}</span>
+        <span className="ui-chip">{t('visibleTaskCount', { count: visibleTaskCount })}</span>
+        {overdueTaskCount > 0 ? (
+          <span className="board-tile-overdue-pill">{t('overdueTaskCount', { count: overdueTaskCount })}</span>
+        ) : null}
         {archived ? <span className="status-pill is-inactive">{t('archivedBadge')}</span> : null}
       </div>
       <Can permission="board.update">
@@ -131,10 +140,14 @@ export function BoardDndOverlay({
   const activeColTaskCount = dnd.activeColumn
     ? board.tasks.filter((task) => task.columnId === dnd.activeColumn?.id).length
     : 0;
+  const activeTaskColumn = dnd.activeTask
+    ? board.columns.find((col) => col.id === dnd.activeTask?.columnId)
+    : undefined;
+  const activeTaskInDone = activeTaskColumn ? isDoneColumn(activeTaskColumn, board.columns) : false;
 
   return (
     <DragOverlay>
-      {dnd.activeTask ? <BoardTaskCardView task={dnd.activeTask} isOverlay /> : null}
+      {dnd.activeTask ? <BoardTaskCardView task={dnd.activeTask} isDoneColumn={activeTaskInDone} isOverlay /> : null}
       {dnd.activeColumn ? (
         <BoardColumnOverlayPreview column={dnd.activeColumn} taskCount={activeColTaskCount} />
       ) : null}

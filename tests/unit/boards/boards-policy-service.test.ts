@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_BOARD_COLUMN_NAMES } from '@/lib/boards';
+import { DEFAULT_BOARD_COLUMN_NAMES, listBoardsQuerySchema } from '@/lib/boards';
 import type { AuditLogEntry, AuditLogWriter } from '@/server/modules/audit';
 import {
   assertCanIncludeArchived,
@@ -8,11 +8,13 @@ import {
   type BoardsRepository,
   BoardsService,
   type BoardSummaryRecord,
+  type BoardTaskCounts,
   type ColumnRecord,
   type CreateBoardRepoParams,
   decodeBoardCursor,
   encodeBoardCursor,
   type ListBoardsRepoParams,
+  toBoardSummaryDto,
   type UpdateBoardRepoParams,
 } from '@/server/modules/boards';
 import type { TaskRecord, TasksRepository } from '@/server/modules/tasks';
@@ -30,17 +32,33 @@ const MEMBER_ID = '10000000-0000-4000-8000-000000000002';
 class InMemoryBoardsRepository implements BoardsRepository {
   readonly boards = new Map<string, BoardSummaryRecord>();
   readonly columns = new Map<string, ColumnRecord[]>();
+  readonly statsByBoardId = new Map<string, BoardTaskCounts>();
+  lastListParams: ListBoardsRepoParams | null = null;
   activeColumnTaskCount = 0;
 
   async listBoards(params: ListBoardsRepoParams) {
+    this.lastListParams = params;
     let rows = Array.from(this.boards.values());
     if (!params.includeArchived) rows = rows.filter((b) => b.archivedAt === null);
     if (params.departmentId) rows = rows.filter((b) => b.department?.id === params.departmentId);
+    if (params.q) {
+      const needle = params.q.toLowerCase();
+      rows = rows.filter((b) => b.name.toLowerCase().includes(needle));
+    }
     return { rows: rows.slice(0, params.limit), hasMore: rows.length > params.limit };
   }
 
   async findBoardById(boardId: string) {
     return this.boards.get(boardId) ?? null;
+  }
+
+  async countBoardTaskStats(params: { readonly boardIds: readonly string[] }) {
+    const map = new Map<string, BoardTaskCounts>();
+    for (const id of params.boardIds) {
+      const stats = this.statsByBoardId.get(id);
+      if (stats) map.set(id, stats);
+    }
+    return map;
   }
 
   async findColumnsByBoardId(boardId: string) {
@@ -277,5 +295,89 @@ describe('boards policy & BoardsService', () => {
     boardsRepo.activeColumnTaskCount = 0;
     const deleted = await service.deleteColumn(ADMIN, COL_1);
     expect(deleted).toEqual({ deleted: true, id: COL_1 });
+  });
+
+  it('validates listBoardsQuerySchema.q, forwards q/actor/now, and computes viewer-scoped visibleTaskCount/overdueTaskCount excluding Done', async () => {
+    expect(listBoardsQuerySchema.parse({ q: '  Open Day  ' })).toEqual({
+      includeArchived: false,
+      q: 'Open Day',
+      limit: 20,
+    });
+    expect(listBoardsQuerySchema.parse({ q: '' })).toEqual({ includeArchived: false, limit: 20 });
+    expect(listBoardsQuerySchema.parse({ q: '   ' })).toEqual({ includeArchived: false, limit: 20 });
+    expect(listBoardsQuerySchema.safeParse({ q: 'a'.repeat(200) }).success).toBe(true);
+    expect(listBoardsQuerySchema.safeParse({ q: 'a'.repeat(201) }).success).toBe(false);
+
+    const now = new Date('2026-11-24T05:00:00.000Z');
+    const creatorSummary = { id: ADMIN_ID, fullName: 'Admin', avatarUpdatedAt: null, isActive: true, leftAt: null, departments: [] };
+    const colDoneByName = '50000000-0000-4000-8000-000000000003';
+    const colFinalCustom = '50000000-0000-4000-8000-000000000004';
+    const makeTask = (overrides: Partial<TaskRecord>): TaskRecord => ({
+      id: '60000000-0000-4000-8000-000000000010',
+      boardId: BOARD_1,
+      columnId: COL_1,
+      title: 'Task',
+      description: null,
+      dueAt: new Date('2026-11-23T00:00:00.000Z'),
+      priority: 2,
+      position: '1000',
+      isHidden: false,
+      version: 1,
+      deletedAt: null,
+      createdBy: ADMIN_ID,
+      assignees: [],
+      assignedDepartments: [],
+      creator: creatorSummary,
+      commentCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    });
+
+    const tasks: TaskRecord[] = [
+      makeTask({ id: '60000000-0000-4000-8000-000000000011', columnId: COL_1 }), // overdue public
+      makeTask({ id: '60000000-0000-4000-8000-000000000012', columnId: COL_2, isHidden: true }), // overdue hidden (admin only)
+      makeTask({ id: '60000000-0000-4000-8000-000000000013', columnId: COL_1, dueAt: new Date('2026-11-25T00:00:00.000Z') }), // upcoming
+      makeTask({ id: '60000000-0000-4000-8000-000000000014', columnId: COL_1, dueAt: null }), // no due
+      makeTask({ id: '60000000-0000-4000-8000-000000000015', columnId: colDoneByName }), // overdue but in ' done ' col
+      makeTask({ id: '60000000-0000-4000-8000-000000000016', columnId: colFinalCustom }), // overdue but in final orderIndex col
+    ];
+
+    const { boardsRepo, service } = createHarness(tasks);
+    await service.createBoard(ADMIN, { name: 'Ops Board' });
+    boardsRepo.columns.set(BOARD_1, [
+      { id: COL_1, boardId: BOARD_1, name: 'Todo', orderIndex: 0, createdAt: now, updatedAt: now },
+      { id: COL_2, boardId: BOARD_1, name: 'Doing', orderIndex: 1, createdAt: now, updatedAt: now },
+      { id: colDoneByName, boardId: BOARD_1, name: ' done ', orderIndex: 2, createdAt: now, updatedAt: now },
+      { id: colFinalCustom, boardId: BOARD_1, name: 'Shipped', orderIndex: 3, createdAt: now, updatedAt: now },
+    ]);
+
+    const listRes = await service.listBoards(BASIC_MEMBER, { includeArchived: false, q: 'Ops', limit: 20 });
+    expect(boardsRepo.lastListParams).toMatchObject({ actor: BASIC_MEMBER, now, q: 'Ops', includeArchived: false, limit: 20 });
+    expect(listRes.items[0]).toMatchObject({ visibleTaskCount: 0, overdueTaskCount: 0 });
+
+    const detailMember = await service.getBoardDetail(BASIC_MEMBER, BOARD_1);
+    expect(detailMember.board.visibleTaskCount).toBe(5);
+    expect(detailMember.board.overdueTaskCount).toBe(1);
+
+    const detailAdmin = await service.getBoardDetail(ADMIN, BOARD_1);
+    expect(detailAdmin.board.visibleTaskCount).toBe(6);
+    expect(detailAdmin.board.overdueTaskCount).toBe(2);
+
+    boardsRepo.statsByBoardId.set(BOARD_1, { visibleTaskCount: 5, overdueTaskCount: 1 });
+    const updatedBoard = await service.updateBoard(ADMIN, BOARD_1, { name: 'Ops Renamed' });
+    expect(updatedBoard.board).toMatchObject({ visibleTaskCount: 5, overdueTaskCount: 1 });
+
+    const dtoDefault = toBoardSummaryDto({
+      id: BOARD_1,
+      name: 'Minimal',
+      department: null,
+      archivedAt: null,
+      createdBy: creatorSummary,
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect(dtoDefault.visibleTaskCount).toBe(0);
+    expect(dtoDefault.overdueTaskCount).toBe(0);
   });
 });

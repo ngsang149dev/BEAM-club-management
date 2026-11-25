@@ -36,8 +36,7 @@ export const DEFAULT_BOARDS_FILTERS: BoardsFilterState = {
 
 export const BOARDS_QUERY_KEYS = {
   root: ['boards'] as const,
-  list: (filters: Pick<BoardsFilterState, 'departmentId' | 'includeArchived' | 'limit'>) =>
-    ['boards', 'list', filters] as const,
+  list: (filters: BoardsFilterState) => ['boards', 'list', filters] as const,
   detail: (boardId: string) => ['boardDetail', boardId] as const,
 };
 
@@ -45,6 +44,7 @@ async function invalidateBoardQueries(queryClient: QueryClient, boardId?: string
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: BOARDS_QUERY_KEYS.root }),
     ...(boardId ? [queryClient.invalidateQueries({ queryKey: BOARDS_QUERY_KEYS.detail(boardId) })] : []),
+    queryClient.invalidateQueries({ queryKey: ['tasks', 'boardList'] }),
     queryClient.invalidateQueries({ queryKey: ['myTasks'] }),
   ]);
 }
@@ -56,16 +56,17 @@ function shouldRetryBoardDetail(failureCount: number, error: unknown): boolean {
   return failureCount < 1;
 }
 
-export function useBoardsInfiniteQuery(
-  filters: Pick<BoardsFilterState, 'departmentId' | 'includeArchived' | 'limit'>,
-  enabled = true
-) {
+export function useBoardsInfiniteQuery(filters: BoardsFilterState, enabled = true) {
+  const trimmedQ = filters.q.trim();
+  const normalizedFilters: BoardsFilterState = { ...filters, q: trimmedQ };
+
   return useInfiniteQuery({
-    queryKey: BOARDS_QUERY_KEYS.list(filters),
+    queryKey: BOARDS_QUERY_KEYS.list(normalizedFilters),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       apiFetch('/boards', {
         query: {
+          ...(trimmedQ ? { q: trimmedQ } : {}),
           ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
           includeArchived: filters.includeArchived,
           ...(pageParam ? { cursor: pageParam } : {}),

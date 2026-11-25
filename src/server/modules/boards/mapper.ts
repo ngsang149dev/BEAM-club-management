@@ -32,6 +32,8 @@ export interface BoardSummaryDto {
   readonly department: BoardDepartmentSummaryDto | null;
   readonly archivedAt: string | null;
   readonly createdBy: BoardMemberPublicSummaryDto;
+  readonly visibleTaskCount: number;
+  readonly overdueTaskCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -104,6 +106,34 @@ export function toColumnDto(record: ColumnRecord, taskCount: number): ColumnDto 
   };
 }
 
+function resolveDoneColumnIds(columns: readonly ColumnRecord[]): Set<string> {
+  if (columns.length === 0) return new Set();
+  const maxOrderIndex = Math.max(...columns.map((c) => c.orderIndex));
+  const ids = new Set<string>();
+  for (const col of columns) {
+    if (col.name.trim().toLowerCase() === 'done' || col.orderIndex === maxOrderIndex) {
+      ids.add(col.id);
+    }
+  }
+  return ids;
+}
+
+export function computeBoardTaskCounts(
+  visibleTasks: readonly TaskRecord[],
+  columns: readonly ColumnRecord[],
+  now: Date,
+): { readonly visibleTaskCount: number; readonly overdueTaskCount: number } {
+  const doneColumnIds = resolveDoneColumnIds(columns);
+  const nowMs = now.getTime();
+  let overdueTaskCount = 0;
+  for (const task of visibleTasks) {
+    if (!task.dueAt || task.dueAt.getTime() >= nowMs) continue;
+    if (task.columnId && doneColumnIds.has(task.columnId)) continue;
+    overdueTaskCount += 1;
+  }
+  return { visibleTaskCount: visibleTasks.length, overdueTaskCount };
+}
+
 export function toBoardSummaryDto(record: BoardSummaryRecord): BoardSummaryDto {
   return {
     id: record.id,
@@ -113,6 +143,8 @@ export function toBoardSummaryDto(record: BoardSummaryRecord): BoardSummaryDto {
       : null,
     archivedAt: record.archivedAt ? record.archivedAt.toISOString() : null,
     createdBy: toMemberSummaryDto(record.createdBy),
+    visibleTaskCount: record.visibleTaskCount ?? 0,
+    overdueTaskCount: record.overdueTaskCount ?? 0,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };
@@ -133,11 +165,14 @@ export function toBoardDetailResponseDto(input: {
   readonly board: BoardSummaryRecord;
   readonly columns: readonly ColumnRecord[];
   readonly visibleTasks: readonly TaskRecord[];
+  readonly now?: Date;
 }): BoardDetailResponseDto {
   const counts = countVisibleTasksByColumn(input.visibleTasks);
+  const taskStats = computeBoardTaskCounts(input.visibleTasks, input.columns, input.now ?? new Date());
   return {
     board: {
       ...toBoardSummaryDto(input.board),
+      ...taskStats,
       columns: input.columns.map((col) => toColumnDto(col, counts.get(col.id) ?? 0)),
       tasks: input.visibleTasks.map(toTaskDto),
     },

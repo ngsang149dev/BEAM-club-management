@@ -1,9 +1,11 @@
 import type { TaskPriority } from '@/lib/tasks';
 import type {
+  CreateTaskRepoParams,
   ReplaceAssigneesRepoParams,
   TaskDepartmentSummaryRecord,
   TaskMemberSummaryRecord,
   TaskRecord,
+  UpdateTaskRepoParams,
 } from './types';
 
 export interface RawTaskRow {
@@ -164,4 +166,35 @@ export function assembleTaskRecords(params: {
     creator: params.userMap.get(row.createdBy)!,
     commentCount: countMap.get(row.id) ?? 0,
   }));
+}
+
+export function buildTaskUpdatePatch(input: UpdateTaskRepoParams): {
+  updatedAt: Date;
+  title?: string;
+  description?: string | null;
+  dueAt?: Date | null;
+  priority?: TaskPriority;
+} {
+  const patch: {
+    updatedAt: Date;
+    title?: string;
+    description?: string | null;
+    dueAt?: Date | null;
+    priority?: TaskPriority;
+  } = { updatedAt: input.now };
+  if (input.title !== undefined) patch.title = input.title;
+  if (input.description !== undefined) patch.description = input.description;
+  if (input.dueAt !== undefined) patch.dueAt = input.dueAt;
+  if (input.priority !== undefined) patch.priority = input.priority;
+  return patch;
+}
+
+export function buildCreateTaskEventChanges(input: CreateTaskRepoParams): Record<string, unknown> {
+  return {
+    column_id: input.columnId,
+    priority: input.priority,
+    is_hidden: input.isHidden,
+    assignee_ids: input.assigneeIds,
+    department_ids: input.departmentIds,
+  };
 }
