@@ -28,6 +28,7 @@ import {
   type TaskRecord,
   TasksService,
   type TasksRepository,
+  type UpdateTaskHiddenRepoParams,
   type UpdateTaskRepoParams,
 } from '@/server/modules/tasks';
 
@@ -49,6 +50,7 @@ function makeUser(id: string, name: string) {
 
 class InMemoryTasksRepository implements TasksRepository {
   readonly records = new Map<string, TaskRecord>();
+  readonly hiddenEvents: Array<{ readonly taskId: string; readonly from: boolean; readonly to: boolean }> = [];
   lastListParams: ListVisibleTasksParams | null = null;
   lastMyParams: ListMyTasksParams | null = null;
   private eventSeq = 0;
@@ -183,6 +185,27 @@ class InMemoryTasksRepository implements TasksRepository {
       updatedAt: input.now,
     };
     this.records.set(input.id, next);
+    return { task: next, eventId: `80000000-0000-4000-8000-${String(this.eventSeq).padStart(12, '0')}` };
+  }
+
+  async updateTaskHiddenWithEvent(input: UpdateTaskHiddenRepoParams): Promise<TaskMutationResult> {
+    const current = this.records.get(input.id)!;
+    if (input.expectedVersion !== undefined && current.version !== input.expectedVersion) {
+      throw new AppError('TASK_VERSION_CONFLICT', 'errors.taskVersionConflict', 409);
+    }
+    this.eventSeq += 1;
+    const next: TaskRecord = {
+      ...current,
+      isHidden: input.nextIsHidden,
+      version: current.version + 1,
+      updatedAt: input.now,
+    };
+    this.records.set(input.id, next);
+    this.hiddenEvents.push({
+      taskId: input.id,
+      from: input.currentIsHidden,
+      to: input.nextIsHidden,
+    });
     return { task: next, eventId: `80000000-0000-4000-8000-${String(this.eventSeq).padStart(12, '0')}` };
   }
 }
@@ -560,5 +583,46 @@ describe('tasks policy & TasksService', () => {
     });
     expect(created.eventId).toBeTruthy();
     expect(logs.some((l) => l.includes('Failed to dispatch task department notifications'))).toBe(true);
+  });
+
+  it('enforces updateTaskHidden creator/admin rule, 404 before 403, 409 version conflict, and idempotent no-op', async () => {
+    const { repo, service } = createHarness();
+    const creatorActor: AuthActor = { id: CREATOR_ID, isActive: true, isAdmin: false, permissions: [] };
+    const plainViewer: AuthActor = { id: '10000000-0000-4000-8000-000000000099', isActive: true, isAdmin: false, permissions: [] };
+
+    // Non-viewer on already-hidden task receives 404 (not 403) even without permissions or with task.update_any
+    await expect(service.updateTaskHidden(plainViewer, TASK_HIDDEN, { isHidden: false })).rejects.toMatchObject({ httpStatus: 404, code: 'NOT_FOUND' });
+    await expect(service.updateTaskHidden(UPDATE_ANY_OTHER, TASK_HIDDEN, { isHidden: false })).rejects.toMatchObject({ httpStatus: 404, code: 'NOT_FOUND' });
+    await expect(service.updateTaskHidden(ADMIN, '60000000-0000-4000-8000-000000000999', { isHidden: true })).rejects.toMatchObject({ httpStatus: 404, code: 'NOT_FOUND' });
+
+    // Assignee (with task.update_assigned) and non-creator (with task.update_any) receive 403
+    await expect(service.updateTaskHidden(ASSIGNED_ONLY, TASK_HIDDEN, { isHidden: false })).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+    await expect(service.updateTaskHidden(UPDATE_ANY_OTHER, TASK_1, { isHidden: true })).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+
+    // Version conflict returns 409
+    await expect(service.updateTaskHidden(creatorActor, TASK_1, { isHidden: true, version: 99 })).rejects.toMatchObject({ httpStatus: 409, code: 'TASK_VERSION_CONFLICT' });
+
+    // No-op when isHidden already equals target -> eventId: null, version unchanged
+    const noop = await service.updateTaskHidden(creatorActor, TASK_1, { isHidden: false, version: 1 });
+    expect(noop.eventId).toBeNull();
+    expect(noop.task.version).toBe(1);
+    expect(repo.hiddenEvents).toHaveLength(0);
+
+    // Creator hides public task -> version 2 & task.hidden_changed diff recorded
+    const hiddenRes = await service.updateTaskHidden(creatorActor, TASK_1, { isHidden: true, version: 1 });
+    expect(hiddenRes.eventId).toBeTruthy();
+    expect(hiddenRes.task.isHidden).toBe(true);
+    expect(hiddenRes.task.version).toBe(2);
+    expect(repo.hiddenEvents).toEqual([{ taskId: TASK_1, from: false, to: true }]);
+
+    // Admin unhides task -> version 3 & diff recorded
+    const unhideRes = await service.updateTaskHidden(ADMIN, TASK_1, { isHidden: false, version: 2 });
+    expect(unhideRes.eventId).toBeTruthy();
+    expect(unhideRes.task.isHidden).toBe(false);
+    expect(unhideRes.task.version).toBe(3);
+    expect(repo.hiddenEvents).toEqual([
+      { taskId: TASK_1, from: false, to: true },
+      { taskId: TASK_1, from: true, to: false },
+    ]);
   });
 });

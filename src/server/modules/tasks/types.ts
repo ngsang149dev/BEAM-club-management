@@ -124,6 +124,16 @@ export interface SoftDeleteTaskRepoParams {
   readonly now: Date;
 }
 
+export interface UpdateTaskHiddenRepoParams {
+  readonly id: string;
+  readonly boardId: string;
+  readonly actorId: string;
+  readonly currentIsHidden: boolean;
+  readonly nextIsHidden: boolean;
+  readonly expectedVersion?: number;
+  readonly now: Date;
+}
+
 export interface MoveTaskRepoParams {
   readonly id: string;
   readonly boardId: string;
@@ -179,6 +189,10 @@ export interface TasksRepository {
   ): Promise<TaskMutationResult>;
   softDeleteTaskWithEvent(
     input: SoftDeleteTaskRepoParams,
+    tx: TransactionContext,
+  ): Promise<TaskMutationResult>;
+  updateTaskHiddenWithEvent(
+    input: UpdateTaskHiddenRepoParams,
     tx: TransactionContext,
   ): Promise<TaskMutationResult>;
 }

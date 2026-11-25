@@ -8,7 +8,7 @@ import type { TransactionContext } from '@/server/shared/transaction';
 import { escapeLikePattern, type TaskListCursor } from './policy';
 import { assembleTaskRecords, buildAssigneesDiffChanges, buildCreateTaskEventChanges, buildTaskUpdatePatch, buildUserSummariesMap, groupTaskIdStrings, type RawTaskRow } from './repository-helpers';
 import { executeMoveTaskWithEvent, type RawMoveSibling } from './repository-move';
-import type { CreateTaskRepoParams, ListMyTasksParams, ListVisibleTasksParams, MoveTaskRepoParams, ReplaceAssigneesRepoParams, SoftDeleteTaskRepoParams, TaskMemberSummaryRecord, TaskMutationResult, TaskOptionalEventMutationResult, TaskRecord, TasksRepository, UpdateTaskRepoParams } from './types';
+import type { CreateTaskRepoParams, ListMyTasksParams, ListVisibleTasksParams, MoveTaskRepoParams, ReplaceAssigneesRepoParams, SoftDeleteTaskRepoParams, TaskMemberSummaryRecord, TaskMutationResult, TaskOptionalEventMutationResult, TaskRecord, TasksRepository, UpdateTaskHiddenRepoParams, UpdateTaskRepoParams } from './types';
 
 function boardNotPurgedSql(db: DbExecutor): SQL {
   return exists(db.select({ one: sql`1` }).from(boards).where(and(eq(boards.id, tasks.boardId), isNull(boards.purgedAt))));
@@ -223,6 +223,14 @@ export class DrizzleTasksRepository implements TasksRepository {
     const [updated] = await tx.update(tasks).set({ deletedAt: input.now, version: sql`${tasks.version} + 1`, updatedAt: input.now }).where(and(eq(tasks.id, input.id), eq(tasks.version, input.version), isNull(tasks.deletedAt))).returning();
     if (!updated) throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
     const eventId = await this.insertTaskEvent({ taskId: input.id, boardId: input.boardId, actorId: input.actorId, type: 'task.deleted', changes: { deleted_at: { from: null, to: input.now.toISOString() } }, now: input.now }, tx);
+    return { task: (await this.hydrateTasks(tx, [updated]))[0]!, eventId };
+  }
+
+  async updateTaskHiddenWithEvent(input: UpdateTaskHiddenRepoParams, tx: TransactionContext): Promise<TaskMutationResult> {
+    const cond = input.expectedVersion !== undefined ? and(eq(tasks.id, input.id), eq(tasks.version, input.expectedVersion), isNull(tasks.deletedAt)) : and(eq(tasks.id, input.id), isNull(tasks.deletedAt));
+    const [updated] = await tx.update(tasks).set({ isHidden: input.nextIsHidden, version: sql`${tasks.version} + 1`, updatedAt: input.now }).where(cond).returning();
+    if (!updated) throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
+    const eventId = await this.insertTaskEvent({ taskId: input.id, boardId: input.boardId, actorId: input.actorId, type: 'task.hidden_changed', changes: { is_hidden: { from: input.currentIsHidden, to: input.nextIsHidden } }, now: input.now }, tx);
     return { task: (await this.hydrateTasks(tx, [updated]))[0]!, eventId };
   }
 

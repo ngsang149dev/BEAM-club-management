@@ -8,6 +8,7 @@ import {
   type ReplaceTaskAssigneesRequestInput,
   resolveTaskNotificationChannels,
   type TaskNotificationChannels,
+  type UpdateTaskHiddenRequestInput,
   type UpdateTaskRequestInput,
 } from '@/lib/tasks';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
@@ -33,6 +34,7 @@ import {
 import {
   extractTaskCursorValue,
   runTaskAssigneesInTx,
+  runTaskHiddenInTx,
   runTaskMoveInTx,
   runTaskUpdateInTx,
   toTaskVisibilitySubject,
@@ -257,6 +259,27 @@ export class TasksService {
       taskId,
       eventId: result.eventId,
     });
+    return toTaskMutationResponseDto(result);
+  }
+
+  async updateTaskHidden(
+    actor: AuthActor,
+    taskId: string,
+    input: UpdateTaskHiddenRequestInput,
+  ): Promise<TaskMutationResponseDto> {
+    assertActorActive(actor);
+    const now = this.deps.clock.now();
+    const result = await this.deps.transactionRunner.runInTransaction((tx) =>
+      runTaskHiddenInTx({ tasksRepo: this.deps.tasksRepo, actor, taskId, input, now, tx }),
+    );
+    if (result.eventId) {
+      this.deps.logger.info('Task hidden flag updated', {
+        actorId: actor.id,
+        taskId,
+        isHidden: result.task.isHidden,
+        eventId: result.eventId,
+      });
+    }
     return toTaskMutationResponseDto(result);
   }
 

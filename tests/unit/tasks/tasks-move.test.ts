@@ -62,6 +62,9 @@ class MoveFakeTasksRepository implements TasksRepository {
   async softDeleteTaskWithEvent(): Promise<TaskMutationResult> {
     throw new Error('unused');
   }
+  async updateTaskHiddenWithEvent(): Promise<TaskMutationResult> {
+    throw new Error('unused');
+  }
 
   async moveTaskWithEvent(input: MoveTaskRepoParams): Promise<TaskOptionalEventMutationResult> {
     if (input.currentTask.version !== input.expectedVersion) {

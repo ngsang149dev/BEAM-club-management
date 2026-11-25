@@ -21,6 +21,7 @@ export type CreateTaskRequest = components['schemas']['CreateTaskRequest'];
 export type UpdateTaskRequest = components['schemas']['UpdateTaskRequest'];
 export type MoveTaskRequest = components['schemas']['MoveTaskRequest'];
 export type ReplaceTaskAssigneesRequest = components['schemas']['ReplaceTaskAssigneesRequest'];
+export type UpdateTaskHiddenRequest = components['schemas']['UpdateTaskHiddenRequest'];
 export type MemberPublicSummary = components['schemas']['MemberPublicSummary'];
 export type DepartmentSummaryDto = components['schemas']['DepartmentSummary'];
 export type DepartmentDto = components['schemas']['DepartmentDto'];
@@ -254,6 +255,22 @@ export function useMoveTaskMutation(boardId: string) {
     },
     onSettled: async (_data, _error, variables) => {
       await invalidateTaskQueries(queryClient, boardId, variables.id);
+    },
+  });
+}
+
+export function useUpdateTaskHiddenMutation(boardId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateTaskHiddenRequest }) =>
+      apiFetch('/tasks/{id}/hidden', { method: 'put', params: { id }, body: payload }),
+    onSuccess: async (data) => {
+      await Promise.all([
+        invalidateTaskQueries(queryClient, boardId || data.task.boardId, data.task.id),
+        queryClient.invalidateQueries({ queryKey: ['boards', 'list'] }),
+        queryClient.invalidateQueries({ queryKey: ['archive'] }),
+      ]);
     },
   });
 }
