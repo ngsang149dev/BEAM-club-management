@@ -387,4 +387,40 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(enHtml).toContain('board-123');
     expect(enHtml).toContain('4');
   });
+
+  it('formats login gallery branding audit actions in vi and en', () => {
+    expect(resolveAuditActionKey('branding.gallery_item_created')).toBe('brandingGalleryCreated');
+    expect(resolveAuditActionKey('branding.gallery_item_updated')).toBe('brandingGalleryUpdated');
+    expect(resolveAuditActionKey('branding.gallery_item_deleted')).toBe('brandingGalleryDeleted');
+    expect(resolveAuditActionKey('branding.gallery_reordered')).toBe('brandingGalleryReordered');
+
+    const galleryEntries: AuditLogDto[] = [
+      { ...ENTRY_PERM, targetUser: null, action: 'branding.gallery_item_created', detail: { mimeType: 'image/webp' } },
+      { ...ENTRY_PERM, targetUser: null, action: 'branding.gallery_item_updated', detail: { updatedFields: ['title', 'caption'] } },
+      { ...ENTRY_PERM, targetUser: null, action: 'branding.gallery_item_deleted', detail: { itemId: 'item-1' } },
+      { ...ENTRY_PERM, targetUser: null, action: 'branding.gallery_reordered', detail: { itemIds: ['a', 'b'] } },
+    ];
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: galleryEntries, meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const viHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(viHtml).toContain('Thêm ảnh trang đăng nhập');
+    expect(viHtml).toContain('Cập nhật ảnh trang đăng nhập');
+    expect(viHtml).toContain('Xóa ảnh trang đăng nhập');
+    expect(viHtml).toContain('Sắp xếp lại ảnh trang đăng nhập');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: galleryEntries, meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const enHtml = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(enHtml).toContain('Added login gallery photo');
+    expect(enHtml).toContain('Updated login gallery photo');
+    expect(enHtml).toContain('Deleted login gallery photo');
+    expect(enHtml).toContain('Reordered login gallery');
+  });
 });

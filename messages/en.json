@@ -19,6 +19,7 @@
     "memberAdmin": "Member admin",
     "permissions": "Permissions",
     "departments": "Departments",
+    "branding": "Club Branding",
     "reminders": "Reminders",
     "auditLog": "Audit log",
     "signOut": "Sign out",
@@ -100,21 +101,32 @@
     "networkErrorTitle": "Connection error",
     "networkError": "Could not reach the server. Check your connection and try again.",
     "showcase": {
-      "tag": "The club board",
-      "kicker": "One place for everything the club runs",
-      "headline": "Every task has an owner, a deadline and a priority.",
-      "columns": {
-        "todo": "To do",
-        "doing": "In progress",
-        "done": "Done"
-      },
-      "sampleTasks": {
-        "t1": "Finalize sponsor list",
-        "t2": "Reserve audio equipment",
-        "t3": "Write MC script",
-        "t4": "Prepare club intro deck",
-        "t5": "Finish A3 event poster",
-        "t6": "Brainstorm Open Day theme"
+      "showcaseLabel": "BEAM Club moments",
+      "tag": "Club moments",
+      "kicker": "Life at BEAM Club",
+      "headline": "Built together, captured in every frame.",
+      "galleryLabel": "Club photo gallery",
+      "galleryTrackLabel": "Scrollable club photo strip",
+      "prevPhoto": "Previous photo",
+      "nextPhoto": "Next photo",
+      "frameCount": "{count} frames",
+      "samples": {
+        "kickoff": {
+          "title": "Semester Kickoff",
+          "caption": "Welcoming new members and planning the term."
+        },
+        "workshop": {
+          "title": "Design & Media Lab",
+          "caption": "Hands-on media and visual storytelling session."
+        },
+        "hackathon": {
+          "title": "Club Build Sprint",
+          "caption": "Shipping student tools and creative builds together."
+        },
+        "community": {
+          "title": "BEAM Open Day",
+          "caption": "Sharing club energy with the campus community."
+        }
       }
     }
   },
@@ -169,6 +181,9 @@
     "avatarHint": "PNG, JPEG, or WEBP · max 256 KB."
   },
   "branding": {
+    "kicker": "Admin",
+    "pageTitle": "Club Branding",
+    "loadErrorTitle": "Could not load club branding",
     "modalTitle": "BEAM Club logo",
     "modalSubtitle": "Shown in the navigation bar and sign-in page.",
     "logoAlt": "BEAM Club logo",
@@ -181,7 +196,45 @@
     "restoreDefaultButton": "Restore default",
     "restoring": "Restoring...",
     "updatedToast": "Club logo updated.",
-    "removedToast": "Restored default club logo."
+    "removedToast": "Restored default club logo.",
+    "gallery": {
+      "sectionTitle": "Login photo wall",
+      "sectionSubtitle": "Shown as Polaroid frames on desktop sign-in. PNG, JPEG, or WEBP · max 512 KB.",
+      "countBadge": "{count} / {max}",
+      "addButton": "Add photo",
+      "limitReachedHint": "Maximum of {max} photos reached. Remove or edit an existing frame.",
+      "emptyTitle": "No custom photos yet",
+      "emptyDescription": "Sign-in currently shows 4 default BEAM sample frames. Upload a photo to replace them.",
+      "moveLeftLabel": "Move \"{title}\" left",
+      "moveRightLabel": "Move \"{title}\" right",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "createModalTitle": "Add Polaroid photo",
+      "editModalTitle": "Edit Polaroid photo",
+      "selectImageButton": "Choose image",
+      "replaceImageButton": "Replace image",
+      "noImageSelected": "No image",
+      "previewAlt": "Photo preview",
+      "imageHint": "PNG, JPEG, or WEBP · max 512 KB.",
+      "titleLabel": "Title",
+      "titlePlaceholder": "e.g. BEAM Open Day 2026",
+      "captionLabel": "Caption (optional)",
+      "captionPlaceholder": "Short note shown under the frame...",
+      "validationTitle": "Title must be 1 to 80 characters.",
+      "validationCaption": "Caption must be 240 characters or fewer.",
+      "validationImageRequired": "Please select an image.",
+      "createSubmit": "Add photo",
+      "editSubmit": "Save changes",
+      "saving": "Saving...",
+      "deleteModalTitle": "Delete login photo",
+      "deleteModalBody": "Delete \"{title}\"? This cannot be undone.",
+      "deleteConfirm": "Delete",
+      "deleting": "Deleting...",
+      "createdToast": "Added photo to login gallery.",
+      "updatedToast": "Updated photo frame.",
+      "deletedToast": "Removed photo from login gallery.",
+      "reorderedToast": "Updated photo order."
+    }
   },
   "permissions": {
     "catalog": {
@@ -252,6 +305,8 @@
     "boardColumnMismatch": "The selected column does not belong to this board.",
     "invalidImageFormat": "Unsupported image format. Only PNG, JPEG, or WEBP images are allowed (SVG is not supported).",
     "imageTooLarge": "Image still exceeds 256 KB after compression. Please choose a smaller image.",
+    "galleryLimitReached": "Maximum of 12 login gallery photos reached.",
+    "invalidGalleryOrder": "Invalid photo order list. Please reload and try again.",
     "boardArchived": "This task’s parent board is currently archived. Restore the board before restoring this task.",
     "boardHasNoColumns": "This board has no columns to place the restored task into. Create a column first.",
     "taskNotDeleted": "This task is currently active and is not in the Archive.",
@@ -574,6 +629,10 @@
       "boardArchived": "Archived board",
       "brandingLogoUpdated": "Updated club logo",
       "brandingLogoRemoved": "Restored default club logo",
+      "brandingGalleryCreated": "Added login gallery photo",
+      "brandingGalleryUpdated": "Updated login gallery photo",
+      "brandingGalleryDeleted": "Deleted login gallery photo",
+      "brandingGalleryReordered": "Reordered login gallery",
       "archiveMemberRestored": "Restored member from Archive",
       "archiveBoardRestored": "Restored board from Archive",
       "archiveTaskPurged": "Permanently purged task",

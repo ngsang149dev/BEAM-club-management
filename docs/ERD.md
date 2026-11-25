@@ -1,6 +1,6 @@
 # Entity-Relationship Diagram & Data Dictionary (`docs/ERD.md`)
 
-- **Tài liệu `docs/ERD.md` (CR-03):** Đã cập nhật lên 21 bảng miền.
+- **Tài liệu `docs/ERD.md` (CR-07):** Đã cập nhật lên 22 bảng miền.
 
 Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống quản lý thành viên & giao task CLB BEAM, chốt ở giai đoạn **0B (`E0-02`)** dựa trên:
 - `docs/HANDOFF-club-management-website.md` v1.4 (mục 8.1, 8.2, 8.6, 8.8, 11.4)
@@ -29,7 +29,7 @@ Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống qu�
 
 ---
 
-## 2. Sơ đồ ERD (21 bảng miền)
+## 2. Sơ đồ ERD (22 bảng miền)
 
 ```mermaid
 erDiagram
@@ -85,6 +85,18 @@ erDiagram
         text mime_type
         bytea data "<= 256KB"
         uuid updated_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    LOGIN_GALLERY_ITEMS {
+        uuid id PK
+        text title "1..80 chars"
+        text caption "NULL <= 240 chars"
+        text mime_type
+        bytea data "<= 512KB"
+        integer order_index ">= 0"
+        uuid updated_by FK "NULL"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -271,9 +283,10 @@ erDiagram
     TASKS ||--o{ REMINDERS : "triggers"
     PROFILES ||--o{ REMINDERS : "notified_by"
     PROFILES ||--o{ CLUB_ASSETS : "updates_asset"
+    PROFILES ||--o{ LOGIN_GALLERY_ITEMS : "updates_gallery"
 ```
 
-> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong 21 bảng miền nghiệp vụ. `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
+> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong 22 bảng miền nghiệp vụ. `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
 
 ---
 
@@ -347,6 +360,21 @@ Lưu tài sản nhận diện CLB dạng nhị phân an toàn (ví dụ key `'cl
 | `mime_type` | `text` | NO | — | `CHECK (mime_type IN ('image/png', 'image/jpeg', 'image/webp'))` |
 | `data` | `bytea` | NO | — | `CHECK (octet_length(data) BETWEEN 1 AND 262144)` |
 | `updated_by` | `uuid` | YES | `NULL` | `FK -> profiles(id) ON DELETE RESTRICT` |
+| `created_at` | `timestamptz` | NO | `now()` | UTC |
+| `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
+
+### 3.4b `login_gallery_items` (Mutable)
+Lưu các khung ảnh Polaroid hiển thị trên Desktop trang `/login` (`CR-07`), tối đa `512 KB`/ảnh và tối đa `12` khung (kiểm soát ở tầng ứng dụng với transaction lock).
+
+| Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
+|---|---|---|---|---|
+| `id` | `uuid` | NO | `gen_random_uuid()` | `PRIMARY KEY` |
+| `title` | `text` | NO | — | `CHECK (char_length(btrim(title)) BETWEEN 1 AND 80)` |
+| `caption` | `text` | YES | `NULL` | `CHECK (caption IS NULL OR char_length(caption) <= 240)` |
+| `mime_type` | `text` | NO | — | `CHECK (mime_type IN ('image/png', 'image/jpeg', 'image/webp'))` |
+| `data` | `bytea` | NO | — | `CHECK (octet_length(data) BETWEEN 1 AND 524288)` |
+| `order_index` | `integer` | NO | — | `CHECK (order_index >= 0)` |
+| `updated_by` | `uuid` | YES | `NULL` | `FK -> profiles(id) ON DELETE SET NULL` |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
 
@@ -571,6 +599,7 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 | Cha -> Con | Cột FK | Hành vi | Lý do |
 |---|---|---|---|
 | `profiles -> *` | Mọi bảng | `RESTRICT` | Bảo toàn lịch sử thành viên cũ, không xóa cascade |
+| `profiles -> login_gallery_items` | `updated_by` | `SET NULL` | Cho phép xóa vật lý tài khoản chưa phát sinh lịch sử mà không giữ khóa ngoại ở gallery |
 | `departments -> member_departments, boards, task_departments` | `department_id` | `RESTRICT` | Hỗ trợ kiểm tra xung đột `409` khi xóa ban còn dữ liệu (`WQ-10`) |
 | `departments -> notifications` | `department_id` | `SET NULL` | Giữ thông báo khi ban không còn tham chiếu và bị xóa |
 | `permissions -> user_permissions, preset_permissions` | `permission_code` | `RESTRICT` | Không xóa quyền đang được tham chiếu |
@@ -608,6 +637,7 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `user_permissions_permission_code_idx`: `ON user_permissions (permission_code)`
 - `boards_department_id_idx`: `ON boards (department_id) WHERE department_id IS NOT NULL`
 - `columns_board_id_order_index_idx`: `ON columns (board_id, order_index)`
+- `idx_login_gallery_items_order`: `ON login_gallery_items (order_index, id)`
 
 ---
 
@@ -620,4 +650,4 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 | `prevent_student_id_change` | `profiles` (`BEFORE UPDATE FOR EACH ROW`) | Chặn đổi `student_id` (trừ duy nhất chuyển đổi purge một chiều `OLD.purged_at IS NULL AND NEW.purged_at IS NOT NULL AND NEW.is_active = false`) và chặn xóa `purged_at` | `HINT = 'STUDENT_ID_IMMUTABLE'` / `'ALREADY_PURGED'` |
 | `prevent_entity_unpurge` | `boards`, `tasks` (`BEFORE UPDATE FOR EACH ROW`) | Chặn đặt lại `purged_at = NULL` sau khi đối tượng đã bị purge | `HINT = 'ALREADY_PURGED'` — khóa xóa vĩnh viễn một chiều |
 | `prevent_append_only_mutation` | `task_events`, `audit_logs` (`BEFORE UPDATE OR DELETE OR TRUNCATE FOR EACH STATEMENT`) | Từ chối mọi thao tác `UPDATE`, `DELETE` hoặc `TRUNCATE` | `HINT = 'APPEND_ONLY_TABLE'` — đảm bảo nhật ký chỉ ghi thêm (`Q36`, `D35`) |
-| `set_updated_at` | `profiles`, `sessions`, `app_settings`, `departments`, `permissions`, `permission_presets`, `boards`, `columns`, `tasks` (`BEFORE UPDATE FOR EACH ROW`) | Gán `NEW.updated_at := now()` | Đồng bộ thời điểm cập nhật UTC |
+| `set_updated_at` | `profiles`, `sessions`, `app_settings`, `club_assets`, `login_gallery_items`, `departments`, `permissions`, `permission_presets`, `boards`, `columns`, `tasks` (`BEFORE UPDATE FOR EACH ROW`) | Gán `NEW.updated_at := now()` | Đồng bộ thời điểm cập nhật UTC |

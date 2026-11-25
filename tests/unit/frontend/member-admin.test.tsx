@@ -27,7 +27,7 @@ const brandingHookMock = vi.hoisted(() => ({
   useBrandingQuery: vi.fn(() => ({
     isPending: false,
     isError: false,
-    data: { logoUrl: null as string | null, updatedAt: null as string | null },
+    data: { logoUrl: null as string | null, updatedAt: null as string | null, galleryItems: [] },
   })),
   useUpdateClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
   useRemoveClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
@@ -269,7 +269,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     expect(adminViewerHtml).toContain('Tran Club Admin');
     expect(adminViewerHtml).toContain('aria-label="Thao tác thành viên"');
     expect(adminViewerHtml).toContain('>Đặt lại mật khẩu<');
-    expect(adminViewerHtml).toContain('>Logo CLB<');
+    expect(adminViewerHtml).not.toContain('>Logo CLB<');
 
     membersHookMock.useMembersInfiniteQuery.mockReturnValueOnce({
       isPending: false,
@@ -290,7 +290,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     );
     expect(adminEnHtml).toContain('aria-label="Member actions"');
     expect(adminEnHtml).toContain('>Reset password<');
-    expect(adminEnHtml).toContain('>Club logo<');
+    expect(adminEnHtml).not.toContain('>Club logo<');
   });
 
   it('renders MemberCreateDrawer with initialPassword, generate button, first-login hint, and validates schema', () => {
@@ -564,7 +564,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     brandingHookMock.useBrandingQuery.mockReturnValueOnce({
       isPending: false,
       isError: false,
-      data: { logoUrl: null, updatedAt: null },
+      data: { logoUrl: null, updatedAt: null, galleryItems: [] },
     });
     const defaultLogoModalHtml = renderWithIntl(<ClubLogoModal onClose={vi.fn()} />);
     expect(defaultLogoModalHtml).toContain('Logo CLB BEAM');
@@ -575,7 +575,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     brandingHookMock.useBrandingQuery.mockReturnValueOnce({
       isPending: false,
       isError: false,
-      data: { logoUrl: '/api/v1/branding/logo?v=123', updatedAt: '2026-11-24T00:00:00Z' },
+      data: { logoUrl: '/api/v1/branding/logo?v=123', updatedAt: '2026-11-24T00:00:00Z', galleryItems: [] },
     });
     brandingHookMock.useUpdateClubLogoMutation.mockReturnValueOnce({
       mutateAsync: vi.fn(),

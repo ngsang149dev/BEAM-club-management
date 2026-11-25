@@ -296,6 +296,19 @@ describe('i18n message dictionaries (vi/en)', () => {
       'tasks.taskActionsMenu',
       'tasks.moveToColumnMenu',
       'tasks.movedToColumnToast',
+      'nav.branding',
+      'branding.pageTitle',
+      'branding.gallery.sectionTitle',
+      'branding.gallery.addButton',
+      'errors.galleryLimitReached',
+      'errors.invalidGalleryOrder',
+      'auth.showcase.galleryLabel',
+      'auth.showcase.prevPhoto',
+      'auth.showcase.nextPhoto',
+      'auditLogs.actions.brandingGalleryCreated',
+      'auditLogs.actions.brandingGalleryUpdated',
+      'auditLogs.actions.brandingGalleryDeleted',
+      'auditLogs.actions.brandingGalleryReordered',
     ];
 
     for (const key of e3Keys) {

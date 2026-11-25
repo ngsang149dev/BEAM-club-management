@@ -22,6 +22,10 @@ export type AuditActionMessageKey =
   | 'boardArchived'
   | 'brandingLogoUpdated'
   | 'brandingLogoRemoved'
+  | 'brandingGalleryCreated'
+  | 'brandingGalleryUpdated'
+  | 'brandingGalleryDeleted'
+  | 'brandingGalleryReordered'
   | 'archiveMemberRestored'
   | 'archiveBoardRestored'
   | 'archiveTaskPurged'
@@ -56,6 +60,10 @@ const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'board.archived': 'boardArchived',
   'branding.logo_updated': 'brandingLogoUpdated',
   'branding.logo_removed': 'brandingLogoRemoved',
+  'branding.gallery_item_created': 'brandingGalleryCreated',
+  'branding.gallery_item_updated': 'brandingGalleryUpdated',
+  'branding.gallery_item_deleted': 'brandingGalleryDeleted',
+  'branding.gallery_reordered': 'brandingGalleryReordered',
   'archive.member_restored': 'archiveMemberRestored',
   'archive.board_restored': 'archiveBoardRestored',
   'archive.task_purged': 'archiveTaskPurged',
@@ -88,6 +96,10 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'reminders.updated', key: 'remindersUpdated' },
   { value: 'branding.logo_updated', key: 'brandingLogoUpdated' },
   { value: 'branding.logo_removed', key: 'brandingLogoRemoved' },
+  { value: 'branding.gallery_item_created', key: 'brandingGalleryCreated' },
+  { value: 'branding.gallery_item_updated', key: 'brandingGalleryUpdated' },
+  { value: 'branding.gallery_item_deleted', key: 'brandingGalleryDeleted' },
+  { value: 'branding.gallery_reordered', key: 'brandingGalleryReordered' },
   { value: 'archive.member_restored', key: 'archiveMemberRestored' },
   { value: 'archive.board_restored', key: 'archiveBoardRestored' },
   { value: 'archive.task_purged', key: 'archiveTaskPurged' },
@@ -174,6 +186,14 @@ function formatArchivePreview(detail: Record<string, unknown>): string | null {
   );
 }
 
+function formatGalleryPreview(detail: Record<string, unknown>): string | null {
+  const updatedFields = readStringList(detail.updatedFields);
+  if (updatedFields.length > 0) return updatedFields.join(', ');
+  const itemIds = readStringList(detail.itemIds);
+  if (itemIds.length > 0) return `${itemIds.length} items`;
+  return readNonEmptyString(detail.itemId);
+}
+
 function formatEntityPreview(detail: Record<string, unknown>): string {
   const textPreview =
     readNonEmptyString(detail.name) ??
@@ -181,6 +201,8 @@ function formatEntityPreview(detail: Record<string, unknown>): string {
     readNonEmptyString(detail.mimeType) ??
     readNonEmptyString(detail.assetKey);
   if (textPreview) return textPreview;
+  const galleryPreview = formatGalleryPreview(detail);
+  if (galleryPreview) return galleryPreview;
   if (typeof detail.isAdmin === 'boolean') return detail.isAdmin ? 'isAdmin=true' : 'isAdmin=false';
   return formatArchivePreview(detail) ?? '—';
 }

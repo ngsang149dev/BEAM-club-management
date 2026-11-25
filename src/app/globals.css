@@ -1532,75 +1532,180 @@ svg {
     letter-spacing: -0.025em;
   }
 
-  .login-board-wrap {
+  .login-photo-wall {
+    position: relative;
+    display: flex;
+    flex-direction: column;
     flex: 1;
-    margin-top: 28px;
-    overflow: hidden;
+    min-height: 0;
+    margin-top: 24px;
   }
 
-  .login-mini {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .login-mini-col {
-    padding: 9px;
-    border: 1.5px solid var(--ink);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.78);
-    box-shadow: var(--shadow-pop-xs);
-  }
-
-  .login-mini-head {
+  .login-photo-wall-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 2px 3px 8px;
-    font-size: 10.5px;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .login-photo-wall-count {
+    padding: 3px 10px;
+    border: 1px solid var(--ink);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--pink-deep);
+    font-size: 11px;
     font-weight: 700;
   }
 
-  .login-mini-head b {
-    font-size: 10px;
-    color: var(--pink-deep);
-  }
-
-  .login-mini-card {
-    display: grid;
-    gap: 6px;
-    margin-bottom: 6px;
-    padding: 9px;
-    border: 1px solid var(--ink);
-    border-radius: 5px;
-    background: #fff;
-  }
-
-  .login-mini-card.is-hidden {
-    border-left: 3px solid var(--pink-strong);
-    background: repeating-linear-gradient(135deg, #fff, #fff 8px, var(--paper) 8px, var(--paper) 10px);
-  }
-
-  .login-mini-title {
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1.3;
-  }
-
-  .login-mini-meta {
+  .login-photo-wall-controls {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-    font-size: 10px;
-    color: var(--ink-3);
+    gap: 6px;
   }
 
-  .login-caption {
-    margin: 12px 0 0;
-    color: var(--ink-2);
+  .login-photo-wall-arrow {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid var(--ink);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: var(--shadow-pop-xs);
+    transition: transform 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+  }
+
+  .login-photo-wall-arrow:hover {
+    background: var(--pink);
+    color: #fff;
+    transform: translate(-1px, -1px);
+  }
+
+  .login-photo-wall-rail {
+    height: 2px;
+    background: var(--ink);
+    opacity: 0.2;
+    border-radius: 999px;
+    margin-bottom: -11px;
+  }
+
+  .login-photo-wall-track {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: 20px 18px 24px;
+    margin-inline: -10px;
+    cursor: grab;
+    user-select: none;
+    scrollbar-width: none;
+  }
+
+  .login-photo-wall-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .login-photo-wall-track.is-dragging {
+    cursor: grabbing;
+  }
+
+  .login-polaroid-card {
+    position: relative;
+    flex: 0 0 218px;
+    margin: 0;
+    padding: 9px 9px 13px;
+    border: 1.5px solid var(--ink);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--shadow-pop-xs);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .login-polaroid-tilt-0 {
+    transform: rotate(-2.2deg);
+  }
+
+  .login-polaroid-tilt-1 {
+    transform: rotate(1.8deg);
+  }
+
+  .login-polaroid-tilt-2 {
+    transform: rotate(-1.5deg);
+  }
+
+  .login-polaroid-tilt-3 {
+    transform: rotate(2deg);
+  }
+
+  .login-polaroid-card:hover {
+    transform: rotate(0deg) translateY(-4px);
+    box-shadow: var(--shadow-pop);
+    z-index: 2;
+  }
+
+  .login-polaroid-pin {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 28px;
+    height: 12px;
+    border: 1.5px solid var(--ink);
+    border-radius: 3px;
+    background: #fbcfe8;
+    box-shadow: 0 1px 0 var(--ink);
+  }
+
+  .login-polaroid-media {
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border: 1px solid var(--ink);
+    border-radius: 4px;
+    background: var(--paper);
+  }
+
+  .login-polaroid-img,
+  .login-polaroid-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+
+  .login-polaroid-caption {
+    display: grid;
+    gap: 3px;
+    margin-top: 9px;
+  }
+
+  .login-polaroid-title {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: var(--ink);
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .login-polaroid-sub {
     font-size: 11px;
-    font-weight: 500;
+    color: var(--ink-2);
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .login-right {
@@ -4088,6 +4193,163 @@ svg {
   flex-wrap: wrap;
 }
 
+.club-logo-editor-stack {
+  display: grid;
+  gap: 12px;
+}
+
+/* ---------- Branding Gallery Admin (CR-07) ---------- */
+
+.gallery-admin-header {
+  flex-wrap: wrap;
+}
+
+.gallery-admin-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gallery-admin-empty {
+  display: grid;
+  gap: 4px;
+  padding: 20px;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.gallery-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.gallery-admin-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+  padding: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop-xs);
+}
+
+.gallery-admin-thumb-wrap {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.gallery-admin-thumb {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gallery-admin-order {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.gallery-admin-meta {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.gallery-admin-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.gallery-admin-caption {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gallery-admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.gallery-admin-move-group,
+.gallery-admin-edit-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gallery-modal-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.gallery-modal-preview {
+  width: 120px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.gallery-modal-preview-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gallery-modal-preview-empty {
+  padding: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.gallery-modal-upload-meta {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  flex: 1;
+  min-width: 160px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -4668,7 +4930,9 @@ svg {
   .app-nav-item:hover,
   .side-link:hover,
   .perm-preset:hover,
-  .perm-preset-card:hover {
+  .perm-preset-card:hover,
+  .login-polaroid-card:hover,
+  .login-photo-wall-arrow:hover {
     transform: none !important;
   }
 }

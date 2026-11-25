@@ -2,6 +2,8 @@ import { isApiClientError } from '@/features/shared/api/client';
 import {
   ALLOWED_IMAGE_MIME_TYPES,
   IMAGE_FILE_ACCEPT,
+  MAX_GALLERY_DATA_URL_LENGTH,
+  MAX_GALLERY_IMAGE_BYTES,
   MAX_IMAGE_BYTES,
   MAX_IMAGE_DATA_URL_LENGTH,
   isAllowedImageMimeType,
@@ -10,7 +12,10 @@ import {
 export {
   ALLOWED_IMAGE_MIME_TYPES,
   IMAGE_FILE_ACCEPT,
+  MAX_GALLERY_DATA_URL_LENGTH,
+  MAX_GALLERY_IMAGE_BYTES,
   MAX_IMAGE_BYTES,
+  MAX_IMAGE_DATA_URL_LENGTH,
   isAllowedImageMimeType,
 };
 
@@ -33,6 +38,8 @@ export function isImageCompressError(error: unknown): error is ImageCompressErro
 export type ImageUploadErrorKey =
   | 'invalidImageFormat'
   | 'imageTooLarge'
+  | 'galleryLimitReached'
+  | 'conflict'
   | 'validation'
   | 'unauthorized'
   | 'forbidden'
@@ -43,6 +50,7 @@ export type ImageUploadErrorKey =
 const UPLOAD_ERROR_CODE_MAP: Record<string, ImageUploadErrorKey> = {
   INVALID_IMAGE_FORMAT: 'invalidImageFormat',
   IMAGE_TOO_LARGE: 'imageTooLarge',
+  GALLERY_LIMIT_REACHED: 'galleryLimitReached',
   VALIDATION_ERROR: 'validation',
   UNAUTHORIZED: 'unauthorized',
   SESSION_EXPIRED: 'unauthorized',
@@ -58,6 +66,7 @@ const UPLOAD_ERROR_STATUS_MAP: Record<number, ImageUploadErrorKey> = {
   401: 'unauthorized',
   403: 'forbidden',
   404: 'notFound',
+  409: 'conflict',
 };
 
 export function resolveImageUploadErrorKey(error: unknown): ImageUploadErrorKey | null {
@@ -73,9 +82,29 @@ export function resolveImageUploadErrorKey(error: unknown): ImageUploadErrorKey 
   return UPLOAD_ERROR_CODE_MAP[error.code] ?? UPLOAD_ERROR_STATUS_MAP[error.status] ?? 'unknown';
 }
 
+export interface ImageEncodingAttempt {
+  readonly mime: 'image/webp' | 'image/jpeg';
+  readonly quality: number;
+}
+
+export interface ImageCompressionOptions {
+  readonly maxBytes?: number;
+  readonly maxDataUrlLength?: number;
+  readonly dimensions?: readonly number[];
+  readonly encodings?: readonly ImageEncodingAttempt[];
+}
+
+interface ResolvedImageBudget {
+  readonly maxBytes: number;
+  readonly maxDataUrlLength: number;
+  readonly dimensions: readonly number[];
+  readonly encodings: readonly ImageEncodingAttempt[];
+}
+
 const DEFAULT_MAX_DIMENSION = 512;
-const RESIZE_DIMENSIONS = [512, 384, 256] as const;
-const ENCODING_ATTEMPTS: readonly { mime: 'image/webp' | 'image/jpeg'; quality: number }[] = [
+const DEFAULT_DIMENSIONS = [512, 384, 256] as const;
+const GALLERY_DIMENSIONS = [1280, 960, 720] as const;
+const DEFAULT_ENCODINGS: readonly ImageEncodingAttempt[] = [
   { mime: 'image/webp', quality: 0.86 },
   { mime: 'image/webp', quality: 0.72 },
   { mime: 'image/webp', quality: 0.58 },
@@ -83,6 +112,25 @@ const ENCODING_ATTEMPTS: readonly { mime: 'image/webp' | 'image/jpeg'; quality: 
   { mime: 'image/jpeg', quality: 0.72 },
   { mime: 'image/jpeg', quality: 0.58 },
 ];
+
+export const GALLERY_IMAGE_COMPRESSION_OPTIONS: ImageCompressionOptions = {
+  maxBytes: MAX_GALLERY_IMAGE_BYTES,
+  maxDataUrlLength: MAX_GALLERY_DATA_URL_LENGTH,
+  dimensions: GALLERY_DIMENSIONS,
+};
+
+function pickNonEmptyList<T>(values: readonly T[] | undefined, fallback: readonly T[]): readonly T[] {
+  return values && values.length > 0 ? values : fallback;
+}
+
+function resolveCompressionBudget(options?: ImageCompressionOptions): ResolvedImageBudget {
+  return {
+    maxBytes: options?.maxBytes ?? MAX_IMAGE_BYTES,
+    maxDataUrlLength: options?.maxDataUrlLength ?? MAX_IMAGE_DATA_URL_LENGTH,
+    dimensions: pickNonEmptyList(options?.dimensions, DEFAULT_DIMENSIONS),
+    encodings: pickNonEmptyList(options?.encodings, DEFAULT_ENCODINGS),
+  };
+}
 
 const DATA_URL_PREFIX_RE = /^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/;
 
@@ -103,12 +151,16 @@ export function estimateDataUrlDecodedBytes(dataUrl: string): number {
   return Math.floor((base64.length * 3) / 4) - padding;
 }
 
-export function isDataUrlWithinBudget(dataUrl: string): boolean {
-  if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+export function isDataUrlWithinBudget(
+  dataUrl: string,
+  maxBytes = MAX_IMAGE_BYTES,
+  maxDataUrlLength = MAX_IMAGE_DATA_URL_LENGTH,
+): boolean {
+  if (dataUrl.length > maxDataUrlLength) {
     return false;
   }
   const decodedBytes = estimateDataUrlDecodedBytes(dataUrl);
-  return Number.isFinite(decodedBytes) && decodedBytes > 0 && decodedBytes <= MAX_IMAGE_BYTES;
+  return Number.isFinite(decodedBytes) && decodedBytes > 0 && decodedBytes <= maxBytes;
 }
 
 export function computeScaledDimensions(
@@ -178,35 +230,35 @@ function loadImageElement(dataUrl: string): Promise<HTMLImageElement | null> {
 
 function encodeCanvasAtDimension(
   img: HTMLImageElement,
-  targetW: number,
-  targetH: number,
+  size: { width: number; height: number },
+  budget: ResolvedImageBudget,
 ): string | null {
   const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
+  canvas.width = size.width;
+  canvas.height = size.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     return null;
   }
-  ctx.clearRect(0, 0, targetW, targetH);
-  ctx.drawImage(img, 0, 0, targetW, targetH);
+  ctx.clearRect(0, 0, size.width, size.height);
+  ctx.drawImage(img, 0, 0, size.width, size.height);
 
-  for (const attempt of ENCODING_ATTEMPTS) {
+  for (const attempt of budget.encodings) {
     const candidate = canvas.toDataURL(attempt.mime, attempt.quality);
-    if (isDataUrlWithinBudget(candidate)) {
+    if (isDataUrlWithinBudget(candidate, budget.maxBytes, budget.maxDataUrlLength)) {
       return candidate;
     }
   }
   return null;
 }
 
-function compressLoadedImage(img: HTMLImageElement): string | null {
+function compressLoadedImage(img: HTMLImageElement, budget: ResolvedImageBudget): string | null {
   const srcWidth = img.naturalWidth || img.width;
   const srcHeight = img.naturalHeight || img.height;
 
-  for (const maxDim of RESIZE_DIMENSIONS) {
+  for (const maxDim of budget.dimensions) {
     const scaled = computeScaledDimensions(srcWidth, srcHeight, maxDim);
-    const compressed = encodeCanvasAtDimension(img, scaled.width, scaled.height);
+    const compressed = encodeCanvasAtDimension(img, scaled, budget);
     if (compressed) {
       return compressed;
     }
@@ -214,26 +266,35 @@ function compressLoadedImage(img: HTMLImageElement): string | null {
   return null;
 }
 
-function canKeepRawImage(rawDataUrl: string, img: HTMLImageElement): boolean {
-  if (!isDataUrlWithinBudget(rawDataUrl)) {
+function canKeepRawImage(
+  rawDataUrl: string,
+  img: HTMLImageElement,
+  budget: ResolvedImageBudget,
+): boolean {
+  if (!isDataUrlWithinBudget(rawDataUrl, budget.maxBytes, budget.maxDataUrlLength)) {
     return false;
   }
+  const maxRawDim = budget.dimensions[0] ?? DEFAULT_MAX_DIMENSION;
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
-  return width <= DEFAULT_MAX_DIMENSION && height <= DEFAULT_MAX_DIMENSION;
+  return width <= maxRawDim && height <= maxRawDim;
 }
 
-export async function prepareImageUpload(file: File): Promise<{ dataUrl: string }> {
+export async function compressImageFileToDataUrl(
+  file: File,
+  options?: ImageCompressionOptions,
+): Promise<string> {
   if (!isAllowedImageMimeType(file.type)) {
     throw new ImageCompressError('INVALID_IMAGE_FORMAT');
   }
+  const budget = resolveCompressionBudget(options);
   const rawDataUrl = await readFileAsDataUrl(file);
   if (!Number.isFinite(estimateDataUrlDecodedBytes(rawDataUrl))) {
     throw new ImageCompressError('INVALID_IMAGE_FORMAT');
   }
   if (!isCanvasSupported()) {
-    if (isDataUrlWithinBudget(rawDataUrl)) {
-      return { dataUrl: rawDataUrl };
+    if (isDataUrlWithinBudget(rawDataUrl, budget.maxBytes, budget.maxDataUrlLength)) {
+      return rawDataUrl;
     }
     throw new ImageCompressError('IMAGE_TOO_LARGE');
   }
@@ -242,13 +303,20 @@ export async function prepareImageUpload(file: File): Promise<{ dataUrl: string 
   if (!img) {
     throw new ImageCompressError('INVALID_IMAGE_FORMAT');
   }
-  if (canKeepRawImage(rawDataUrl, img)) {
-    return { dataUrl: rawDataUrl };
+  if (canKeepRawImage(rawDataUrl, img, budget)) {
+    return rawDataUrl;
   }
 
-  const compressed = compressLoadedImage(img);
+  const compressed = compressLoadedImage(img, budget);
   if (!compressed) {
     throw new ImageCompressError('IMAGE_TOO_LARGE');
   }
-  return { dataUrl: compressed };
+  return compressed;
+}
+
+export async function prepareImageUpload(
+  file: File,
+  options?: ImageCompressionOptions,
+): Promise<{ dataUrl: string }> {
+  return { dataUrl: await compressImageFileToDataUrl(file, options) };
 }

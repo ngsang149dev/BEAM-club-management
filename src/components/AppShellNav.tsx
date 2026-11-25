@@ -14,6 +14,7 @@ export type AppNavKey =
   | 'memberAdmin'
   | 'permissions'
   | 'departments'
+  | 'branding'
   | 'reminders'
   | 'auditLog';
 
@@ -37,6 +38,7 @@ export const ADMIN_NAV: readonly NavItemConfig[] = [
   { key: 'memberAdmin', href: '/admin/members', anyOf: ['member.create', 'member.update', 'member.deactivate'] },
   { key: 'permissions', href: '/admin/permissions', adminOnly: true },
   { key: 'departments', href: '/admin/departments', permission: 'department.manage' },
+  { key: 'branding', href: '/admin/branding', adminOnly: true },
   { key: 'reminders', href: '/admin/reminders', permission: 'reminder.configure' },
   { key: 'auditLog', href: '/admin/audit', permission: 'audit.view' },
 ];
@@ -57,6 +59,7 @@ const NAV_ICON_PATHS: Record<AppNavKey, ReactNode> = {
   memberAdmin: MEMBERS_ICON,
   permissions: <><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l2 2M14 9l2 2" /></>,
   departments: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10 21v-3h4v3" /></>,
+  branding: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="M21 15l-4.5-4.5L7 20" /></>,
   reminders: <><path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9z" /><path d="M10 18a2 2 0 0 0 4 0" /></>,
   auditLog: <><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r=".9" fill="currentColor" stroke="none" /><circle cx="3.5" cy="12" r=".9" fill="currentColor" stroke="none" /><circle cx="3.5" cy="18" r=".9" fill="currentColor" stroke="none" /></>,
 };

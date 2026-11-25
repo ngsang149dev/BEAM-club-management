@@ -17,13 +17,10 @@ import { createDb, createDbPool, type Database } from '@/server/shared/db';
 import { DEV_SEED_PASSWORD, hashPassword } from '@/server/shared/password';
 import viMessages from '../../messages/vi.json';
 import {
-  SVG_PAYLOAD_BYTES,
   createCanvasWebpBuffer,
-  createOversizedPngDataUrl,
   createSolidPngBuffer,
   expectColorfulInitialsAvatar,
   expectLoadedAvatarImage,
-  expectLoadedLogoImage,
   expectSafeBinaryHeaders,
 } from './helpers/media-fixtures';
 
@@ -917,198 +914,41 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     await tracker.assertClean();
   });
 
-  test('manages club logo via ClubLogoModal, enforces admin-only RBAC and magic-byte/size validation, updates AppShell & /login, and writes clean audit_logs (CR-02)', async ({
+  test('no longer renders Logo CLB in /admin/members after CR-07 moved club branding to /admin/branding', async ({
     page,
     browser,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
-    const pngBytes = createSolidPngBuffer(20, 20, [219, 39, 119, 255]);
-    const pngBase64 = pngBytes.toString('base64');
-    const pngDataUrl = `data:image/png;base64,${pngBase64}`;
-    const svgDataUrl = `data:image/svg+xml;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
-    const spoofedPngDataUrl = `data:image/png;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
-    const oversizedDataUrl = createOversizedPngDataUrl();
 
-    await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
-
+    // Non-admin holding member.update does not see Logo CLB button in /admin/members or Giao dien CLB in sidebar
+    const hrContext = await browser.newContext();
+    const hrPage = await hrContext.newPage();
+    const hrTracker = await attachRuntimeErrorTracker(hrPage);
     try {
-      // 1. Non-admin holding member.update does NOT see Club Logo button & gets 403 on PUT/DELETE /api/v1/branding/logo
-      const hrContext = await browser.newContext();
-      const hrPage = await hrContext.newPage();
-      const hrTracker = await attachRuntimeErrorTracker(hrPage);
-      try {
-        await signInAs(hrPage, hrDetailStudentId, '/admin/members');
-        await expect(
-          hrPage.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }),
-        ).toHaveCount(0);
-
-        const putForbidden = await hrPage.request.put('/api/v1/branding/logo', {
-          data: { dataUrl: pngDataUrl },
-        });
-        expect(putForbidden.status()).toBe(403);
-        expect(JSON.parse(await putForbidden.text())).toMatchObject({ error: { code: 'FORBIDDEN' } });
-
-        const delForbidden = await hrPage.request.delete('/api/v1/branding/logo');
-        expect(delForbidden.status()).toBe(403);
-        expect(JSON.parse(await delForbidden.text())).toMatchObject({ error: { code: 'FORBIDDEN' } });
-
-        await hrTracker.assertClean();
-      } finally {
-        await hrContext.close();
-      }
-
-      // 2. Admin checks default badge, tests UI/API rejection of SVG, spoofed PNG, and >256 KB
-      await signInAs(page, adminStudentId, '/admin/members');
-      await expect(page.locator('.app-side .app-brand .ui-logo i')).toHaveCount(4);
-      await expect(page.locator('.app-side .app-brand img.club-logo-img')).toHaveCount(0);
-
-      for (const badPayload of [svgDataUrl, spoofedPngDataUrl, oversizedDataUrl]) {
-        const badRes = await page.request.put('/api/v1/branding/logo', {
-          data: { dataUrl: badPayload },
-        });
-        expect(badRes.status()).toBe(400);
-      }
-
-      await page.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }).click();
-      const logoModal = page.getByRole('dialog');
-      await expect(logoModal).toContainText(viMessages.branding.modalTitle);
-      await expect(logoModal).toContainText(viMessages.branding.defaultBadgeActive);
-
-      const fileInput = logoModal.locator('input[type="file"]');
-      await fileInput.setInputFiles({
-        name: 'evil.svg',
-        mimeType: 'image/svg+xml',
-        buffer: SVG_PAYLOAD_BYTES,
-      });
-      await expect(logoModal.locator('.ui-banner.is-danger')).toContainText(
-        viMessages.errors.invalidImageFormat,
-      );
-
-      // Reopen modal so error banner resets cleanly before testing spoofed PNG bytes
-      await logoModal
-        .locator('.ui-modal-actions')
-        .getByRole('button', { name: viMessages.common.close, exact: true })
-        .click();
-      await expect(logoModal).not.toBeVisible();
-      await page.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }).click();
-      await expect(logoModal.locator('.ui-banner.is-danger')).toHaveCount(0);
-
-      await logoModal.locator('input[type="file"]').setInputFiles({
-        name: 'spoofed.png',
-        mimeType: 'image/png',
-        buffer: SVG_PAYLOAD_BYTES,
-      });
-      await expect(logoModal.locator('.ui-banner.is-danger')).toContainText(
-        viMessages.errors.invalidImageFormat,
-      );
-
-      // 3. Admin uploads valid PNG via ClubLogoModal -> AppShell & /login render custom <img> cleanly
-      const putLogoPromise = page.waitForResponse(
-        (res) => res.url().endsWith('/api/v1/branding/logo') && res.request().method() === 'PUT',
-      );
-      await logoModal.locator('input[type="file"]').setInputFiles({
-        name: 'beam-logo.png',
-        mimeType: 'image/png',
-        buffer: pngBytes,
-      });
-      const putLogoRes = await putLogoPromise;
-      expect(putLogoRes.status()).toBe(200);
-      const putLogoJson = (await putLogoRes.json()) as { logoUrl: string | null };
-      expect(putLogoJson.logoUrl).toMatch(/^\/api\/v1\/branding\/logo\?v=\d+$/);
-
-      await expect(logoModal).toContainText(viMessages.branding.customLogoActive);
-      const modalLogoSrc = await expectLoadedLogoImage(
-        logoModal.locator('.club-logo-preview-card img.club-logo-img'),
-      );
-      const shellLogoSrc = await expectLoadedLogoImage(
-        page.locator('.app-side .app-brand img.club-logo-img'),
-      );
-      expect(modalLogoSrc).toBe(putLogoJson.logoUrl);
-      expect(shellLogoSrc).toBe(putLogoJson.logoUrl);
-
-      const logoGetRes = await page.request.get('/api/v1/branding/logo');
-      expect(logoGetRes.status()).toBe(200);
-      expectSafeBinaryHeaders(logoGetRes.headers(), 'image/png');
-
-      // Check unauthenticated /login showcase & mobile header DOM
-      const anonContext = await browser.newContext();
-      const anonPage = await anonContext.newPage();
-      const anonTracker = await attachRuntimeErrorTracker(anonPage);
-      try {
-        await anonPage.goto('/login');
-        const loginShowcaseSrc = await expectLoadedLogoImage(
-          anonPage.locator('.login-left img.club-logo-img'),
-        );
-        expect(loginShowcaseSrc).toBe(putLogoJson.logoUrl);
-        await expect(anonPage.locator('.login-mobile-brand img.club-logo-img')).toHaveAttribute(
-          'src',
-          putLogoJson.logoUrl!,
-        );
-
-        // 4. Admin removes custom logo -> restores default 4-dot .ui-logo badge on AppShell & /login
-        const deleteLogoPromise = page.waitForResponse(
-          (res) => res.url().endsWith('/api/v1/branding/logo') && res.request().method() === 'DELETE',
-        );
-        await logoModal
-          .getByRole('button', { name: viMessages.branding.restoreDefaultButton, exact: true })
-          .click();
-        const deleteLogoRes = await deleteLogoPromise;
-        expect(deleteLogoRes.status()).toBe(200);
-
-        await expect(logoModal).toContainText(viMessages.branding.defaultBadgeActive);
-        await expect(logoModal.locator('.club-logo-preview-card .ui-logo i')).toHaveCount(4);
-        await expect(page.locator('.app-side .app-brand .ui-logo i')).toHaveCount(4);
-        await expect(page.locator('.app-side .app-brand img.club-logo-img')).toHaveCount(0);
-
-        await logoModal
-          .locator('.ui-modal-actions')
-          .getByRole('button', { name: viMessages.common.close, exact: true })
-          .click();
-        await expect(logoModal).not.toBeVisible();
-
-        expect((await page.request.get('/api/v1/branding/logo')).status()).toBe(404);
-
-        await anonPage.reload();
-        await expect(anonPage.locator('.login-left .ui-logo i')).toHaveCount(4);
-        await expect(anonPage.locator('.login-left img.club-logo-img')).toHaveCount(0);
-        await anonTracker.assertClean();
-      } finally {
-        await anonContext.close();
-      }
-
-      // 5. Verify /admin/audit UI & API show branding.logo_updated & branding.logo_removed without binary/dataUrl/PII
-      await page.goto('/admin/audit');
-      await expect(page.locator('.audit-table tbody tr').first()).toBeVisible();
-
-      const forbiddenAuditArtifacts = [
-        pngBase64,
-        'data:image/',
-        adminStudentId,
-        hrDetailStudentId,
-        adminEmail,
-        hrDetailEmail,
-      ];
-
-      for (const item of [
-        { action: 'branding.logo_updated', label: viMessages.auditLogs.actions.brandingLogoUpdated },
-        { action: 'branding.logo_removed', label: viMessages.auditLogs.actions.brandingLogoRemoved },
-      ]) {
-        const respPromise = page.waitForResponse(
-          (res) =>
-            res.url().includes('/api/v1/audit-logs') &&
-            res.url().includes(`action=${item.action}`) &&
-            res.status() === 200,
-        );
-        await page.getByLabel(viMessages.auditLogs.actionFilterLabel, { exact: true }).selectOption(item.action);
-        const rawBody = await (await respPromise).text();
-        assertNoSecretsInText(rawBody, forbiddenAuditArtifacts);
-        expect(rawBody).not.toContain('"studentId"');
-        expect(rawBody).not.toContain('"email"');
-        await expect(page.locator('.audit-table tbody tr', { hasText: item.label }).first()).toBeVisible();
-      }
+      await signInAs(hrPage, hrDetailStudentId, '/admin/members');
+      await expect(
+        hrPage.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        hrPage.locator('.app-side').getByRole('link', { name: viMessages.nav.branding, exact: true }),
+      ).toHaveCount(0);
+      await hrTracker.assertClean();
     } finally {
-      await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+      await hrContext.close();
     }
+
+    // Admin also does not see Logo CLB button in /admin/members, and can reach /admin/branding from sidebar
+    await signInAs(page, adminStudentId, '/admin/members');
+    await expect(
+      page.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }),
+    ).toHaveCount(0);
+    const brandingNavLink = page
+      .locator('.app-side')
+      .getByRole('link', { name: viMessages.nav.branding, exact: true });
+    await expect(brandingNavLink).toBeVisible();
+    await brandingNavLink.click();
+    await page.waitForURL(`${BASE_ORIGIN}/admin/branding`);
+    await expect(page.getByRole('heading', { name: viMessages.branding.modalTitle, exact: true })).toBeVisible();
 
     await tracker.assertClean();
   });

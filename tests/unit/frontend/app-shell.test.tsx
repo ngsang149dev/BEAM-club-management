@@ -55,6 +55,7 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).not.toContain('href="/admin/members"');
     expect(html).not.toContain('href="/admin/permissions"');
     expect(html).not.toContain('href="/admin/departments"');
+    expect(html).not.toContain('href="/admin/branding"');
     expect(html).not.toContain('href="/admin/reminders"');
     expect(html).not.toContain('href="/admin/audit"');
   });
@@ -80,6 +81,7 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).not.toContain('href="/archive"');
     expect(html).not.toContain('href="/admin/members"');
     expect(html).not.toContain('href="/admin/permissions"');
+    expect(html).not.toContain('href="/admin/branding"');
   });
 
   it('shows archive link when non-admin holds any archive permission (task.delete, member.deactivate, board.delete)', () => {
@@ -114,6 +116,7 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).toContain('href="/admin/members"');
     expect(html).toContain('href="/admin/permissions"');
     expect(html).toContain('href="/admin/departments"');
+    expect(html).toContain('href="/admin/branding"');
     expect(html).toContain('href="/admin/reminders"');
     expect(html).toContain('href="/admin/audit"');
     expect(html).toContain('(đã rời)');
@@ -124,6 +127,7 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     queryClient.setQueryData(BRANDING_QUERY_KEYS.branding, {
       logoUrl: '/api/v1/branding/logo?v=123',
       updatedAt: '2026-11-24T00:00:00.000Z',
+      galleryItems: [],
     });
 
     const withBrandingHtml = renderToStaticMarkup(

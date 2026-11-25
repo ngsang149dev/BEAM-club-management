@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '@/features/shared/api/client';
 import {
+  compressImageFileToDataUrl,
   computeScaledDimensions,
   estimateDataUrlDecodedBytes,
+  GALLERY_IMAGE_COMPRESSION_OPTIONS,
   ImageCompressError,
   isDataUrlWithinBudget,
+  MAX_GALLERY_DATA_URL_LENGTH,
+  MAX_GALLERY_IMAGE_BYTES,
   MAX_IMAGE_BYTES,
   prepareImageUpload,
   resolveImageUploadErrorKey,
@@ -134,5 +138,59 @@ describe('image-compress helper (CR-02)', () => {
         new ApiClientError({ status: 403, code: 'FORBIDDEN', messageKey: 'errors.forbidden', details: {} })
       )
     ).toBe('forbidden');
+    expect(
+      resolveImageUploadErrorKey(
+        new ApiClientError({ status: 409, code: 'GALLERY_LIMIT_REACHED', messageKey: 'errors.galleryLimitReached', details: {} })
+      )
+    ).toBe('galleryLimitReached');
+  });
+
+  it('supports gallery 512 KB budget and 1280/960/720 dimensions via compressImageFileToDataUrl', async () => {
+    const galleryPassThrough = createFakeFile(MAX_IMAGE_BYTES + 10_000, 'gallery.png', 'image/png');
+    const dataUrl = await compressImageFileToDataUrl(galleryPassThrough, GALLERY_IMAGE_COMPRESSION_OPTIONS);
+    expect(dataUrl.startsWith('data:image/png;base64,')).toBe(true);
+    expect(isDataUrlWithinBudget(dataUrl)).toBe(false);
+    expect(
+      isDataUrlWithinBudget(dataUrl, MAX_GALLERY_IMAGE_BYTES, MAX_GALLERY_DATA_URL_LENGTH)
+    ).toBe(true);
+
+    const tooLargeGallery = createFakeFile(MAX_GALLERY_IMAGE_BYTES + 1024, 'huge-gallery.png', 'image/png');
+    await expect(
+      compressImageFileToDataUrl(tooLargeGallery, GALLERY_IMAGE_COMPRESSION_OPTIONS)
+    ).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' });
+
+    const calls: { width: number; height: number }[] = [];
+    const oversized = `data:image/webp;base64,${'A'.repeat(760_000)}`;
+    const sharpGallery = `data:image/webp;base64,${'C'.repeat(8000)}`;
+    const mockCtx = { clearRect: vi.fn(), drawImage: vi.fn() };
+    const mockCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => mockCtx),
+      toDataURL: vi.fn((mime: string, quality: number) => {
+        calls.push({ width: mockCanvas.width, height: mockCanvas.height });
+        return mime === 'image/webp' && quality === 0.86 ? sharpGallery : oversized;
+      }),
+    };
+    class MockHdImage {
+      naturalWidth = 2560;
+      naturalHeight = 1920;
+      width = 2560;
+      height = 1920;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal('document', { createElement: vi.fn(() => mockCanvas) });
+    vi.stubGlobal('Image', MockHdImage);
+
+    const compressed = await compressImageFileToDataUrl(
+      createFakeFile(4000, 'hd.jpg', 'image/jpeg'),
+      GALLERY_IMAGE_COMPRESSION_OPTIONS
+    );
+    expect(compressed).toBe(sharpGallery);
+    expect(calls[0]).toEqual({ width: 1280, height: 960 });
   });
 });

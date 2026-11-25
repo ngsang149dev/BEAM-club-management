@@ -40,7 +40,7 @@ tags:
   - name: Settings & Audit
     description: Deadline reminder configuration and append-only administrative audit logs
   - name: Branding
-    description: Club logo and member profile avatar assets (max 256 KB PNG/JPEG/WEBP)
+    description: Club logo (max 256 KB), login Polaroid gallery items (max 512 KB, up to 12 items), and member profile avatar assets (max 256 KB PNG/JPEG/WEBP)
   - name: Internal Cron
     description: Scheduled deadline reminder trigger protected by CRON_SECRET
 
@@ -129,6 +129,146 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /branding/gallery:
+    post:
+      tags: [Branding]
+      summary: Add a login gallery item (Admin-only)
+      description: Requires `is_admin=true`. Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`), rejects SVG/unsupported formats and payloads over `524288` bytes, enforces max `12` gallery items (`409 GALLERY_LIMIT_REACHED`), stores in PostgreSQL, and writes `audit_logs` (`branding.gallery_item_created`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLoginGalleryItemRequest"
+      responses:
+        "201":
+          description: Created login gallery item metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginGalleryItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /branding/gallery/order:
+    put:
+      tags: [Branding]
+      summary: Reorder login gallery items (Admin-only)
+      description: Requires `is_admin=true`. Replaces `order_index` across all current gallery items atomically (rejects duplicate or mismatched IDs with `400 INVALID_GALLERY_ORDER`) and writes `audit_logs` (`branding.gallery_reordered`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderLoginGalleryRequest"
+      responses:
+        "200":
+          description: Reordered login gallery items metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginGalleryListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /branding/gallery/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Branding]
+      summary: Update a login gallery item (Admin-only)
+      description: Requires `is_admin=true`. Updates `title`, `caption`, and/or replaces image (`<= 524288` bytes PNG/JPEG/WEBP) and writes `audit_logs` (`branding.gallery_item_updated`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLoginGalleryItemRequest"
+      responses:
+        "200":
+          description: Updated login gallery item metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginGalleryItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Branding]
+      summary: Delete a login gallery item (Admin-only)
+      description: Requires `is_admin=true`. Deletes the item, re-normalizes remaining `order_index` values (`0..n-1`), and writes `audit_logs` (`branding.gallery_item_deleted`).
+      responses:
+        "200":
+          description: Deleted login gallery item confirmation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteLoginGalleryItemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /branding/gallery/{id}/image:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Branding]
+      summary: Fetch login gallery item binary image
+      description: "Public endpoint returning raw PNG/JPEG/WEBP image bytes with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`."
+      security: []
+      responses:
+        "200":
+          description: Binary login gallery image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ---------------------------------------------------------------------------
   # Auth
@@ -2518,7 +2658,7 @@ components:
 
     BrandingResponse:
       type: object
-      required: [logoUrl, updatedAt]
+      required: [logoUrl, updatedAt, galleryItems]
       additionalProperties: false
       properties:
         logoUrl:
@@ -2526,6 +2666,110 @@ components:
         updatedAt:
           type: ["string", "null"]
           format: date-time
+        galleryItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoginGalleryItemDto"
+
+    LoginGalleryItemDto:
+      type: object
+      required: [id, title, caption, imageUrl, orderIndex, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        caption:
+          type: ["string", "null"]
+          maxLength: 240
+        imageUrl:
+          type: string
+        orderIndex:
+          type: integer
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateLoginGalleryItemRequest:
+      type: object
+      required: [title, dataUrl]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        caption:
+          type: ["string", "null"]
+          maxLength: 240
+        dataUrl:
+          type: string
+          minLength: 1
+          maxLength: 760000
+
+    UpdateLoginGalleryItemRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        caption:
+          type: ["string", "null"]
+          maxLength: 240
+        dataUrl:
+          type: string
+          minLength: 1
+          maxLength: 760000
+
+    ReorderLoginGalleryRequest:
+      type: object
+      required: [itemIds]
+      additionalProperties: false
+      properties:
+        itemIds:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            type: string
+            format: uuid
+
+    LoginGalleryItemResponse:
+      type: object
+      required: [item]
+      additionalProperties: false
+      properties:
+        item:
+          $ref: "#/components/schemas/LoginGalleryItemDto"
+
+    LoginGalleryListResponse:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoginGalleryItemDto"
+
+    DeleteLoginGalleryItemResponse:
+      type: object
+      required: [deleted, id]
+      additionalProperties: false
+      properties:
+        deleted:
+          type: boolean
+        id:
+          type: string
+          format: uuid
 
     # -------------------------------------------------------------------------
     # Permissions & Presets
