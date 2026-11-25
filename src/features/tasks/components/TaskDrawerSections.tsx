@@ -4,11 +4,11 @@ import { useId, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
 import { z } from 'zod';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { taskPrioritySchema, taskTitleSchema } from '@/lib/tasks';
 import { hoChiMinhInputToUtcIso, utcIsoToHoChiMinhInput } from '../formatters';
+import { useUndoTaskActionToast } from '../hooks/useTaskEvents';
 import {
   useDeleteTaskMutation,
   useReplaceTaskAssigneesMutation,
@@ -38,23 +38,20 @@ const editTaskSchema = z.object({
 
 type EditTaskValues = z.infer<typeof editTaskSchema>;
 
-export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReload: () => void }) {
+function useTaskEditFormController(task: TaskDto) {
   const tTasks = useTranslations('tasks');
-  const baseId = useId();
   const updateMutation = useUpdateTaskMutation();
+  const showUndoToast = useUndoTaskActionToast();
   const initialPrio = task.priority >= 1 && task.priority <= 4 ? (task.priority as 1 | 2 | 3 | 4) : 2;
-  const { register, control, setValue, handleSubmit, formState: { errors } } =
-    useForm<EditTaskValues>({
-      resolver: zodResolver(editTaskSchema),
-      defaultValues: {
-        title: task.title,
-        description: task.description ?? '',
-        dueAtInput: utcIsoToHoChiMinhInput(task.dueAt),
-        priority: initialPrio,
-      },
-    });
-  const priority = useWatch({ control, name: 'priority' });
-  const dueAtInput = useWatch({ control, name: 'dueAtInput' });
+  const form = useForm<EditTaskValues>({
+    resolver: zodResolver(editTaskSchema),
+    defaultValues: {
+      title: task.title,
+      description: task.description ?? '',
+      dueAtInput: utcIsoToHoChiMinhInput(task.dueAt),
+      priority: initialPrio,
+    },
+  });
 
   const handleSave = (values: EditTaskValues) => {
     updateMutation.mutate(
@@ -68,29 +65,47 @@ export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReloa
           version: task.version,
         },
       },
-      { onSuccess: () => toast.success(tTasks('updatedToast')) }
+      {
+        onSuccess: (data) =>
+          showUndoToast({
+            message: tTasks('updatedToast'),
+            taskId: data.task.id,
+            boardId: data.task.boardId,
+            eventId: data.eventId,
+          }),
+      }
     );
   };
 
+  return { ...form, updateMutation, handleSave };
+}
+
+export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReload: () => void }) {
+  const tTasks = useTranslations('tasks');
+  const baseId = useId();
+  const ctrl = useTaskEditFormController(task);
+  const priority = useWatch({ control: ctrl.control, name: 'priority' });
+  const dueAtInput = useWatch({ control: ctrl.control, name: 'dueAtInput' });
+
   return (
-    <form className="task-edit-form" method="post" onSubmit={handleSubmit(handleSave)} noValidate>
-      <TaskErrorBanner error={updateMutation.error} onReloadConflict={onReload} />
+    <form className="task-edit-form" method="post" onSubmit={ctrl.handleSubmit(ctrl.handleSave)} noValidate>
+      <TaskErrorBanner error={ctrl.updateMutation.error} onReloadConflict={onReload} />
       <div className="ui-field">
         <label className="ui-label" htmlFor={`${baseId}-title`}>{tTasks('titleLabel')}</label>
-        <input id={`${baseId}-title`} className="ui-input" type="text" aria-invalid={Boolean(errors.title)} {...register('title')} />
-        {errors.title ? <p className="ui-field-error" role="alert">{tTasks('validationTitle')}</p> : null}
+        <input id={`${baseId}-title`} className="ui-input" type="text" aria-invalid={Boolean(ctrl.formState.errors.title)} {...ctrl.register('title')} />
+        {ctrl.formState.errors.title ? <p className="ui-field-error" role="alert">{tTasks('validationTitle')}</p> : null}
       </div>
       <div className="ui-field">
         <label className="ui-label" htmlFor={`${baseId}-desc`}>{tTasks('descriptionLabel')}</label>
-        <textarea id={`${baseId}-desc`} className="ui-textarea" rows={6} {...register('description')} />
+        <textarea id={`${baseId}-desc`} className="ui-textarea" rows={6} {...ctrl.register('description')} />
       </div>
       <div className="task-form-two-col">
-        <TaskPrioritySelect value={priority} onChange={(next) => setValue('priority', next)} />
-        <TaskDueDateInput value={dueAtInput} onChange={(next) => setValue('dueAtInput', next)} />
+        <TaskPrioritySelect value={priority} onChange={(next) => ctrl.setValue('priority', next)} />
+        <TaskDueDateInput value={dueAtInput} onChange={(next) => ctrl.setValue('dueAtInput', next)} />
       </div>
       <div className="task-section-actions">
-        <button type="submit" className="ui-btn primary" disabled={updateMutation.isPending}>
-          {updateMutation.isPending ? tTasks('savingDetails') : tTasks('saveDetails')}
+        <button type="submit" className="ui-btn primary" disabled={ctrl.updateMutation.isPending}>
+          {ctrl.updateMutation.isPending ? tTasks('savingDetails') : tTasks('saveDetails')}
         </button>
       </div>
     </form>
@@ -153,6 +168,7 @@ function useTaskAssigneesController(task: TaskDto) {
   const departmentsQuery = useTaskDepartmentsQuery(true);
   const membersQuery = useTaskAssigneeMembersQuery(canViewMembers);
   const assigneesMutation = useReplaceTaskAssigneesMutation();
+  const showUndoToast = useUndoTaskActionToast();
 
   const handleSaveAssignees = () => {
     const payload = buildReplaceTaskAssigneesPayload({
@@ -165,7 +181,15 @@ function useTaskAssigneesController(task: TaskDto) {
     });
     assigneesMutation.mutate(
       { id: task.id, payload },
-      { onSuccess: () => toast.success(tTasks('departmentsUpdatedToast')) }
+      {
+        onSuccess: (data) =>
+          showUndoToast({
+            message: tTasks('departmentsUpdatedToast'),
+            taskId: data.task.id,
+            boardId: data.task.boardId,
+            eventId: data.eventId,
+          }),
+      }
     );
   };
 
@@ -228,10 +252,19 @@ export function TaskDeleteSection({ task, onDeleted }: { task: TaskDto; onDelete
   const tCommon = useTranslations('common');
   const [confirming, setConfirming] = useState(false);
   const deleteMutation = useDeleteTaskMutation();
+  const showUndoToast = useUndoTaskActionToast();
 
   const handleConfirm = () => {
     deleteMutation.mutate(task.id, {
-      onSuccess: () => { toast.success(tTasks('deletedToast')); onDeleted(); },
+      onSuccess: (data) => {
+        showUndoToast({
+          message: tTasks('deletedToast'),
+          taskId: data.task.id,
+          boardId: data.task.boardId,
+          eventId: data.eventId,
+        });
+        onDeleted();
+      },
     });
   };
 

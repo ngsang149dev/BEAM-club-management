@@ -478,7 +478,7 @@
 
 ---
 
-## Epic E7A — Lịch sử hoạt động `task_events`, Hoàn tác (Undo) & Thùng rác theo Board (`FR-60`, `FR-61`, `FR-62`) *(Chờ chủ dự án duyệt danh sách item)*
+## Epic E7A — Lịch sử hoạt động `task_events`, Hoàn tác (Undo) & Thùng rác theo Board (`FR-60`, `FR-61`, `FR-62`) *(Done — chờ chủ dự án duyệt merge `main`)*
 
 ### E7A-01
 - **ID:** `E7A-01`
@@ -495,7 +495,7 @@
 - **Kiểm thử bắt buộc:** Unit test Command Registry & service (đủ từng loại sự kiện, `400`, `403`, `404`, `409` conflict + `force=true`, 0 PII) & integration test PostgreSQL trên `beam_test` (cả append-only trigger `task_events` `AC-22` và `/boards/{id}/trash` `WQ-17`).
 - **Ngoài phạm vi:** Sửa/xóa `task_events` (bị khóa), xóa vĩnh viễn ngoài Archive (`CR-04`), sửa `docs/openapi.yaml`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `Done` *(chờ chủ dự án duyệt merge `main`; `E7A-01` unit `task-events-policy-service.test.ts` + integration PostgreSQL `task-events-revert-trash-routes.test.ts` xanh)*
 
 ### E7A-02
 - **ID:** `E7A-02`
@@ -513,7 +513,7 @@
 - **Kiểm thử bắt buộc:** Unit test tab Lịch sử, formatter loại sự kiện `vi`/`en`, hộp thoại xung đột `409`, toast Hoàn tác, kiểm tra `i18n-parity`.
 - **Ngoài phạm vi:** Đổi API, sửa mã backend `src/server/*`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `Done` *(chờ chủ dự án duyệt merge `main`; `E7A-02` tab Lịch sử `S05` + toast Hoàn tác `10s` + modal `409` + Thùng rác `S04` + unit `task-history-undo.test.tsx`, `i18n` `vi`/`en` xanh)*
 
 ### E7A-03
 - **ID:** `E7A-03`
@@ -527,4 +527,4 @@
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `Done` *(chờ chủ dự án duyệt merge `main`; vượt `8/8` cổng CI: `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `326/1584`, `55` unit / `289` test, `17` integration / `29` test, `next build` `38/38` route, `42/42` Chrome E2E `2.7m` gồm `task-history-undo.spec.ts` `4/4`, và `qa-reviewer` ngữ cảnh sạch `6A.8`/`§7`/`§8` đạt `VERDICT: PASS` với `0` Blocker, `0` Major)*

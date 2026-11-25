@@ -1,9 +1,9 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
 import { usePermissions } from '@/features/shared/permissions/can';
+import { useUndoTaskActionToast } from '../hooks/useTaskEvents';
 import { useUpdateTaskHiddenMutation, type TaskDto } from '../hooks/useTasks';
 import { TaskErrorBanner } from './TaskFormFields';
 
@@ -75,6 +75,7 @@ export function TaskHiddenSection({
   const { isAdmin } = usePermissions();
   const meQuery = useMeQuery(true);
   const hiddenMutation = useUpdateTaskHiddenMutation(task.boardId);
+  const showUndoToast = useUndoTaskActionToast();
 
   if (!canToggleTaskHidden({ isAdmin, creatorId: task.creator.id, currentUserId: meQuery.data?.profile.id })) {
     return null;
@@ -85,7 +86,15 @@ export function TaskHiddenSection({
     const nextHidden = !task.isHidden;
     hiddenMutation.mutate(
       { id: task.id, payload: { isHidden: nextHidden, version: task.version } },
-      { onSuccess: () => toast.success(nextHidden ? tTasks('hiddenEnabledToast') : tTasks('hiddenDisabledToast')) },
+      {
+        onSuccess: (data) =>
+          showUndoToast({
+            message: nextHidden ? tTasks('hiddenEnabledToast') : tTasks('hiddenDisabledToast'),
+            taskId: data.task.id,
+            boardId: data.task.boardId,
+            eventId: data.eventId,
+          }),
+      },
     );
   };
 

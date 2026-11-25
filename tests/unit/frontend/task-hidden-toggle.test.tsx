@@ -11,6 +11,10 @@ const tasksHooksMock = vi.hoisted(() => ({
   useUpdateTaskHiddenMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
 }));
 
+const taskEventsHooksMock = vi.hoisted(() => ({
+  useUndoTaskActionToast: vi.fn(() => vi.fn()),
+}));
+
 const authHooksMock = vi.hoisted(() => ({
   useMeQuery: vi.fn(),
 }));
@@ -20,6 +24,13 @@ vi.mock('@/features/tasks/hooks/useTasks', async () => {
     '@/features/tasks/hooks/useTasks'
   );
   return { ...actual, ...tasksHooksMock };
+});
+
+vi.mock('@/features/tasks/hooks/useTaskEvents', async () => {
+  const actual = await vi.importActual<typeof import('@/features/tasks/hooks/useTaskEvents')>(
+    '@/features/tasks/hooks/useTaskEvents'
+  );
+  return { ...actual, ...taskEventsHooksMock };
 });
 
 vi.mock('@/features/auth/hooks/useAuth', () => authHooksMock);
@@ -72,6 +83,7 @@ function renderWithIntl(
 describe('TaskHiddenSection (E7-02)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    taskEventsHooksMock.useUndoTaskActionToast.mockReturnValue(vi.fn());
     authHooksMock.useMeQuery.mockReturnValue({ data: { profile: { id: 'u-other', departments: [] } } });
     tasksHooksMock.useUpdateTaskHiddenMutation.mockReturnValue({
       mutate: vi.fn(),

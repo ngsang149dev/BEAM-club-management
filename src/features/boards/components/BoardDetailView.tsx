@@ -157,6 +157,7 @@ function BoardDetailContent({
         visibleTaskCount={board.visibleTaskCount}
         overdueTaskCount={board.overdueTaskCount}
         onAddColumn={() => { ctrl.createColMutation.reset(); ctrl.setModal({ kind: 'createColumn' }); }}
+        onOpenTrash={() => ctrl.setModal({ kind: 'boardTrash' })}
       />
       <BoardFilterBar
         filters={ctrl.filterState.filters}
@@ -173,6 +174,8 @@ function BoardDetailContent({
       <BoardKanbanWorkspace board={board} ctrl={ctrl} />
       <BoardDetailModals
         boardId={board.id}
+        boardName={board.name}
+        columns={view.sortedColumns}
         modal={ctrl.modal}
         isUpserting={view.isUpserting}
         upsertError={view.upsertError}

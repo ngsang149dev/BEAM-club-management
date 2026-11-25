@@ -50,6 +50,11 @@ import {
   PermissionsService,
 } from '@/server/modules/permissions';
 import {
+  DrizzleTaskEventsRepository,
+  type TaskEventsRepository,
+  TaskEventsService,
+} from '@/server/modules/task-events';
+import {
   DrizzleTasksRepository,
   type TasksRepository,
   TasksService,
@@ -76,6 +81,8 @@ export interface ServiceOverrides {
   readonly permissionsService?: PermissionsService;
   readonly tasksRepo?: TasksRepository;
   readonly tasksService?: TasksService;
+  readonly taskEventsRepo?: TaskEventsRepository;
+  readonly taskEventsService?: TaskEventsService;
   readonly commentsRepo?: CommentsRepository;
   readonly commentsService?: CommentsService;
   readonly notificationsRepo?: NotificationsRepository;
@@ -218,6 +225,22 @@ function buildBoardsService(
   );
 }
 
+function buildTaskEventsService(
+  infra: SharedInfraContext,
+  overrides: ServiceOverrides,
+) {
+  return (
+    overrides.taskEventsService ??
+    new TaskEventsService({
+      taskEventsRepo:
+        overrides.taskEventsRepo ?? new DrizzleTaskEventsRepository(infra.db),
+      transactionRunner: infra.transactionRunner,
+      clock: infra.clock,
+      logger: infra.logger,
+    })
+  );
+}
+
 export function buildWorkstreamServices(
   infra: SharedInfraContext,
   overrides: ServiceOverrides,
@@ -245,6 +268,7 @@ export function buildWorkstreamServices(
     });
   return {
     tasksService,
+    taskEventsService: buildTaskEventsService(infra, overrides),
     commentsService,
     notificationsService,
     boardsService: buildBoardsService(infra, overrides, tasksRepo),

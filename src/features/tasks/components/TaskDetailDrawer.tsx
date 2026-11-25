@@ -21,6 +21,7 @@ import {
   TaskEditFormSection,
 } from './TaskDrawerSections';
 import { canToggleTaskHidden, TaskHiddenSection } from './TaskHiddenSection';
+import { TaskHistorySection } from './TaskHistorySection';
 import {
   MemberInlineName,
   TaskAssigneeChips,
@@ -148,6 +149,44 @@ function TaskDrawerLoaded({
   );
 }
 
+function TaskDrawerActiveTabPanel({
+  activeTab,
+  task,
+  tabIds,
+  panelIds,
+  onReload,
+  onClose,
+  onOpenComments,
+}: {
+  readonly activeTab: DrawerTab;
+  readonly task: TaskDto;
+  readonly tabIds: { details: string; comments: string; history: string };
+  readonly panelIds: { details: string; comments: string; history: string };
+  readonly onReload: () => void;
+  readonly onClose: () => void;
+  readonly onOpenComments: () => void;
+}) {
+  if (activeTab === 'details') {
+    return (
+      <div id={panelIds.details} role="tabpanel" aria-labelledby={tabIds.details} className="ui-drawer-body task-drawer-tabpanel">
+        <TaskDrawerLoaded key={`${task.id}-v${task.version}`} task={task} onReload={onReload} onClose={onClose} onOpenComments={onOpenComments} />
+      </div>
+    );
+  }
+  if (activeTab === 'comments') {
+    return (
+      <div id={panelIds.comments} role="tabpanel" aria-labelledby={tabIds.comments} className="task-drawer-comments-panel">
+        <TaskCommentsSection taskId={task.id} boardId={task.boardId} commentCount={task.commentCount} />
+      </div>
+    );
+  }
+  return (
+    <div id={panelIds.history} role="tabpanel" aria-labelledby={tabIds.history} className="task-drawer-history-panel">
+      <TaskHistorySection task={task} onTaskDeleted={onClose} />
+    </div>
+  );
+}
+
 function TaskDrawerTabsShell({
   task,
   onReload,
@@ -158,51 +197,31 @@ function TaskDrawerTabsShell({
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<DrawerTab>('details');
-  const detailsTabId = useId();
-  const commentsTabId = useId();
-  const detailsPanelId = useId();
-  const commentsPanelId = useId();
+  const tabIds = { details: useId(), comments: useId(), history: useId() };
+  const panelIds = { details: useId(), comments: useId(), history: useId() };
 
   return (
     <>
       <TaskDrawerTabBar
         activeTab={activeTab}
         commentCount={task.commentCount}
-        detailsTabId={detailsTabId}
-        commentsTabId={commentsTabId}
-        detailsPanelId={detailsPanelId}
-        commentsPanelId={commentsPanelId}
+        detailsTabId={tabIds.details}
+        commentsTabId={tabIds.comments}
+        historyTabId={tabIds.history}
+        detailsPanelId={panelIds.details}
+        commentsPanelId={panelIds.comments}
+        historyPanelId={panelIds.history}
         onSelect={setActiveTab}
       />
-      {activeTab === 'details' ? (
-        <div
-          id={detailsPanelId}
-          role="tabpanel"
-          aria-labelledby={detailsTabId}
-          className="ui-drawer-body task-drawer-tabpanel"
-        >
-          <TaskDrawerLoaded
-            key={`${task.id}-v${task.version}`}
-            task={task}
-            onReload={onReload}
-            onClose={onClose}
-            onOpenComments={() => setActiveTab('comments')}
-          />
-        </div>
-      ) : (
-        <div
-          id={commentsPanelId}
-          role="tabpanel"
-          aria-labelledby={commentsTabId}
-          className="task-drawer-comments-panel"
-        >
-          <TaskCommentsSection
-            taskId={task.id}
-            boardId={task.boardId}
-            commentCount={task.commentCount}
-          />
-        </div>
-      )}
+      <TaskDrawerActiveTabPanel
+        activeTab={activeTab}
+        task={task}
+        tabIds={tabIds}
+        panelIds={panelIds}
+        onReload={onReload}
+        onClose={onClose}
+        onOpenComments={() => setActiveTab('comments')}
+      />
     </>
   );
 }

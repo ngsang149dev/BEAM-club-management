@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { describeTaskError } from '@/features/tasks/error-mapping';
+import { useUndoTaskActionToast } from '@/features/tasks/hooks/useTaskEvents';
 import {
   useBoardFilteredTasksQuery,
   useMoveTaskMutation,
@@ -95,6 +96,7 @@ function useBoardColumnActions(
 export function useBoardDetailController(boardId: string, initialTaskId: string | null) {
   const tTasks = useTranslations('tasks');
   const tErr = useTranslations('errors');
+  const showUndoToast = useUndoTaskActionToast();
   const { isAdmin, can } = usePermissions();
   const canViewMembers = isAdmin || can('member.view');
 
@@ -139,7 +141,13 @@ export function useBoardDetailController(boardId: string, initialTaskId: string 
       moveTaskMutation.mutate(
         { id: task.id, payload: { columnId: targetColumn.id, version: task.version } },
         {
-          onSuccess: () => toast.success(tTasks('movedToColumnToast', { column: targetColumn.name })),
+          onSuccess: (data) =>
+            showUndoToast({
+              message: tTasks('movedToColumnToast', { column: targetColumn.name }),
+              taskId: data.task.id,
+              boardId: data.task.boardId,
+              eventId: data.eventId,
+            }),
           onError: (err) => toast.error(tErr(describeTaskError(err)?.key ?? 'unknown')),
         }
       );

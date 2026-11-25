@@ -48,8 +48,11 @@ export {
   visibleTaskSqlCondition,
 } from './repository';
 export {
+  assembleTaskRecords,
   buildUserSummariesMap,
   type RawMemberDepartmentRow,
+  type RawTaskDepartmentRow,
+  type RawTaskRow,
   type RawUserProfileRow,
 } from './repository-helpers';
 export { TasksService, type TasksServiceDeps } from './service';

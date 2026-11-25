@@ -174,6 +174,23 @@ export async function parseJsonBody(request: Request): Promise<unknown> {
   }
 }
 
+export async function parseOptionalJsonBody(request: Request): Promise<unknown> {
+  let raw: string;
+  try {
+    raw = await request.text();
+  } catch {
+    throw badRequest('errors.badRequest', {}, 'INVALID_JSON');
+  }
+  if (raw.trim() === '') {
+    return {};
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw badRequest('errors.badRequest', {}, 'INVALID_JSON');
+  }
+}
+
 export interface ApiAuthenticator {
   readonly authService: {
     authenticateSession(
