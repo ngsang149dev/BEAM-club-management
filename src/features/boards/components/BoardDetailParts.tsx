@@ -1,0 +1,143 @@
+'use client';
+
+import Link from 'next/link';
+import { DragOverlay } from '@dnd-kit/core';
+import { useTranslations } from 'next-intl';
+import { ErrorState } from '@/components/ErrorState';
+import { Can } from '@/features/shared/permissions/can';
+import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
+import { describeBoardError } from '../error-mapping';
+import type { useBoardDnd } from '../hooks/useBoardDnd';
+import type { BoardDetailDto, ColumnDto } from '../hooks/useBoards';
+import { BoardColumnOverlayPreview } from './BoardColumnLane';
+import { BoardTaskCardView } from './BoardTaskCard';
+import { ColumnDeleteModal, ColumnUpsertModal } from './ColumnModals';
+
+export type BoardDetailModalState =
+  | { kind: 'closed' }
+  | { kind: 'createColumn' }
+  | { kind: 'renameColumn'; column: ColumnDto }
+  | { kind: 'deleteColumn'; column: ColumnDto; visibleTaskCount: number }
+  | { kind: 'createTask'; column: ColumnDto };
+
+export interface BoardDetailModalsProps {
+  readonly boardId: string;
+  readonly modal: BoardDetailModalState;
+  readonly isUpserting: boolean;
+  readonly upsertError: unknown;
+  readonly isDeleting: boolean;
+  readonly deleteError: unknown;
+  readonly onClose: () => void;
+  readonly onUpsert: (values: { name: string }) => void;
+  readonly onDelete: () => void;
+}
+
+export function BoardDetailModals(props: BoardDetailModalsProps) {
+  const { modal } = props;
+  if (modal.kind === 'createColumn' || modal.kind === 'renameColumn') {
+    return (
+      <ColumnUpsertModal
+        key={modal.kind === 'renameColumn' ? modal.column.id : 'create-col'}
+        mode={modal.kind === 'createColumn' ? 'create' : 'rename'}
+        column={modal.kind === 'renameColumn' ? modal.column : undefined}
+        isSubmitting={props.isUpserting}
+        error={props.upsertError}
+        onClose={props.onClose}
+        onSubmit={props.onUpsert}
+      />
+    );
+  }
+  if (modal.kind === 'deleteColumn') {
+    return (
+      <ColumnDeleteModal
+        column={modal.column}
+        visibleTaskCount={modal.visibleTaskCount}
+        isDeleting={props.isDeleting}
+        error={props.deleteError}
+        onClose={props.onClose}
+        onConfirm={props.onDelete}
+      />
+    );
+  }
+  if (modal.kind === 'createTask') {
+    return (
+      <CreateTaskModal
+        boardId={props.boardId}
+        columnId={modal.column.id}
+        columnName={modal.column.name}
+        onClose={props.onClose}
+      />
+    );
+  }
+  return null;
+}
+
+export function BoardDetailErrorState({ error }: { readonly error: unknown }) {
+  const t = useTranslations('boards');
+  const tErr = useTranslations('errors');
+  const err = describeBoardError(error);
+  const isNotFound = err?.key === 'notFound';
+
+  return (
+    <ErrorState
+      variant={isNotFound ? '404' : '500'}
+      code={isNotFound ? tErr('404.code') : undefined}
+      title={isNotFound ? tErr('404.title') : t('detailLoadError')}
+      description={isNotFound ? tErr('404.description') : tErr(err?.key ?? 'unknown')}
+      requestId={err?.requestId}
+      requestIdLabel={tErr('requestIdLabel')}
+      actions={<Link href="/boards" className="ui-btn primary">{t('backToBoards')}</Link>}
+    />
+  );
+}
+
+export function BoardDetailHeader({
+  name,
+  departmentName,
+  archived,
+  onAddColumn,
+}: {
+  readonly name: string;
+  readonly departmentName: string | null;
+  readonly archived: boolean;
+  readonly onAddColumn: () => void;
+}) {
+  const t = useTranslations('boards');
+
+  return (
+    <div className="board-detail-header">
+      <div className="board-detail-title-group">
+        <Link href="/boards" className="ui-btn ghost is-sm">← {t('backToBoards')}</Link>
+        <h1 className="board-detail-heading">{name}</h1>
+        <span className="ui-chip">{departmentName ?? t('clubWideLabel')}</span>
+        {archived ? <span className="status-pill is-inactive">{t('archivedBadge')}</span> : null}
+      </div>
+      <Can permission="board.update">
+        <button type="button" className="ui-btn primary is-sm" onClick={onAddColumn}>
+          + {t('addColumn')}
+        </button>
+      </Can>
+    </div>
+  );
+}
+
+export function BoardDndOverlay({
+  board,
+  dnd,
+}: {
+  readonly board: BoardDetailDto;
+  readonly dnd: ReturnType<typeof useBoardDnd>;
+}) {
+  const activeColTaskCount = dnd.activeColumn
+    ? board.tasks.filter((task) => task.columnId === dnd.activeColumn?.id).length
+    : 0;
+
+  return (
+    <DragOverlay>
+      {dnd.activeTask ? <BoardTaskCardView task={dnd.activeTask} isOverlay /> : null}
+      {dnd.activeColumn ? (
+        <BoardColumnOverlayPreview column={dnd.activeColumn} taskCount={activeColTaskCount} />
+      ) : null}
+    </DragOverlay>
+  );
+}

@@ -130,6 +130,7 @@ export function buildArchiveUserSummaryMap(
 export function assembleTaskRecords(params: {
   readonly taskRows: readonly RawTaskRowBase[];
   readonly assigneeRows: ReadonlyArray<{ readonly taskId: string; readonly userId: string }>;
+  readonly departmentRows: ReadonlyArray<{ readonly taskId: string; readonly id: string; readonly name: string }>;
   readonly commentCountRows: ReadonlyArray<{ readonly taskId: string; readonly total: number }>;
   readonly userMap: ReadonlyMap<string, ArchiveUserSummaryRecord>;
 }): TaskRecord[] {
@@ -142,19 +143,19 @@ export function assembleTaskRecords(params: {
     if (list) list.push(user);
     else assigneeMap.set(row.taskId, [user]);
   }
+  const deptMap = new Map<string, TaskDepartmentSummaryRecord[]>();
+  for (const row of params.departmentRows) {
+    const list = deptMap.get(row.taskId);
+    const dept = { id: row.id, name: row.name };
+    if (list) list.push(dept);
+    else deptMap.set(row.taskId, [dept]);
+  }
   return params.taskRows.map((row) => {
     const creator = params.userMap.get(row.createdBy);
     if (!creator) throw new Error('Missing creator profile');
-    const assignees = (assigneeMap.get(row.id) ?? []).sort(
-      (a, b) => a.fullName.localeCompare(b.fullName) || a.id.localeCompare(b.id),
-    );
-    return {
-      ...row,
-      priority: toPriority(row.priority),
-      assignees,
-      creator,
-      commentCount: countMap.get(row.id) ?? 0,
-    };
+    const assignees = (assigneeMap.get(row.id) ?? []).sort((a, b) => a.fullName.localeCompare(b.fullName) || a.id.localeCompare(b.id));
+    const assignedDepartments = (deptMap.get(row.id) ?? []).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    return { ...row, priority: toPriority(row.priority), assignees, assignedDepartments, creator, commentCount: countMap.get(row.id) ?? 0 };
   });
 }
 

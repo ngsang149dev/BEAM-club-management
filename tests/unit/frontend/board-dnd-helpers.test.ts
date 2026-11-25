@@ -53,6 +53,7 @@ function makeTask(
       leftAt: null,
       departments: [],
     })),
+    assignedDepartments: [],
     creator: CREATOR,
     commentCount: 0,
     createdAt: '2026-11-20T00:00:00Z',
@@ -68,8 +69,12 @@ describe('board-dnd-helpers', () => {
     expect(parseDragId('raw-id')).toBeNull();
   });
 
-  it('enforces permission and assignee rules in canDragTask', () => {
+  it('enforces permission, assignee, and department rules in canDragTask', () => {
     const task = makeTask('t-1', 'c-1', 1000, { assigneeIds: ['u-alice'] });
+    const deptTask: TaskDto = {
+      ...makeTask('t-2', 'c-1', 2000),
+      assignedDepartments: [{ id: 'd-media', name: 'Truyền thông' }],
+    };
     const allowNone = () => false;
     const allowPerm = (target: PermissionCode) => (perm: PermissionCode) => perm === target;
 
@@ -78,6 +83,24 @@ describe('board-dnd-helpers', () => {
     expect(canDragTask({ task, isAdmin: false, can: allowPerm('task.update_assigned'), currentUserId: 'u-alice' })).toBe(true);
     expect(canDragTask({ task, isAdmin: false, can: allowPerm('task.update_assigned'), currentUserId: 'u-bob' })).toBe(false);
     expect(canDragTask({ task, isAdmin: false, can: allowPerm('member.view'), currentUserId: 'u-alice' })).toBe(false);
+    expect(
+      canDragTask({
+        task: deptTask,
+        isAdmin: false,
+        can: allowPerm('task.update_assigned'),
+        currentUserId: 'u-bob',
+        currentDepartmentIds: ['d-media'],
+      })
+    ).toBe(true);
+    expect(
+      canDragTask({
+        task: deptTask,
+        isAdmin: false,
+        can: allowPerm('task.update_assigned'),
+        currentUserId: 'u-bob',
+        currentDepartmentIds: ['d-other'],
+      })
+    ).toBe(false);
   });
 
   it('computes beforeId/afterId payloads across empty, top, middle, bottom, and same-column moves', () => {

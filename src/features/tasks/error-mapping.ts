@@ -3,6 +3,7 @@ import { isApiClientError } from '@/features/shared/api/client';
 export type TaskErrorKey =
   | 'taskVersionConflict'
   | 'invalidAssigneeIds'
+  | 'invalidDepartmentIds'
   | 'boardColumnMismatch'
   | 'invalidCursor'
   | 'unauthorized'
@@ -21,6 +22,7 @@ export interface TaskErrorDescriptor {
 const CODE_TO_KEY: Record<string, TaskErrorKey> = {
   TASK_VERSION_CONFLICT: 'taskVersionConflict',
   INVALID_ASSIGNEE_IDS: 'invalidAssigneeIds',
+  INVALID_DEPARTMENT_IDS: 'invalidDepartmentIds',
   BOARD_COLUMN_MISMATCH: 'boardColumnMismatch',
   INVALID_CURSOR: 'invalidCursor',
   UNAUTHORIZED: 'unauthorized',

@@ -15,6 +15,7 @@ export interface TaskVisibilitySubject {
   readonly isHidden: boolean;
   readonly createdBy: string;
   readonly assigneeIds: readonly string[];
+  readonly assignedDepartmentIds?: readonly string[];
 }
 
 export interface TaskListCursor {
@@ -53,10 +54,21 @@ export function assertActorActive(actor: AuthActor): void {
   }
 }
 
+export function isActorAssignedToTask(
+  actor: AuthActor,
+  task: TaskVisibilitySubject,
+): boolean {
+  if (task.assigneeIds.includes(actor.id)) return true;
+  const actorDepts = actor.departmentIds ?? [];
+  const taskDepts = task.assignedDepartmentIds ?? [];
+  if (actorDepts.length === 0 || taskDepts.length === 0) return false;
+  return taskDepts.some((deptId) => actorDepts.includes(deptId));
+}
+
 export function canViewTask(actor: AuthActor, task: TaskVisibilitySubject): boolean {
   if (!actor.isActive) return false;
   if (actor.isAdmin || !task.isHidden) return true;
-  return task.createdBy === actor.id || task.assigneeIds.includes(actor.id);
+  return task.createdBy === actor.id || isActorAssignedToTask(actor, task);
 }
 
 export function assertCanViewTask(actor: AuthActor, task: TaskVisibilitySubject): void {
@@ -69,7 +81,7 @@ export function assertCanViewTask(actor: AuthActor, task: TaskVisibilitySubject)
 export function canEditTask(actor: AuthActor, task: TaskVisibilitySubject): boolean {
   if (!canViewTask(actor, task)) return false;
   if (hasPermission(actor, 'task.update_any')) return true;
-  return hasPermission(actor, 'task.update_assigned') && task.assigneeIds.includes(actor.id);
+  return hasPermission(actor, 'task.update_assigned') && isActorAssignedToTask(actor, task);
 }
 
 export function assertCanEditTask(actor: AuthActor, task: TaskVisibilitySubject): void {

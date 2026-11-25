@@ -13,11 +13,17 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function BoardDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ task?: string | string[] }>;
 }) {
-  const { id } = await params;
+  const [{ id }, resolvedSearch] = await Promise.all([params, searchParams]);
   const tBoards = await getTranslations('boards');
+  const initialTaskId =
+    typeof resolvedSearch.task === 'string' && resolvedSearch.task.trim().length > 0
+      ? resolvedSearch.task.trim()
+      : null;
 
   return (
     <AuthGuard
@@ -25,7 +31,7 @@ export default async function BoardDetailPage({
       breadcrumb={tBoards('kicker')}
       title={tBoards('title')}
     >
-      <BoardDetailView boardId={id} />
+      <BoardDetailView boardId={id} initialTaskId={initialTaskId} />
     </AuthGuard>
   );
 }

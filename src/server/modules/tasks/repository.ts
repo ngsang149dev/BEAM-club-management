@@ -1,29 +1,35 @@
 import { and, asc, count, desc, eq, exists, gt, gte, ilike, inArray, isNotNull, isNull, lt, ne, notExists, or, type SQL, sql } from 'drizzle-orm';
-import { boards, columns, comments, departments, memberDepartments, profiles, taskAssignees, taskEvents, tasks } from '@db/schema';
+import { boards, columns, comments, departments, memberDepartments, profiles, taskAssignees, taskDepartments, taskEvents, tasks } from '@db/schema';
 import { badRequest, conflict, notFound } from '@/lib/errors';
-import type { TaskDueStatus, TaskPriority, TaskSortBy, TaskSortOrder } from '@/lib/tasks';
+import type { TaskDueStatus, TaskSortBy, TaskSortOrder } from '@/lib/tasks';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { escapeLikePattern, type TaskListCursor } from './policy';
+import { assembleTaskRecords, buildAssigneesDiffChanges, buildUserSummariesMap, groupTaskIdStrings, type RawTaskRow } from './repository-helpers';
 import { executeMoveTaskWithEvent, type RawMoveSibling } from './repository-move';
-import type { CreateTaskRepoParams, ListMyTasksParams, ListVisibleTasksParams, MoveTaskRepoParams, ReplaceAssigneesRepoParams, SoftDeleteTaskRepoParams, TaskDepartmentSummaryRecord, TaskMemberSummaryRecord, TaskMutationResult, TaskOptionalEventMutationResult, TaskRecord, TasksRepository, UpdateTaskRepoParams } from './types';
-
-type TaskRow = typeof tasks.$inferSelect;
+import type { CreateTaskRepoParams, ListMyTasksParams, ListVisibleTasksParams, MoveTaskRepoParams, ReplaceAssigneesRepoParams, SoftDeleteTaskRepoParams, TaskMemberSummaryRecord, TaskMutationResult, TaskOptionalEventMutationResult, TaskRecord, TasksRepository, UpdateTaskRepoParams } from './types';
 
 function boardNotPurgedSql(db: DbExecutor): SQL {
   return exists(db.select({ one: sql`1` }).from(boards).where(and(eq(boards.id, tasks.boardId), isNull(boards.purgedAt))));
+}
+
+function assignedDepartmentExistsSql(db: DbExecutor, departmentIds: readonly string[]): SQL {
+  return exists(db.select({ one: sql`1` }).from(taskDepartments).where(and(eq(taskDepartments.taskId, tasks.id), inArray(taskDepartments.departmentId, [...departmentIds]))));
 }
 
 export function visibleTaskSqlCondition(db: DbExecutor, actor: AuthActor): SQL {
   if (!actor.isActive) return sql`false`;
   const notDeleted = and(isNull(tasks.deletedAt), isNull(tasks.purgedAt))!;
   if (actor.isAdmin) return notDeleted;
-  const visible = or(
+  const clauses: SQL[] = [
     eq(tasks.isHidden, false),
     eq(tasks.createdBy, actor.id),
     exists(db.select({ one: sql`1` }).from(taskAssignees).where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, actor.id)))),
-  );
+  ];
+  const deptIds = actor.departmentIds ?? [];
+  if (deptIds.length > 0) clauses.push(assignedDepartmentExistsSql(db, deptIds));
+  const visible = or(...clauses);
   return visible ? and(notDeleted, visible) ?? notDeleted : notDeleted;
 }
 
@@ -68,7 +74,7 @@ function buildSearchCond(q: string | undefined): SQL | undefined {
   return or(ilike(tasks.title, pattern), ilike(tasks.description, pattern));
 }
 
-function appendCommonTaskFilters(filters: SQL[], params: ListVisibleTasksParams): void {
+function appendCommonVisibleFilters(filters: SQL[], params: ListVisibleTasksParams): void {
   if (params.dueStatus) {
     const dueCond = buildDueStatusCondition(params.dueStatus, params.now);
     if (dueCond) filters.push(dueCond);
@@ -88,35 +94,40 @@ function buildVisibleTaskFilters(db: DbExecutor, actor: AuthActor, params: ListV
   if (params.assigneeId) {
     filters.push(exists(db.select({ one: sql`1` }).from(taskAssignees).where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, params.assigneeId)))));
   }
+  if (params.departmentId) filters.push(assignedDepartmentExistsSql(db, [params.departmentId]));
   if (params.priority !== undefined) filters.push(eq(tasks.priority, params.priority));
-  appendCommonTaskFilters(filters, params);
+  appendCommonVisibleFilters(filters, params);
   return and(...filters) ?? sql`true`;
 }
 
+function buildMyAssignedCondition(db: DbExecutor, actor: AuthActor): SQL {
+  const directAssign = exists(db.select({ one: sql`1` }).from(taskAssignees).where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, actor.id))));
+  const deptIds = actor.departmentIds ?? [];
+  if (deptIds.length === 0) return directAssign;
+  return or(directAssign, assignedDepartmentExistsSql(db, deptIds)) ?? directAssign;
+}
+
+function appendMyTasksCursorFilter(filters: SQL[], cursor: ListMyTasksParams['cursor']): void {
+  if (!cursor) return;
+  const { dueAt, priority, id } = cursor;
+  const tie = or(lt(tasks.priority, priority), and(eq(tasks.priority, priority), gt(tasks.id, id)));
+  const cond = dueAt === null ? and(isNull(tasks.dueAt), tie) : or(isNull(tasks.dueAt), gt(tasks.dueAt, dueAt), and(eq(tasks.dueAt, dueAt), tie));
+  if (cond) filters.push(cond);
+}
+
 function buildMyTasksFilters(db: DbExecutor, actor: AuthActor, params: ListMyTasksParams): SQL {
-  const filters: SQL[] = [
-    isNull(tasks.deletedAt),
-    isNull(tasks.purgedAt),
-    boardNotPurgedSql(db),
-    exists(db.select({ one: sql`1` }).from(taskAssignees).where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, actor.id)))),
-  ];
+  const filters: SQL[] = [isNull(tasks.deletedAt), isNull(tasks.purgedAt), boardNotPurgedSql(db), buildMyAssignedCondition(db, actor)];
   if (params.boardId) filters.push(eq(tasks.boardId, params.boardId));
+  if (params.departmentId) filters.push(assignedDepartmentExistsSql(db, [params.departmentId]));
   if (params.priority !== undefined) filters.push(eq(tasks.priority, params.priority));
   const searchCond = buildSearchCond(params.q);
   if (searchCond) filters.push(searchCond);
   if (!params.includeDone) {
     filters.push(notExists(db.select({ one: sql`1` }).from(columns).where(and(eq(columns.id, tasks.columnId), or(sql`lower(btrim(${columns.name})) = 'done'`, eq(columns.orderIndex, sql`(SELECT max(c2.order_index) FROM columns c2 WHERE c2.board_id = ${tasks.boardId})`))))));
   }
-  if (params.cursor) {
-    const { dueAt, priority, id } = params.cursor;
-    const tie = or(lt(tasks.priority, priority), and(eq(tasks.priority, priority), gt(tasks.id, id)));
-    const cond = dueAt === null ? and(isNull(tasks.dueAt), tie) : or(isNull(tasks.dueAt), gt(tasks.dueAt, dueAt), and(eq(tasks.dueAt, dueAt), tie));
-    if (cond) filters.push(cond);
-  }
+  appendMyTasksCursorFilter(filters, params.cursor);
   return and(...filters) ?? sql`true`;
 }
-
-const toTaskPriority = (raw: number): TaskPriority => (raw === 1 || raw === 2 || raw === 3 || raw === 4 ? raw : 2);
 
 export class DrizzleTasksRepository implements TasksRepository {
   constructor(private readonly db: DbExecutor) {}
@@ -150,6 +161,7 @@ export class DrizzleTasksRepository implements TasksRepository {
   async createTaskWithEvent(input: CreateTaskRepoParams, tx: TransactionContext): Promise<TaskMutationResult> {
     await this.assertBoardAndColumnMatch(input.boardId, input.columnId, tx);
     await this.assertAssignableUsers({ nextUserIds: input.assigneeIds }, tx);
+    await this.assertValidDepartments(input.departmentIds, tx);
     const maxPosRows = await tx.select({ maxPos: sql<string | null>`max(${tasks.position})` }).from(tasks).where(and(eq(tasks.columnId, input.columnId), isNull(tasks.deletedAt)));
     const nextPos = String(Number(maxPosRows[0]?.maxPos ?? 0) + 1000);
     const [created] = await tx.insert(tasks).values({
@@ -158,7 +170,8 @@ export class DrizzleTasksRepository implements TasksRepository {
     }).returning();
     if (!created) throw new Error('Failed to insert task');
     if (input.assigneeIds.length > 0) await tx.insert(taskAssignees).values(input.assigneeIds.map((userId) => ({ taskId: created.id, userId, createdAt: input.now })));
-    const eventId = await this.insertTaskEvent({ taskId: created.id, boardId: input.boardId, actorId: input.actorId, type: 'task.created', changes: { column_id: input.columnId, priority: input.priority, is_hidden: input.isHidden, assignee_ids: input.assigneeIds }, now: input.now }, tx);
+    if (input.departmentIds.length > 0) await tx.insert(taskDepartments).values(input.departmentIds.map((departmentId) => ({ taskId: created.id, departmentId, createdAt: input.now })));
+    const eventId = await this.insertTaskEvent({ taskId: created.id, boardId: input.boardId, actorId: input.actorId, type: 'task.created', changes: { column_id: input.columnId, priority: input.priority, is_hidden: input.isHidden, assignee_ids: input.assigneeIds, department_ids: input.departmentIds }, now: input.now }, tx);
     return { task: (await this.hydrateTasks(tx, [created]))[0]!, eventId };
   }
 
@@ -184,13 +197,14 @@ export class DrizzleTasksRepository implements TasksRepository {
   }
 
   async replaceAssigneesWithEvent(input: ReplaceAssigneesRepoParams, tx: TransactionContext): Promise<TaskMutationResult> {
-    await this.assertAssignableUsers({ nextUserIds: input.nextAssigneeIds, preservedUserIds: input.currentAssigneeIds }, tx);
+    const diff = buildAssigneesDiffChanges(input);
+    if (diff.assigneesChanged) await this.assertAssignableUsers({ nextUserIds: input.nextAssigneeIds, preservedUserIds: input.currentAssigneeIds }, tx);
+    if (diff.departmentsChanged) await this.assertValidDepartments(input.nextDepartmentIds, tx);
     const cond = input.expectedVersion !== undefined ? and(eq(tasks.id, input.id), eq(tasks.version, input.expectedVersion), isNull(tasks.deletedAt)) : and(eq(tasks.id, input.id), isNull(tasks.deletedAt));
     const [updated] = await tx.update(tasks).set({ version: sql`${tasks.version} + 1`, updatedAt: input.now }).where(cond).returning();
     if (!updated) throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
-    await tx.delete(taskAssignees).where(eq(taskAssignees.taskId, input.id));
-    if (input.nextAssigneeIds.length > 0) await tx.insert(taskAssignees).values(input.nextAssigneeIds.map((userId) => ({ taskId: input.id, userId, createdAt: input.now })));
-    const eventId = await this.insertTaskEvent({ taskId: input.id, boardId: input.boardId, actorId: input.actorId, type: 'task.assignees_changed', changes: { assignee_ids: { from: input.currentAssigneeIds, to: input.nextAssigneeIds } }, now: input.now }, tx);
+    await this.syncTaskAssignments(input, diff, tx);
+    const eventId = await this.insertTaskEvent({ taskId: input.id, boardId: input.boardId, actorId: input.actorId, type: 'task.assignees_changed', changes: diff.changes, now: input.now }, tx);
     return { task: (await this.hydrateTasks(tx, [updated]))[0]!, eventId };
   }
 
@@ -199,6 +213,17 @@ export class DrizzleTasksRepository implements TasksRepository {
     if (!updated) throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
     const eventId = await this.insertTaskEvent({ taskId: input.id, boardId: input.boardId, actorId: input.actorId, type: 'task.deleted', changes: { deleted_at: { from: null, to: input.now.toISOString() } }, now: input.now }, tx);
     return { task: (await this.hydrateTasks(tx, [updated]))[0]!, eventId };
+  }
+
+  private async syncTaskAssignments(input: ReplaceAssigneesRepoParams, diff: { readonly assigneesChanged: boolean; readonly departmentsChanged: boolean }, tx: TransactionContext): Promise<void> {
+    if (diff.assigneesChanged) {
+      await tx.delete(taskAssignees).where(eq(taskAssignees.taskId, input.id));
+      if (input.nextAssigneeIds.length > 0) await tx.insert(taskAssignees).values(input.nextAssigneeIds.map((userId) => ({ taskId: input.id, userId, createdAt: input.now })));
+    }
+    if (diff.departmentsChanged) {
+      await tx.delete(taskDepartments).where(eq(taskDepartments.taskId, input.id));
+      if (input.nextDepartmentIds.length > 0) await tx.insert(taskDepartments).values(input.nextDepartmentIds.map((departmentId) => ({ taskId: input.id, departmentId, createdAt: input.now })));
+    }
   }
 
   private async lockColumnForBoard(boardId: string, columnId: string, tx: TransactionContext): Promise<void> {
@@ -217,14 +242,14 @@ export class DrizzleTasksRepository implements TasksRepository {
     const rows = await tx.select({ id: tasks.id, position: tasks.position, isHidden: tasks.isHidden, createdBy: tasks.createdBy }).from(tasks)
       .where(and(eq(tasks.columnId, columnId), isNull(tasks.deletedAt), ne(tasks.id, excludeTaskId))).orderBy(asc(tasks.position), asc(tasks.id));
     if (rows.length === 0) return [];
-    const assignRows = await tx.select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId }).from(taskAssignees).where(inArray(taskAssignees.taskId, rows.map((r) => r.id)));
-    const assignMap = new Map<string, string[]>();
-    for (const a of assignRows) {
-      const list = assignMap.get(a.taskId);
-      if (list) list.push(a.userId);
-      else assignMap.set(a.taskId, [a.userId]);
-    }
-    return rows.map((r) => ({ id: r.id, position: Number(r.position), isHidden: r.isHidden, createdBy: r.createdBy, assigneeIds: assignMap.get(r.id) ?? [] }));
+    const taskIds = rows.map((r) => r.id);
+    const [assignRows, deptRows] = await Promise.all([
+      tx.select({ taskId: taskAssignees.taskId, value: taskAssignees.userId }).from(taskAssignees).where(inArray(taskAssignees.taskId, taskIds)),
+      tx.select({ taskId: taskDepartments.taskId, value: taskDepartments.departmentId }).from(taskDepartments).where(inArray(taskDepartments.taskId, taskIds)),
+    ]);
+    const assignMap = groupTaskIdStrings(assignRows);
+    const deptMap = groupTaskIdStrings(deptRows);
+    return rows.map((r) => ({ id: r.id, position: Number(r.position), isHidden: r.isHidden, createdBy: r.createdBy, assigneeIds: assignMap.get(r.id) ?? [], assignedDepartmentIds: deptMap.get(r.id) ?? [] }));
   }
 
   private async applySiblingPositions(updates: ReadonlyArray<{ readonly id: string; readonly position: number }>, tx: TransactionContext): Promise<void> {
@@ -239,17 +264,18 @@ export class DrizzleTasksRepository implements TasksRepository {
     return { task: (await this.hydrateTasks(tx, [updated]))[0]!, eventId };
   }
 
-  private async assertAssignableUsers(
-    params: { readonly nextUserIds: readonly string[]; readonly preservedUserIds?: readonly string[] },
-    tx: TransactionContext,
-  ): Promise<void> {
+  private async assertAssignableUsers(params: { readonly nextUserIds: readonly string[]; readonly preservedUserIds?: readonly string[] }, tx: TransactionContext): Promise<void> {
     if (params.nextUserIds.length === 0) return;
     const rows = await tx.select({ id: profiles.id, isActive: profiles.isActive }).from(profiles).where(inArray(profiles.id, [...params.nextUserIds]));
     if (rows.length !== params.nextUserIds.length) throw badRequest('errors.invalidAssigneeIds', {}, 'INVALID_ASSIGNEE_IDS');
     const preservedSet = new Set(params.preservedUserIds ?? []);
-    if (rows.some((row) => !row.isActive && !preservedSet.has(row.id))) {
-      throw badRequest('errors.invalidAssigneeIds', {}, 'INVALID_ASSIGNEE_IDS');
-    }
+    if (rows.some((row) => !row.isActive && !preservedSet.has(row.id))) throw badRequest('errors.invalidAssigneeIds', {}, 'INVALID_ASSIGNEE_IDS');
+  }
+
+  private async assertValidDepartments(departmentIds: readonly string[], tx: TransactionContext): Promise<void> {
+    if (departmentIds.length === 0) return;
+    const rows = await tx.select({ id: departments.id }).from(departments).where(inArray(departments.id, [...departmentIds]));
+    if (rows.length !== departmentIds.length) throw badRequest('errors.invalidDepartmentIds', {}, 'INVALID_DEPARTMENT_IDS');
   }
 
   private async insertTaskEvent(input: { readonly taskId: string; readonly boardId: string; readonly actorId: string; readonly type: string; readonly changes: Record<string, unknown>; readonly now: Date }, tx: TransactionContext): Promise<string> {
@@ -258,41 +284,24 @@ export class DrizzleTasksRepository implements TasksRepository {
     return evt.id;
   }
 
-  private async hydrateTasks(executor: DbExecutor, taskRows: readonly TaskRow[]): Promise<TaskRecord[]> {
+  private async hydrateTasks(executor: DbExecutor, taskRows: readonly RawTaskRow[]): Promise<TaskRecord[]> {
     if (taskRows.length === 0) return [];
     const taskIds = taskRows.map((row) => row.id);
-    const [assigneeRows, commentCountRows] = await Promise.all([
+    const [assigneeRows, departmentRows, commentCountRows] = await Promise.all([
       executor.select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId }).from(taskAssignees).where(inArray(taskAssignees.taskId, taskIds)),
+      executor.select({ taskId: taskDepartments.taskId, id: departments.id, name: departments.name }).from(taskDepartments).innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(inArray(taskDepartments.taskId, taskIds)).orderBy(asc(departments.name), asc(departments.id)),
       executor.select({ taskId: comments.taskId, total: count() }).from(comments).where(inArray(comments.taskId, taskIds)).groupBy(comments.taskId),
     ]);
     const userMap = await this.loadUserSummaries(executor, Array.from(new Set([...taskRows.map((r) => r.createdBy), ...assigneeRows.map((a) => a.userId)])));
-    const countMap = new Map(commentCountRows.map((r) => [r.taskId, Number(r.total)]));
-    const assigneeMap = new Map<string, TaskMemberSummaryRecord[]>();
-    for (const row of assigneeRows) {
-      const user = userMap.get(row.userId);
-      if (!user) continue;
-      const list = assigneeMap.get(row.taskId);
-      if (list) list.push(user);
-      else assigneeMap.set(row.taskId, [user]);
-    }
-    return taskRows.map((row) => ({ ...row, priority: toTaskPriority(row.priority), assignees: (assigneeMap.get(row.id) ?? []).sort((a, b) => a.fullName.localeCompare(b.fullName) || a.id.localeCompare(b.id)), creator: userMap.get(row.createdBy)!, commentCount: countMap.get(row.id) ?? 0 }));
+    return assembleTaskRecords({ taskRows, assigneeRows, departmentRows, commentCountRows, userMap });
   }
 
   private async loadUserSummaries(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, TaskMemberSummaryRecord>> {
-    const map = new Map<string, TaskMemberSummaryRecord>();
-    if (userIds.length === 0) return map;
+    if (userIds.length === 0) return new Map();
     const [profileRows, deptRows] = await Promise.all([
       executor.select({ id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt, isActive: profiles.isActive, leftAt: profiles.leftAt }).from(profiles).where(inArray(profiles.id, [...userIds])),
       executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name }).from(memberDepartments).innerJoin(departments, eq(memberDepartments.departmentId, departments.id)).where(inArray(memberDepartments.userId, [...userIds])).orderBy(asc(departments.name), asc(departments.id)),
     ]);
-    const deptMap = new Map<string, TaskDepartmentSummaryRecord[]>();
-    for (const row of deptRows) {
-      const list = deptMap.get(row.userId);
-      const dept = { id: row.id, name: row.name };
-      if (list) list.push(dept);
-      else deptMap.set(row.userId, [dept]);
-    }
-    for (const row of profileRows) map.set(row.id, { ...row, departments: deptMap.get(row.id) ?? [] });
-    return map;
+    return buildUserSummariesMap(profileRows, deptRows);
   }
 }

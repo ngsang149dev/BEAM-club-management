@@ -10,17 +10,48 @@ import { PRIORITY_MESSAGE_KEY, isTaskOverdue, normalizeTaskPriority } from '../f
 import {
   DEFAULT_MY_TASKS_FILTERS,
   useMyTasksInfiniteQuery,
+  useTaskDepartmentsQuery,
+  type DepartmentDto,
   type MyTasksFiltersState,
   type TaskDto,
 } from '../hooks/useTasks';
 import { TaskDetailDrawer } from './TaskDetailDrawer';
-import { TaskDueBadge, TaskPriorityBadge } from './TaskPriorityBadge';
+import { TaskDepartmentChips, TaskDueBadge, TaskPriorityBadge } from './TaskPriorityBadge';
+
+function MyTasksDepartmentSelect({
+  value,
+  departments,
+  onChange,
+}: {
+  value: string;
+  departments: readonly DepartmentDto[];
+  onChange: (departmentId: string) => void;
+}) {
+  const t = useTranslations('myTasks');
+  return (
+    <div className="directory-filter-select">
+      <select
+        className="ui-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={t('departmentFilterLabel')}
+      >
+        <option value="">{t('allDepartments')}</option>
+        {departments.map((dept) => (
+          <option key={dept.id} value={dept.id}>{dept.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 function MyTasksToolbar({
   filters,
+  departments,
   onFiltersChange,
 }: {
   filters: MyTasksFiltersState;
+  departments: readonly DepartmentDto[];
   onFiltersChange: (updater: (prev: MyTasksFiltersState) => MyTasksFiltersState) => void;
 }) {
   const t = useTranslations('myTasks');
@@ -39,6 +70,11 @@ function MyTasksToolbar({
             aria-label={t('searchLabel')}
           />
         </div>
+        <MyTasksDepartmentSelect
+          value={filters.departmentId}
+          departments={departments}
+          onChange={(departmentId) => onFiltersChange((prev) => ({ ...prev, departmentId }))}
+        />
         <div className="directory-filter-select">
           <select
             className="ui-select"
@@ -52,9 +88,7 @@ function MyTasksToolbar({
           >
             <option value="">{t('allPriorities')}</option>
             {[...TASK_PRIORITIES].reverse().map((level) => (
-              <option key={level} value={String(level)}>
-                {tPrio(PRIORITY_MESSAGE_KEY[level])}
-              </option>
+              <option key={level} value={String(level)}>{tPrio(PRIORITY_MESSAGE_KEY[level])}</option>
             ))}
           </select>
         </div>
@@ -86,6 +120,9 @@ function MyTaskRow({ task, onSelect }: { task: TaskDto; onSelect: () => void }) 
           {task.title}
           {task.isHidden ? <span className="ui-chip task-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
         </span>
+        {task.assignedDepartments.length > 0 ? (
+          <TaskDepartmentChips departments={task.assignedDepartments} />
+        ) : null}
         <span className="my-task-row-meta">{tTasks('commentsCount', { count: task.commentCount })}</span>
       </span>
       <span className="my-task-row-due"><TaskDueBadge dueAt={task.dueAt} /></span>
@@ -172,6 +209,7 @@ export function MyTasksView() {
   const t = useTranslations('myTasks');
   const [filters, setFilters] = useState<MyTasksFiltersState>(DEFAULT_MY_TASKS_FILTERS);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const departmentsQuery = useTaskDepartmentsQuery(true);
   const tasksQuery = useMyTasksInfiniteQuery(filters, true);
   const count = tasksQuery.data?.pages.flatMap((page) => page.items).length ?? 0;
 
@@ -181,7 +219,11 @@ export function MyTasksView() {
         <p className="page-subtitle">{t('subtitle')}</p>
         <span className="ui-chip">{t('summaryCount', { count })}</span>
       </div>
-      <MyTasksToolbar filters={filters} onFiltersChange={setFilters} />
+      <MyTasksToolbar
+        filters={filters}
+        departments={departmentsQuery.data?.items ?? []}
+        onFiltersChange={setFilters}
+      />
       <MyTasksListBody
         tasksQuery={tasksQuery}
         onSelectTask={setSelectedTaskId}

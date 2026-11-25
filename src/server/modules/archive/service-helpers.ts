@@ -1,7 +1,7 @@
 import type { ListArchiveQueryInput } from '@/lib/archive';
 import { conflict, notFound } from '@/lib/errors';
 import { canViewMemberDetail } from '@/server/modules/members';
-import { assertCanViewTask } from '@/server/modules/tasks';
+import { assertCanViewTask, toTaskVisibilitySubject } from '@/server/modules/tasks';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { type ArchivePageResponseDto, toArchivePageResponseDto } from './mapper';
@@ -86,11 +86,7 @@ function resolveRestoreColumn(
   actor: AuthActor,
   target: RestoreTaskTargetRecord,
 ): { readonly prevDeletedAt: Date; readonly targetColumnId: string; readonly useFallbackPosition: boolean } {
-  assertCanViewTask(actor, {
-    isHidden: target.task.isHidden,
-    createdBy: target.task.createdBy,
-    assigneeIds: target.task.assignees.map((a) => a.id),
-  });
+  assertCanViewTask(actor, toTaskVisibilitySubject(target.task));
   authorize(actor, 'task.delete');
   if (target.task.deletedAt === null) throw conflict('errors.taskNotDeleted', {}, 'TASK_NOT_DELETED');
   if (target.boardPurgedAt !== null) throw notFound('errors.notFound', {}, 'NOT_FOUND');

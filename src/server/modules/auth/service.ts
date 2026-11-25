@@ -137,6 +137,7 @@ export class AuthService {
       isActive: profile.isActive,
       isAdmin: profile.isAdmin,
       permissions,
+      departmentIds: profile.departments.map((d) => d.id),
     };
     return { session: updatedSession, profile, actor };
   }

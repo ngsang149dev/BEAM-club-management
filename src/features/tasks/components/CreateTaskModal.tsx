@@ -10,11 +10,17 @@ import { useEscapeClose } from '@/features/departments/components/DepartmentModa
 import { usePermissions } from '@/features/shared/permissions/can';
 import { taskDescriptionSchema, taskPrioritySchema, taskTitleSchema } from '@/lib/tasks';
 import { hoChiMinhInputToUtcIso } from '../formatters';
-import { useCreateTaskMutation, useTaskAssigneeMembersQuery } from '../hooks/useTasks';
 import {
-  TaskAssigneePicker,
+  useCreateTaskMutation,
+  useTaskAssigneeMembersQuery,
+  useTaskDepartmentsQuery,
+} from '../hooks/useTasks';
+import {
+  TaskDepartmentPicker,
   TaskDueDateInput,
   TaskErrorBanner,
+  TaskIndividualAssigneesDetails,
+  TaskNotifyDepartmentToggle,
   TaskPrioritySelect,
 } from './TaskFormFields';
 
@@ -35,7 +41,7 @@ export interface CreateTaskModalProps {
   onClose: () => void;
 }
 
-function toggleAssigneeId(current: string[], id: string): string[] {
+function toggleSelectionId(current: string[], id: string): string[] {
   return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
 }
 
@@ -44,7 +50,10 @@ function useCreateTaskController(boardId: string, columnId: string, onClose: () 
   const { can } = usePermissions();
   const canAssign = can('task.assign');
   const canViewMembers = can('member.view');
+  const [departmentIds, setDepartmentIds] = useState<string[]>([]);
+  const [notifyDepartmentMembers, setNotifyDepartmentMembers] = useState<boolean>(true);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const departmentsQuery = useTaskDepartmentsQuery(canAssign);
   const membersQuery = useTaskAssigneeMembersQuery(canAssign && canViewMembers);
   const createMutation = useCreateTaskMutation();
   const form = useForm<CreateTaskFormValues>({
@@ -63,6 +72,8 @@ function useCreateTaskController(boardId: string, columnId: string, onClose: () 
         dueAt: hoChiMinhInputToUtcIso(values.dueAtInput),
         priority: values.priority,
         assigneeIds: canAssign ? assigneeIds : [],
+        departmentIds: canAssign ? departmentIds : [],
+        notifyDepartmentMembers: canAssign ? notifyDepartmentMembers : false,
         isHidden: values.isHidden,
       },
       { onSuccess: (res) => { toast.success(tTasks('createdToast', { title: res.task.title })); onClose(); } }
@@ -72,13 +83,48 @@ function useCreateTaskController(boardId: string, columnId: string, onClose: () 
   return {
     canAssign,
     canViewMembers,
+    departmentIds,
+    toggleDepartment: (id: string) => setDepartmentIds((prev) => toggleSelectionId(prev, id)),
+    notifyDepartmentMembers,
+    setNotifyDepartmentMembers,
     assigneeIds,
-    toggleAssignee: (id: string) => setAssigneeIds((prev) => toggleAssigneeId(prev, id)),
+    toggleAssignee: (id: string) => setAssigneeIds((prev) => toggleSelectionId(prev, id)),
+    departments: departmentsQuery.data?.items ?? [],
     members: membersQuery.data?.items ?? [],
     createMutation,
     form,
     submitForm,
   };
+}
+
+function CreateTaskAssignmentFields({ ctrl }: { ctrl: ReturnType<typeof useCreateTaskController> }) {
+  const tTasks = useTranslations('tasks');
+  if (!ctrl.canAssign) return null;
+
+  return (
+    <div className="ui-field">
+      <span className="ui-label">{tTasks('departmentsLabel')}</span>
+      <p className="ui-field-hint">{tTasks('departmentsHint')}</p>
+      <TaskDepartmentPicker
+        departments={ctrl.departments}
+        selectedIds={ctrl.departmentIds}
+        disabled={ctrl.createMutation.isPending}
+        onToggle={ctrl.toggleDepartment}
+      />
+      <TaskNotifyDepartmentToggle
+        checked={ctrl.notifyDepartmentMembers}
+        disabled={ctrl.createMutation.isPending}
+        onChange={ctrl.setNotifyDepartmentMembers}
+      />
+      <TaskIndividualAssigneesDetails
+        members={ctrl.members}
+        canViewMembers={ctrl.canViewMembers}
+        selectedIds={ctrl.assigneeIds}
+        disabled={ctrl.createMutation.isPending}
+        onToggle={ctrl.toggleAssignee}
+      />
+    </div>
+  );
 }
 
 export function CreateTaskModal({ boardId, columnId, columnName, onClose }: CreateTaskModalProps) {
@@ -117,12 +163,7 @@ export function CreateTaskModal({ boardId, columnId, columnName, onClose }: Crea
             <TaskPrioritySelect value={priority} onChange={(next) => setValue('priority', next)} />
             <TaskDueDateInput value={dueAtInput} onChange={(next) => setValue('dueAtInput', next)} />
           </div>
-          {ctrl.canAssign ? (
-            <div className="ui-field">
-              <span className="ui-label">{tTasks('assigneesLabel')}</span>
-              <TaskAssigneePicker members={ctrl.members} canViewMembers={ctrl.canViewMembers} selectedIds={ctrl.assigneeIds} onToggle={ctrl.toggleAssignee} />
-            </div>
-          ) : null}
+          <CreateTaskAssignmentFields ctrl={ctrl} />
           <label className="ui-check-inline">
             <input type="checkbox" {...register('isHidden')} />
             <span>{tTasks('isHiddenLabel')}</span>

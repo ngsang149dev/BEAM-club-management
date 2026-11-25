@@ -29,6 +29,7 @@ export interface TaskDto {
   readonly version: number;
   readonly deletedAt: string | null;
   readonly assignees: TaskMemberPublicSummaryDto[];
+  readonly assignedDepartments: TaskDepartmentSummaryDto[];
   readonly creator: TaskMemberPublicSummaryDto;
   readonly commentCount: number;
   readonly createdAt: string;
@@ -81,6 +82,10 @@ export function toTaskDto(record: TaskRecord): TaskDto {
     version: record.version,
     deletedAt: record.deletedAt ? record.deletedAt.toISOString() : null,
     assignees: record.assignees.map(toTaskMemberPublicSummaryDto),
+    assignedDepartments: record.assignedDepartments.map((dept) => ({
+      id: dept.id,
+      name: dept.name,
+    })),
     creator: toTaskMemberPublicSummaryDto(record.creator),
     commentCount: record.commentCount,
     createdAt: record.createdAt.toISOString(),

@@ -39,6 +39,8 @@ export const createTaskRequestSchema = z
     dueAt: nullableIsoDateSchema.optional(),
     priority: taskPrioritySchema.default(2),
     assigneeIds: z.array(z.uuid()).default([]),
+    departmentIds: z.array(z.uuid()).default([]),
+    notifyDepartmentMembers: z.boolean().default(true),
     isHidden: z.boolean().default(false),
   })
   .strict();
@@ -70,16 +72,25 @@ export type MoveTaskRequestInput = z.infer<typeof moveTaskRequestSchema>;
 
 export const replaceTaskAssigneesRequestSchema = z
   .object({
-    assigneeIds: z.array(z.uuid()),
+    assigneeIds: z.array(z.uuid()).optional(),
+    departmentIds: z.array(z.uuid()).optional(),
+    notifyDepartmentMembers: z.boolean().default(true),
     version: z.number().int().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (val) => val.assigneeIds !== undefined || val.departmentIds !== undefined,
+    {
+      message: 'At least one of assigneeIds or departmentIds is required',
+      path: ['assigneeIds'],
+    },
+  );
 
 export type ReplaceTaskAssigneesRequestInput = z.infer<
   typeof replaceTaskAssigneesRequestSchema
 >;
 
-function emptyToUndefined(value: unknown): unknown {
+export function emptyToUndefined(value: unknown): unknown {
   if (value === null || value === undefined) {
     return undefined;
   }
@@ -89,7 +100,7 @@ function emptyToUndefined(value: unknown): unknown {
   return value;
 }
 
-function parseStrictBooleanInput(raw: unknown): unknown {
+export function parseStrictBooleanInput(raw: unknown): unknown {
   const value = emptyToUndefined(raw);
   if (value === undefined || typeof value === 'boolean') {
     return value;
@@ -102,7 +113,7 @@ function parseStrictBooleanInput(raw: unknown): unknown {
   return raw;
 }
 
-function parseIntegerInput(raw: unknown): unknown {
+export function parseIntegerInput(raw: unknown): unknown {
   const value = emptyToUndefined(raw);
   if (value === undefined || typeof value === 'number') {
     return value;
@@ -123,7 +134,7 @@ const optionalPriorityQuerySchema = z.preprocess(
   taskPrioritySchema.optional(),
 );
 
-const optionalCursorQuerySchema = z.preprocess(
+export const optionalCursorQuerySchema = z.preprocess(
   emptyToUndefined,
   z.string().trim().min(1).max(512).optional(),
 );
@@ -137,6 +148,7 @@ export const listTasksQuerySchema = z.object({
   boardId: optionalUuidQuerySchema,
   columnId: optionalUuidQuerySchema,
   assigneeId: optionalUuidQuerySchema,
+  departmentId: optionalUuidQuerySchema,
   priority: optionalPriorityQuerySchema,
   dueStatus: z.preprocess(emptyToUndefined, z.enum(TASK_DUE_STATUSES).optional()),
   q: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(200).optional()),
@@ -156,6 +168,7 @@ export type ListTasksQueryInput = z.infer<typeof listTasksQuerySchema>;
 
 export const listMyTasksQuerySchema = z.object({
   boardId: optionalUuidQuerySchema,
+  departmentId: optionalUuidQuerySchema,
   q: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(200).optional()),
   includeDone: z.preprocess(
     parseStrictBooleanInput,

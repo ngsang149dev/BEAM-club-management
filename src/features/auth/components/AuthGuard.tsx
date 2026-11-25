@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { AppShell, type AppNavKey, type AppShellUser } from '@/components/AppShell';
 import { ErrorState } from '@/components/ErrorState';
+import { NotificationBell } from '@/features/notifications/components/NotificationBell';
 import { isApiClientError } from '@/features/shared/api/client';
 import { PermissionsProvider } from '@/features/shared/permissions/can';
 import type { AppLocale } from '@/i18n/locale';
@@ -164,6 +165,7 @@ export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, 
         title={title}
         breadcrumb={breadcrumb}
         actions={actions}
+        notificationsSlot={<NotificationBell />}
         user={resolvedUser}
         onSignOut={() => logoutMutation.mutate()}
         onLocaleChange={(locale: AppLocale) => updateLocaleMutation.mutateAsync(locale)}

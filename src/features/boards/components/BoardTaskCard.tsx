@@ -7,6 +7,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useTranslations } from 'next-intl';
 import {
   TaskAssigneeChips,
+  TaskDepartmentChips,
   TaskDueBadge,
   TaskPriorityBadge,
 } from '@/features/tasks/components/TaskPriorityBadge';
@@ -105,6 +106,7 @@ export function BoardTaskCardView({
       <div className="kanban-card-meta">
         <span className="ui-chip">{tTasks('commentsCount', { count: task.commentCount })}</span>
       </div>
+      <TaskDepartmentChips departments={task.assignedDepartments} />
       <TaskAssigneeChips assignees={task.assignees} />
     </article>
   );

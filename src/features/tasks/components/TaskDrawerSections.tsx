@@ -13,15 +13,19 @@ import {
   useDeleteTaskMutation,
   useReplaceTaskAssigneesMutation,
   useTaskAssigneeMembersQuery,
+  useTaskDepartmentsQuery,
   useUpdateTaskMutation,
   type TaskDto,
 } from '../hooks/useTasks';
 import {
-  TaskAssigneePicker,
+  TaskDepartmentPicker,
   TaskDueDateInput,
   TaskErrorBanner,
+  TaskIndividualAssigneesDetails,
+  TaskNotifyDepartmentToggle,
   TaskPrioritySelect,
   type TaskAssigneeOption,
+  type TaskDepartmentOption,
 } from './TaskFormFields';
 
 const editTaskSchema = z.object({
@@ -101,40 +105,94 @@ function mergeAssigneeOptions(
   return [...activeMembers, ...formerAssignees];
 }
 
-export function TaskAssigneesSection({ task, onReload }: { task: TaskDto; onReload: () => void }) {
+function mergeDepartmentOptions(
+  catalog: readonly TaskDepartmentOption[],
+  assignedDepartments: TaskDto['assignedDepartments']
+): TaskDepartmentOption[] {
+  const seen = new Set(catalog.map((dept) => dept.id));
+  const missing = assignedDepartments.filter((dept) => !seen.has(dept.id));
+  return [...catalog, ...missing];
+}
+
+function toggleId(prev: string[], id: string): string[] {
+  return prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
+}
+
+function useTaskAssigneesController(task: TaskDto) {
   const tTasks = useTranslations('tasks');
   const { can } = usePermissions();
   const canViewMembers = can('member.view');
+  const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>(() =>
+    task.assignedDepartments.map((dept) => dept.id)
+  );
+  const [notifyDepartmentMembers, setNotifyDepartmentMembers] = useState<boolean>(true);
   const [selectedIds, setSelectedIds] = useState<string[]>(() => task.assignees.map((a) => a.id));
+  const departmentsQuery = useTaskDepartmentsQuery(true);
   const membersQuery = useTaskAssigneeMembersQuery(canViewMembers);
   const assigneesMutation = useReplaceTaskAssigneesMutation();
-  const pickerMembers = mergeAssigneeOptions(membersQuery.data?.items ?? [], task.assignees);
 
   const handleSaveAssignees = () => {
     assigneesMutation.mutate(
-      { id: task.id, payload: { assigneeIds: selectedIds, version: task.version } },
-      { onSuccess: () => toast.success(tTasks('assigneesUpdatedToast')) }
+      {
+        id: task.id,
+        payload: {
+          departmentIds: selectedDeptIds,
+          ...(canViewMembers ? { assigneeIds: selectedIds } : {}),
+          notifyDepartmentMembers,
+          version: task.version,
+        },
+      },
+      { onSuccess: () => toast.success(tTasks('departmentsUpdatedToast')) }
     );
   };
 
+  return {
+    canViewMembers,
+    selectedDeptIds,
+    toggleDept: (id: string) => setSelectedDeptIds((prev) => toggleId(prev, id)),
+    notifyDepartmentMembers,
+    setNotifyDepartmentMembers,
+    selectedIds,
+    toggleMember: (id: string) => setSelectedIds((prev) => toggleId(prev, id)),
+    pickerDepartments: mergeDepartmentOptions(departmentsQuery.data?.items ?? [], task.assignedDepartments),
+    pickerMembers: mergeAssigneeOptions(membersQuery.data?.items ?? [], task.assignees),
+    assigneesMutation,
+    handleSaveAssignees,
+  };
+}
+
+export function TaskAssigneesSection({ task, onReload }: { task: TaskDto; onReload: () => void }) {
+  const tTasks = useTranslations('tasks');
+  const ctrl = useTaskAssigneesController(task);
+
   return (
     <section className="task-drawer-section">
-      <h3 className="task-section-title">{tTasks('assigneesLabel')}</h3>
-      <TaskErrorBanner error={assigneesMutation.error} onReloadConflict={onReload} />
-      <TaskAssigneePicker
-        members={pickerMembers}
-        canViewMembers={canViewMembers}
-        selectedIds={selectedIds}
-        disabled={assigneesMutation.isPending}
-        onToggle={(id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
+      <h3 className="task-section-title">{tTasks('departmentsLabel')}</h3>
+      <p className="ui-field-hint">{tTasks('departmentsHint')}</p>
+      <TaskErrorBanner error={ctrl.assigneesMutation.error} onReloadConflict={onReload} />
+      <TaskDepartmentPicker
+        departments={ctrl.pickerDepartments}
+        selectedIds={ctrl.selectedDeptIds}
+        disabled={ctrl.assigneesMutation.isPending}
+        onToggle={ctrl.toggleDept}
       />
-      {canViewMembers ? (
-        <div className="task-section-actions">
-          <button type="button" className="ui-btn ghost is-sm" disabled={assigneesMutation.isPending} onClick={handleSaveAssignees}>
-            {assigneesMutation.isPending ? tTasks('savingAssignees') : tTasks('saveAssignees')}
-          </button>
-        </div>
-      ) : null}
+      <TaskNotifyDepartmentToggle
+        checked={ctrl.notifyDepartmentMembers}
+        disabled={ctrl.assigneesMutation.isPending}
+        onChange={ctrl.setNotifyDepartmentMembers}
+      />
+      <TaskIndividualAssigneesDetails
+        members={ctrl.pickerMembers}
+        canViewMembers={ctrl.canViewMembers}
+        selectedIds={ctrl.selectedIds}
+        disabled={ctrl.assigneesMutation.isPending}
+        onToggle={ctrl.toggleMember}
+      />
+      <div className="task-section-actions">
+        <button type="button" className="ui-btn ghost is-sm" disabled={ctrl.assigneesMutation.isPending} onClick={ctrl.handleSaveAssignees}>
+          {ctrl.assigneesMutation.isPending ? tTasks('savingAssignees') : tTasks('departmentsSaveButton')}
+        </button>
+      </div>
     </section>
   );
 }

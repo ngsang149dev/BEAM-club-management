@@ -6,6 +6,7 @@ export interface AuthActor {
   readonly isActive: boolean;
   readonly isAdmin: boolean;
   readonly permissions: readonly PermissionCode[];
+  readonly departmentIds?: readonly string[];
 }
 
 export function hasPermission(actor: AuthActor, permission: PermissionCode): boolean {

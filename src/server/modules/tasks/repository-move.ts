@@ -13,6 +13,7 @@ export interface RawMoveSibling {
   readonly isHidden: boolean;
   readonly createdBy: string;
   readonly assigneeIds: readonly string[];
+  readonly assignedDepartmentIds: readonly string[];
 }
 
 export interface MoveTaskPersistence {
@@ -57,6 +58,7 @@ function toOrderedMoveSiblings(
       isHidden: sibling.isHidden,
       createdBy: sibling.createdBy,
       assigneeIds: sibling.assigneeIds,
+      assignedDepartmentIds: sibling.assignedDepartmentIds,
     }),
   }));
 }

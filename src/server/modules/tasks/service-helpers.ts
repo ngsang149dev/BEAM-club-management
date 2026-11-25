@@ -2,6 +2,7 @@ import { conflict, notFound } from '@/lib/errors';
 import {
   dedupeSortedUuids,
   type MoveTaskRequestInput,
+  type ReplaceTaskAssigneesRequestInput,
   type TaskSortBy,
   type UpdateTaskRequestInput,
 } from '@/lib/tasks';
@@ -12,6 +13,7 @@ import {
   assertCanViewTask,
   buildTaskUpdateChanges,
   hasTaskChanges,
+  type TaskVisibilitySubject,
 } from './policy';
 import type {
   TaskOptionalEventMutationResult,
@@ -19,11 +21,12 @@ import type {
   TasksRepository,
 } from './types';
 
-export function toTaskVisibilitySubject(task: TaskRecord) {
+export function toTaskVisibilitySubject(task: TaskRecord): TaskVisibilitySubject {
   return {
     isHidden: task.isHidden,
     createdBy: task.createdBy,
     assigneeIds: task.assignees.map((assignee) => assignee.id),
+    assignedDepartmentIds: task.assignedDepartments.map((dept) => dept.id),
   };
 }
 
@@ -77,38 +80,59 @@ export async function runTaskUpdateInTx(params: {
   );
 }
 
+export interface RunTaskAssigneesResult extends TaskOptionalEventMutationResult {
+  readonly addedDepartmentIds: readonly string[];
+}
+
+function computeNextAssignments(
+  target: TaskRecord,
+  input: ReplaceTaskAssigneesRequestInput,
+) {
+  const currentAssigneeIds = dedupeSortedUuids(target.assignees.map((a) => a.id));
+  const currentDepartmentIds = dedupeSortedUuids(target.assignedDepartments.map((d) => d.id));
+  const nextAssigneeIds =
+    input.assigneeIds !== undefined ? dedupeSortedUuids(input.assigneeIds) : currentAssigneeIds;
+  const nextDepartmentIds =
+    input.departmentIds !== undefined ? dedupeSortedUuids(input.departmentIds) : currentDepartmentIds;
+  const changed =
+    !sameStringSet(currentAssigneeIds, nextAssigneeIds) ||
+    !sameStringSet(currentDepartmentIds, nextDepartmentIds);
+  const addedDepartmentIds = nextDepartmentIds.filter((id) => !currentDepartmentIds.includes(id));
+  return { currentAssigneeIds, currentDepartmentIds, nextAssigneeIds, nextDepartmentIds, changed, addedDepartmentIds };
+}
+
 export async function runTaskAssigneesInTx(params: {
   readonly tasksRepo: TasksRepository;
   readonly actor: AuthActor;
   readonly taskId: string;
-  readonly nextAssigneeIds: readonly string[];
-  readonly version?: number;
+  readonly input: ReplaceTaskAssigneesRequestInput;
   readonly now: Date;
   readonly tx: TransactionContext;
-}): Promise<TaskOptionalEventMutationResult> {
+}): Promise<RunTaskAssigneesResult> {
   const target = await params.tasksRepo.findActiveById(params.taskId, params.tx);
   if (!target) throw notFound('errors.notFound', {}, 'NOT_FOUND');
   assertCanViewTask(params.actor, toTaskVisibilitySubject(target));
   authorize(params.actor, 'task.assign');
-  if (params.version !== undefined && target.version !== params.version) {
+  if (params.input.version !== undefined && target.version !== params.input.version) {
     throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
   }
-  const currentIds = dedupeSortedUuids(target.assignees.map((a) => a.id));
-  if (sameStringSet(currentIds, params.nextAssigneeIds)) {
-    return { task: target, eventId: null };
-  }
-  return params.tasksRepo.replaceAssigneesWithEvent(
+  const next = computeNextAssignments(target, params.input);
+  if (!next.changed) return { task: target, eventId: null, addedDepartmentIds: [] };
+  const mutated = await params.tasksRepo.replaceAssigneesWithEvent(
     {
       id: params.taskId,
       boardId: target.boardId,
       actorId: params.actor.id,
-      currentAssigneeIds: currentIds,
-      nextAssigneeIds: params.nextAssigneeIds,
-      expectedVersion: params.version,
+      currentAssigneeIds: next.currentAssigneeIds,
+      nextAssigneeIds: next.nextAssigneeIds,
+      currentDepartmentIds: next.currentDepartmentIds,
+      nextDepartmentIds: next.nextDepartmentIds,
+      expectedVersion: params.input.version,
       now: params.now,
     },
     params.tx,
   );
+  return { ...mutated, addedDepartmentIds: next.addedDepartmentIds };
 }
 
 export async function runTaskMoveInTx(params: {

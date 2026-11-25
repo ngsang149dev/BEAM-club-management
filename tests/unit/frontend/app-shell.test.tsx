@@ -154,4 +154,22 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(errorStandaloneHtml).toContain('class="ui-logo"');
     expect(errorStandaloneHtml).toContain('BEAM');
   });
+
+  it('renders notificationsSlot inside topbar before LanguageSwitch', () => {
+    const html = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <AppShell
+          user={{ fullName: 'Le Van C' }}
+          notificationsSlot={<button type="button" data-testid="notif-slot">bell</button>}
+        >
+          <div>body</div>
+        </AppShell>
+      </NextIntlClientProvider>
+    );
+
+    const slotIdx = html.indexOf('data-testid="notif-slot"');
+    const topLangIdx = html.indexOf('class="app-top-lang"');
+    expect(slotIdx).toBeGreaterThan(-1);
+    expect(topLangIdx).toBeGreaterThan(slotIdx);
+  });
 });

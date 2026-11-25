@@ -9,7 +9,7 @@ import {
   normalizeTaskPriority,
   type TaskDueUrgency,
 } from '../formatters';
-import type { MemberPublicSummary } from '../hooks/useTasks';
+import type { DepartmentSummaryDto, MemberPublicSummary } from '../hooks/useTasks';
 
 export function TaskPriorityBadge({ priority }: { priority: number }) {
   const tPrio = useTranslations('priority');
@@ -75,6 +75,38 @@ export function MemberInlineName({ member }: { member: MemberPublicSummary }) {
     <span className="task-member-inline">
       {member.fullName}
       {!member.isActive ? <span className="member-left-badge"> {tBadge('leftBadge')}</span> : null}
+    </span>
+  );
+}
+
+function DepartmentBadgeIcon() {
+  return (
+    <svg className="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-3h4v3" />
+    </svg>
+  );
+}
+
+export function TaskDepartmentChips({
+  departments,
+  emptyLabel,
+}: {
+  departments: readonly DepartmentSummaryDto[];
+  emptyLabel?: string;
+}) {
+  if (departments.length === 0) {
+    return emptyLabel ? <span className="muted-dash">{emptyLabel}</span> : null;
+  }
+
+  return (
+    <span className="task-dept-chips">
+      {departments.map((dept) => (
+        <span key={dept.id} className="ui-chip task-dept-chip">
+          <DepartmentBadgeIcon />
+          <span>{dept.name}</span>
+        </span>
+      ))}
     </span>
   );
 }

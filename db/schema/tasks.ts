@@ -17,6 +17,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { boards, columns } from './boards';
 import { profiles } from './identity';
+import { departments } from './permissions';
 
 export const tasks = pgTable(
   'tasks',
@@ -93,6 +94,28 @@ export const taskAssignees = pgTable(
       columns: [table.taskId, table.userId],
     }),
     index('task_assignees_user_id_idx').on(table.userId),
+  ],
+);
+
+export const taskDepartments = pgTable(
+  'task_departments',
+  {
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    departmentId: uuid('department_id')
+      .notNull()
+      .references(() => departments.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'task_departments_pkey',
+      columns: [table.taskId, table.departmentId],
+    }),
+    index('task_departments_department_id_idx').on(table.departmentId),
   ],
 );
 
