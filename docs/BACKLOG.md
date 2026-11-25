@@ -17,8 +17,8 @@
 | **CR-03** | Giao task cho Ban (`task_departments`) + Email & Thông báo chuông (`A2`, `A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-20`–`23` | Done |
 | **CR-05** | Tinh gọn UX: bỏ chọn ngôn ngữ ở Hồ sơ, ẩn thành viên đã rời ở Phân quyền, gọn lời giải thích tự nhiên, làm đẹp ô `select` | Hoàn thiện UX & UI | Done |
 | **CR-06** | Thiết kế lại trình chỉnh sửa Task 2 cột (`~900px` / modal `720px`) & tách riêng tùy chọn Thông báo trên web / Email cho cả Ban & thành viên lẻ (`A1`–`A3`, `[RỦI RO CAO]`) | Nâng cấp `S04`, `S05`, `CR-03` | Done |
-| **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Done (chờ duyệt merge vào main) |
-| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog |
+| **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Done |
+| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog (chờ duyệt danh sách item) |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Backlog |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Backlog |
@@ -332,7 +332,7 @@
 
 ---
 
-## Epic E6 — Lọc, tìm kiếm & sắp xếp board/task nâng cao; thay thế kéo thả *(Done trên `feat/E6-board-filters-and-move` — chờ duyệt merge vào main)*
+## Epic E6 — Lọc, tìm kiếm & sắp xếp board/task nâng cao; thay thế kéo thả *(Done — đã duyệt & merge vào main)*
 
 ### E6-01
 - **ID:** `E6-01`
@@ -349,7 +349,7 @@
 - **Kiểm thử bắt buộc:** Unit test policy/service & integration test trên `beam_test` cho `GET /boards?q=`, đếm `visibleTaskCount`/`overdueTaskCount` theo quyền xem & cột `Done`, và `GET /tasks?dueStatus=overdue` + filter/sort kết hợp; `openapi:generate` + `openapi:check`.
 - **Ngoài phạm vi:** Full-text search ngoài `q`, nhãn (label), lưu preset bộ lọc trên DB.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ duyệt merge vào main)`
+- **Trạng thái:** `Done`
 
 ### E6-02
 - **ID:** `E6-02`
@@ -367,7 +367,7 @@
 - **Kiểm thử bắt buộc:** Unit test `board-filters`, `boards-view`, `board-detail`, `i18n-parity`.
 - **Ngoài phạm vi:** Đổi hợp đồng API hoặc sửa file ngoài phạm vi `frontend`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Done (chờ duyệt merge vào main)`
+- **Trạng thái:** `Done`
 
 ### E6-03
 - **ID:** `E6-03`
@@ -381,4 +381,58 @@
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ duyệt merge vào main — 8/8 cổng CI, 253 unit / 48 tệp, 24 integration / 15 tệp, 31/31 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
+- **Trạng thái:** `Done (8/8 cổng CI, 253 unit / 48 tệp, 24 integration / 15 tệp, 31/31 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
+
+---
+
+## Epic E7 — Bình luận & Cờ ẩn task (`FR-07`, `FR-24`, `FR-26`) *(Chờ chủ dự án duyệt danh sách item)*
+
+### E7-01
+- **ID:** `E7-01`
+- **Tiêu đề:** Backend `PUT /tasks/{id}/hidden` & module `comments` (`GET/POST /tasks/{id}/comments`, `DELETE /comments/{id}`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `FR-07`, `FR-24`, `FR-26`, `AC-04`, `AC-05`, `AC-15`, `WQ-27`
+- **Phụ thuộc:** `E6` (`Done`); `docs/openapi.yaml` & schema `comments` / `tasks.is_hidden` / `task_events` đã khóa (0 migration, 0 thay đổi OpenAPI)
+- **Mục tài liệu cần đọc:** `HANDOFF` (`FR-07`, `FR-24`, `FR-26`, `AC-15`, `S05`, mục 8.3/11.5), `docs/openapi.yaml` (`/tasks/{id}/hidden`, `/tasks/{id}/comments`, `/comments/{id}`)
+- **Phạm vi file được sửa:** `src/lib/{tasks,comments}.ts`, `src/server/modules/tasks/*`, `src/server/modules/comments/*`, `src/server/shared/composition.ts`, `src/app/api/v1/tasks/[id]/hidden/route.ts`, `src/app/api/v1/tasks/[id]/comments/route.ts`, `src/app/api/v1/comments/[id]/route.ts`, `tests/unit/{tasks,comments}/*`, `tests/integration/{tasks,comments}/*`
+- **Tiêu chí chấp nhận:**
+  1. `PUT /api/v1/tasks/{id}/hidden`: kiểm tra `taskVisibilityPolicy` trước (`404` nếu task không tồn tại/đã xóa mềm/đang ẩn với người không được xem); chỉ `created_by` hoặc `is_admin` được bật/tắt (`403` cho assignee/thành viên thường dù có `task.update_any`); kiểm tra `version` (`409` nếu xung đột); ghi `task.hidden_changed` trong cùng transaction và trả `{ task, eventId }`.
+  2. `GET /api/v1/tasks/{id}/comments`: phân trang cursor, lọc `taskVisibilityPolicy` (`404` nếu task ẩn & không được xem hoặc đã xóa mềm), `author` qua `MemberPublicSummary` (0 PII, hiện trạng thái đã rời).
+  3. `POST /api/v1/tasks/{id}/comments`: kiểm tra `taskVisibilityPolicy` (`404`) trước rồi `authorize('comment.create')` (`403`); validate `body` (`1..4000` ký tự sau trim); ghi `comment.added` (`commentId` UUID, 0 PII) cùng transaction và trả `201 { comment, eventId }`.
+  4. `DELETE /api/v1/comments/{id}`: kiểm tra parent task `taskVisibilityPolicy` (`404` nếu comment không tồn tại hoặc task cha ẩn/xóa mềm); chỉ tác giả comment, người có `comment.delete_any`, hoặc admin được xóa (`403` nếu không); ghi `comment.deleted` (`commentId` UUID) cùng transaction và trả `200 { deleted: true, id, eventId }`.
+- **Kiểm thử bắt buộc:** Unit test policy/service & PostgreSQL integration test trên `beam_test` đủ allow/deny `comment.create`, `comment.delete_any`, `canToggleTaskHidden` (creator/admin vs assignee/`task.update_any` `403` vs non-viewer `404`), `409` version conflict, `404` task ẩn ở mọi đường bình luận, `task_events` append-only không PII.
+- **Ngoài phạm vi:** Hoàn tác (`E7A`), sửa bình luận, file đính kèm, `@mention`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Backlog (chờ duyệt)`
+
+### E7-02
+- **ID:** `E7-02`
+- **Tiêu đề:** Giao diện Bật/tắt cờ ẩn & Bình luận trong Chi tiết Task `S05` + Tạo Task ẩn `S04`
+- **Sub-agent phụ trách:** `frontend`
+- **Liên quan:** `FR-07`, `FR-24`, `FR-26`, `AC-15`, `S04`, `S05`, `WQ-27`
+- **Phụ thuộc:** `E6` (`Done`), `docs/openapi.yaml` đã khóa (có thể chạy song song `E7-01` sau khi duyệt do không trùng vùng file)
+- **Mục tài liệu cần đọc:** `wireframes/s05-task-detail.html` (`s04-board.html`), `docs/openapi.yaml`, `HANDOFF` (`FR-07`, `FR-24`, `FR-26`, `S05`)
+- **Phạm vi file được sửa:** `src/features/comments/*`, `src/features/tasks/*`, `src/features/boards/components/BoardTaskCard.tsx`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:**
+  1. `S05` (`TaskDetailDrawer`): khu vực **Bình luận** dùng TanStack Query (`useTaskCommentsInfiniteQuery`, `useCreateCommentMutation`, `useDeleteCommentMutation`), hiển thị danh sách bình luận (tên tác giả + avatar + nhãn `(đã rời)` nếu inactive + thời gian `Asia/Ho_Chi_Minh`, tải thêm cursor, 0 MSSV/email); ô nhập chỉ hiện khi có `comment.create` (`1..4000` ký tự); nút xóa chỉ hiện cho tác giả comment / `comment.delete_any` / admin kèm xác nhận nhẹ; cập nhật tức thì `commentCount` trên `S04`/`S05`.
+  2. `S05` (`TaskDetailDrawer`): công tắc **Cờ ẩn task** (`PUT /tasks/{id}/hidden`) chỉ hiện cho người tạo task hoặc admin (kèm cảnh báo khi bật ẩn mà chưa giao ai theo `WQ-27`, xử lý `409` version conflict); đồng bộ cache board/task/my-tasks/archive.
+  3. `S04` (`CreateTaskModal` & `BoardTaskCard`): đảm bảo tùy chọn tạo task ẩn + badge ẩn rõ ràng cho người được xem; giữ đồng nhất bỏ cảnh báo quá hạn cột `Done`.
+  4. 100% chuỗi UI qua `messages/{vi,en}.json`.
+- **Kiểm thử bắt buộc:** Unit test `task-comments`, `task-hidden-toggle`, `task-detail-drawer`, `i18n-parity`.
+- **Ngoài phạm vi:** Tab lịch sử & nút Hoàn tác (`E7A`), sửa bình luận, đổi API.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Backlog (chờ duyệt)`
+
+### E7-03
+- **ID:** `E7-03`
+- **Tiêu đề:** Kiểm thử E2E & kiểm định kiến trúc/bảo mật độc lập Epic `E7` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-engineer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-07`, `FR-24`, `FR-26`, `AC-04`, `AC-05`, `AC-15`, `WQ-27`, `AGENTS.md` (§6A.8, §7, §8)
+- **Phụ thuộc:** `E7-01`, `E7-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `HANDOFF` (`FR-07`, `FR-24`, `FR-26`, `AC-15`), `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `tests/e2e/comments-hidden-tasks.spec.ts` (và bổ sung test trong `tests/*` nếu cần phủ AC)
+- **Tiêu chí chấp nhận:** Chrome E2E xác minh tạo/xem/xóa bình luận theo quyền (`comment.create`, tác giả, `comment.delete_any`, non-holder `403`), bật/tắt cờ ẩn (creator/admin được, assignee/`task.update_any` `403`, non-viewer `404` trên board/search/count/task detail/comments/delete comment), ghi `task_events` (`task.hidden_changed`, `comment.added`, `comment.deleted`) không PII; đạt đủ 8 cổng CI và audit §6A.8/§7/§8 `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
+- **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Backlog (chờ duyệt)`

@@ -1,7 +1,7 @@
 # STATUS
 
 Cập nhật: 2026-11-26 · Phiên: 12
-Epic hiện tại: **`E6`** (`E6-01`, `E6-02`, `E6-03`, `[RỦI RO CAO]`) · Trạng thái: Hoàn tất code, 8/8 cổng kiểm thử & QA độc lập (`VERDICT: PASS`) trên nhánh `feat/E6-board-filters-and-move`, chờ chủ dự án duyệt merge vào `main`
+Epic hiện tại: Đã merge **`E6`** vào `main` · Chờ chủ dự án duyệt danh sách item **Epic `E7`** (`E7-01`..`E7-03`, `[RỦI RO CAO]`)
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -47,13 +47,13 @@ Epic hiện tại: **`E6`** (`E6-01`, `E6-02`, `E6-03`, `[RỦI RO CAO]`) · Tr�
   - Frontend (`CR-06-02`): Tách khối độc lập [TaskNotificationOptions.tsx](../src/features/tasks/components/TaskNotificationOptions.tsx) (`Thông báo trên web` & `Gửi email`), mở rộng [TaskDetailDrawer.tsx](../src/features/tasks/components/TaskDetailDrawer.tsx) lên 2 cột `~900px` kèm tóm tắt giao việc & nút `Cập nhật giao việc`, nới [CreateTaskModal.tsx](../src/features/tasks/components/CreateTaskModal.tsx) (`720px`, mô tả `6` dòng).
   - Kiểm thử & QA độc lập (`CR-05-02` + `CR-06-03`, `qa-reviewer` ngữ cảnh sạch): Vượt 8/8 cổng (`typecheck`, `lint` `0`/`0`, `arch:check` `269` module / `1,233` phụ thuộc, `openapi:check`, **`244` unit test / `47` tệp**, **`22` integration PostgreSQL / `13` tệp**, `next build` `34/34` route, **`28/28` Chrome E2E** gồm `auth`, `permissions-audit`, `department-notifications`) và audit `6A.8` (`13/13`) đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `1` Minor không chặn).
 - **Đồng bộ đặc tả Epic `E6` từ máy Mac (`1f5ecb69`):** Đã gộp nguyên vẹn quyết định OpenAPI `E6` vào [DECISIONS.md](DECISIONS.md) và danh sách item `E6-01..E6-03` vào [BACKLOG.md](BACKLOG.md) để cả hai máy dùng chung một nguồn sự thật.
-- **E6 (`[RỦI RO CAO]` — Done trên nhánh `feat/E6-board-filters-and-move`, chờ chủ dự án duyệt merge `main`):**
+- **E6 (`[RỦI RO CAO]` — Done, đã duyệt & merge `main`):**
   - Hợp đồng & Backend (`E6-01`, `backend-db`): Cập nhật cộng thêm [openapi.yaml](openapi.yaml) (`GET /boards?q`, `BoardSummaryDto`/`BoardDetailDto` thêm `visibleTaskCount` & `overdueTaskCount`, chuẩn hóa `GET /tasks?dueStatus=overdue` loại cột `Done`), tái sinh `schema.d.ts`, cập nhật [boards.ts](../src/lib/boards.ts) & [route.ts](../src/app/api/v1/boards/route.ts); gom nguồn sự thật SQL `taskAccessSqlCondition` & `notDoneColumnSqlCondition` tại `src/server/modules/tasks/repository.ts` dùng chung cho `tasks`, `boards` (truy vấn gom `GROUP BY board_id`, không N+1) và `archive` (giữ `0`/`0` chống lộ count ẩn).
   - Frontend (`E6-02`, `frontend`): `S03` (`/boards`) chuyển tìm kiếm `q` sang server-side (`GET /boards?q=`, debounce 250ms) và hiển thị `visibleTaskCount`/`overdueTaskCount` trên [BoardTileCard.tsx](../src/features/boards/components/BoardTileCard.tsx); `S04` (`/boards/[id]`) thêm [BoardFilterBar.tsx](../src/features/boards/components/BoardFilterBar.tsx) + [useBoardFilters.ts](../src/features/boards/hooks/useBoardFilters.ts) (đồng bộ URL query, bảo toàn filter khi đóng Drawer, ẩn select `assigneeId` & không gọi `/members` khi thiếu `member.view`, tự chuyển nguồn dữ liệu sang `GET /tasks` & tạm dừng kéo thả kèm banner reset), bổ sung menu `⋯` **"Chuyển tới cột…"** (`FR-22`) trên [BoardTaskCard.tsx](../src/features/boards/components/BoardTaskCard.tsx) và tắt cảnh báo quá hạn ở cột `Done`; đủ 100% khóa `vi`/`en`.
   - Kiểm thử & QA độc lập (`E6-03`, `qa-reviewer` + `qa-engineer` ngữ cảnh sạch): Bổ sung [board-filters-and-move.spec.ts](../tests/e2e/board-filters-and-move.spec.ts), vượt 8/8 cổng (`openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `275` module / `1,264` phụ thuộc, **`253` unit test / `48` tệp**, **`24` integration PostgreSQL / `15` tệp**, `next build` `34/34` route, **`31/31` Chrome E2E** `1.9m`) và audit `6A.8` (`13/13`) + `§7`/`§8` đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor không chặn).
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Đã hoàn tất **Epic `E6` (`[RỦI RO CAO]`)** trên nhánh `feat/E6-board-filters-and-move` và đạt `VERDICT: PASS`, chờ chủ dự án Sang duyệt để merge cục bộ vào `main`.
+- Đã hoàn tất merge cục bộ `feat/E6-board-filters-and-move` vào `main`. Đang chờ chủ dự án Sang duyệt danh sách item **Epic `E7`** (`E7-01`, `E7-02`, `E7-03`, `[RỦI RO CAO]`, 0 migration, 0 thay đổi `docs/openapi.yaml`) trong [BACKLOG.md](BACKLOG.md) để bắt đầu triển khai song song `E7-01` + `E7-02`.
 
 ## Việc tiếp theo
-- Sau khi chủ dự án duyệt merge `feat/E6-board-filters-and-move` vào `main`, tiếp tục triển khai **`E7–E9`** (`E7`: bình luận + cờ task ẩn `FR-24`/`FR-07`/`FR-26`, `E7A`: lịch sử `task_events` & hoàn tác + toast `10s`, `E8`: email nhắc deadline `07:00 UTC+7` + Vercel Cron, `E9`: hoàn thiện song ngữ, backup `pg_dump`, regression & UAT).
+- Sau khi chủ dự án duyệt danh sách item **Epic `E7`**, triển khai song song `E7-01` (`backend-db`) + `E7-02` (`frontend`) → `E7-03` (`qa-engineer` độc lập) trên nhánh `feat/E7-comments-and-hidden`, rồi nối tiếp **`E7A` → `E8` → `E9`**.
