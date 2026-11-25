@@ -19,6 +19,7 @@ import {
   listTasksQuerySchema,
   moveTaskRequestSchema,
   replaceTaskAssigneesRequestSchema,
+  resolveTaskNotificationChannels,
   TASK_PRIORITIES,
   updateTaskRequestSchema,
 } from '@/lib/tasks';
@@ -148,6 +149,75 @@ describe('boards & tasks shared contracts', () => {
     expect(
       replaceTaskAssigneesRequestSchema.safeParse({ version: 1 }).success,
     ).toBe(false);
+    expect(
+      replaceTaskAssigneesRequestSchema.safeParse({
+        notifyInApp: false,
+        notifyEmail: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      replaceTaskAssigneesRequestSchema.parse({
+        assigneeIds: [UUID_3],
+        notifyInApp: true,
+        notifyEmail: false,
+      }),
+    ).toEqual({
+      assigneeIds: [UUID_3],
+      notifyDepartmentMembers: true,
+      notifyInApp: true,
+      notifyEmail: false,
+    });
+    expect(
+      createTaskRequestSchema.parse({
+        boardId: UUID_1,
+        columnId: UUID_2,
+        title: 'Channel overrides',
+        notifyDepartmentMembers: false,
+        notifyInApp: true,
+      }),
+    ).toMatchObject({
+      notifyDepartmentMembers: false,
+      notifyInApp: true,
+    });
+    expect(
+      createTaskRequestSchema.safeParse({
+        boardId: UUID_1,
+        columnId: UUID_2,
+        title: 'Invalid notifyEmail',
+        notifyEmail: 'no',
+      }).success,
+    ).toBe(false);
+
+    expect(resolveTaskNotificationChannels({})).toEqual({
+      notifyInApp: true,
+      notifyEmail: true,
+    });
+    expect(
+      resolveTaskNotificationChannels({ notifyDepartmentMembers: false }),
+    ).toEqual({
+      notifyInApp: false,
+      notifyEmail: false,
+    });
+    expect(
+      resolveTaskNotificationChannels({
+        notifyDepartmentMembers: true,
+        notifyInApp: true,
+        notifyEmail: false,
+      }),
+    ).toEqual({
+      notifyInApp: true,
+      notifyEmail: false,
+    });
+    expect(
+      resolveTaskNotificationChannels({
+        notifyDepartmentMembers: false,
+        notifyInApp: false,
+        notifyEmail: true,
+      }),
+    ).toEqual({
+      notifyInApp: false,
+      notifyEmail: true,
+    });
 
     expect(NOTIFICATION_TYPES).toEqual(['task.department_assigned', 'task.assigned']);
     expect(

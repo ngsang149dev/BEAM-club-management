@@ -403,7 +403,8 @@ describe('Department Task Assignment & Notifications integration', () => {
       expect(silentAssignRes.status).toBe(200);
       expect(sentEmails).toHaveLength(0);
 
-      // Replace only assigneeIds (omit departmentIds -> preserved)
+      // Replace only assigneeIds (omit departmentIds -> preserved) -> newly added outsiderId receives 1 direct task.assigned notif & email
+      sentEmails.length = 0;
       const userOnlyAssignRes = await taskAssigneesPut(
         new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/assignees`, {
           method: 'PUT',
@@ -418,6 +419,122 @@ describe('Department Task Assignment & Notifications integration', () => {
       };
       expect(userOnlyBody.task.assignees.map((a) => a.id)).toEqual([outsiderId]);
       expect(userOnlyBody.task.assignedDepartments.map((d) => d.id)).toHaveLength(3);
+      expect(sentEmails).toHaveLength(1);
+      expect(sentEmails[0]!.to).toBe(`cr03-out-${suffix}@eiu.edu.vn`);
+      expect(sentEmails[0]!.subject).toBe(`[BEAM] Công việc mới được giao cho bạn: Public Dept Task ${suffix}`);
+      sentEmails.length = 0;
+
+      // 8b. CR-06: Multi-source deduplication (dept + direct -> 1 task.department_assigned), actor exclusion, independent notifyInApp/notifyEmail, and WQ-27 hidden direct task
+      const mixedTaskRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({
+          boardId,
+          columnId: todoColId,
+          title: `Mixed Assign ${suffix}`,
+          departmentIds: [deptEventId],
+          assigneeIds: [adminId, deptMemberEnId, outsiderId],
+        }),
+      }));
+      expect(mixedTaskRes.status).toBe(201);
+      const mixedTaskId = ((await mixedTaskRes.json()) as { task: { id: string } }).task.id;
+      expect(sentEmails.map((e) => e.to).sort()).toEqual([
+        `cr03-men-${suffix}@eiu.edu.vn`,
+        `cr03-mvi-${suffix}@eiu.edu.vn`,
+        `cr03-out-${suffix}@eiu.edu.vn`,
+      ]);
+      const mixedNotifRows = await tx.select().from(notifications).where(eq(notifications.taskId, mixedTaskId));
+      expect(mixedNotifRows).toHaveLength(3);
+      expect(mixedNotifRows.find((r) => r.userId === deptMemberViId)?.type).toBe('task.department_assigned');
+      expect(mixedNotifRows.find((r) => r.userId === deptMemberEnId)?.type).toBe('task.department_assigned');
+      expect(mixedNotifRows.find((r) => r.userId === outsiderId)?.type).toBe('task.assigned');
+      expect(mixedNotifRows.find((r) => r.userId === outsiderId)?.departmentId).toBeNull();
+      sentEmails.length = 0;
+
+      // notifyInApp=true, notifyEmail=false -> DB row only, 0 emails
+      const inAppOnlyRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({
+          boardId,
+          columnId: todoColId,
+          title: `InApp Only ${suffix}`,
+          assigneeIds: [outsiderId],
+          notifyInApp: true,
+          notifyEmail: false,
+        }),
+      }));
+      expect(inAppOnlyRes.status).toBe(201);
+      const inAppOnlyTaskId = ((await inAppOnlyRes.json()) as { task: { id: string } }).task.id;
+      expect(sentEmails).toHaveLength(0);
+      expect(await tx.select().from(notifications).where(eq(notifications.taskId, inAppOnlyTaskId))).toHaveLength(1);
+
+      // notifyInApp=false, notifyEmail=true -> email only, 0 DB rows
+      const emailOnlyRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({
+          boardId,
+          columnId: todoColId,
+          title: `Email Only ${suffix}`,
+          assigneeIds: [deptMemberEnId],
+          notifyInApp: false,
+          notifyEmail: true,
+        }),
+      }));
+      expect(emailOnlyRes.status).toBe(201);
+      const emailOnlyTaskId = ((await emailOnlyRes.json()) as { task: { id: string } }).task.id;
+      expect(sentEmails).toHaveLength(1);
+      expect(sentEmails[0]!.subject).toBe(`[BEAM] New task assigned to you: Email Only ${suffix}`);
+      expect(await tx.select().from(notifications).where(eq(notifications.taskId, emailOnlyTaskId))).toHaveLength(0);
+      sentEmails.length = 0;
+
+      // Hidden direct task -> WQ-27 redacts title in DB, GET /notifications, and direct email; unassigning immediately 404s
+      const directSecretTitle = `DIRECT_HIDDEN_${suffix}`;
+      const hiddenDirectRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({
+          boardId,
+          columnId: todoColId,
+          title: directSecretTitle,
+          assigneeIds: [outsiderId],
+          isHidden: true,
+        }),
+      }));
+      expect(hiddenDirectRes.status).toBe(201);
+      const hiddenDirectTaskId = ((await hiddenDirectRes.json()) as { task: { id: string } }).task.id;
+      expect(sentEmails).toHaveLength(1);
+      expect(sentEmails[0]!.subject).toBe('[BEAM] Công việc ẩn mới được giao cho bạn');
+      expect(sentEmails[0]!.subject).not.toContain(directSecretTitle);
+      expect(sentEmails[0]!.text).not.toContain(directSecretTitle);
+      expect(sentEmails[0]!.html).not.toContain(directSecretTitle);
+      sentEmails.length = 0;
+
+      const outsiderNotifs = (await (await notificationsGet(new Request('http://localhost:3000/api/v1/notifications', { headers: { cookie: outsiderCookie } }))).json()) as {
+        items: Array<{ id: string; type: string; taskId: string; taskTitle: string | null; departmentId: string | null; departmentName: string | null; isHiddenTask: boolean }>;
+      };
+      const hiddenDirectNotif = outsiderNotifs.items.find((n) => n.taskId === hiddenDirectTaskId)!;
+      expect(hiddenDirectNotif).toMatchObject({
+        type: 'task.assigned',
+        taskId: hiddenDirectTaskId,
+        taskTitle: null,
+        departmentId: null,
+        departmentName: null,
+        isHiddenTask: true,
+      });
+
+      // Unassign outsiderId from hiddenDirectTaskId -> immediate 404 on task & notification
+      expect((await taskAssigneesPut(
+        new Request(`http://localhost:3000/api/v1/tasks/${hiddenDirectTaskId}/assignees`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ assigneeIds: [], version: 1 }),
+        }),
+        { params: Promise.resolve({ id: hiddenDirectTaskId }) },
+      )).status).toBe(200);
+      expect((await taskGet(new Request(`http://localhost:3000/api/v1/tasks/${hiddenDirectTaskId}`, { headers: { cookie: outsiderCookie } }), { params: Promise.resolve({ id: hiddenDirectTaskId }) })).status).toBe(404);
+      expect((await notificationReadPost(new Request(`http://localhost:3000/api/v1/notifications/${hiddenDirectNotif.id}/read`, { method: 'POST', headers: { cookie: outsiderCookie } }), { params: Promise.resolve({ id: hiddenDirectNotif.id }) })).status).toBe(404);
 
       // 9. Soft-delete & Archive purge frees department and cleans notifications/task_departments
       const silentTempTaskRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
@@ -481,7 +598,7 @@ describe('Department Task Assignment & Notifications integration', () => {
       const allEvents = await tx.select().from(taskEvents).where(eq(taskEvents.taskId, publicTaskId));
       const allNotifs = await tx.select().from(notifications).where(eq(notifications.boardId, boardId));
       const serialized = JSON.stringify([allEvents, allNotifs, viNotifsAll, logs]);
-      for (const pii of [adminSid, creatorSid, viMemberSid, enMemberSid, outsiderSid, inactiveSid, `cr03-adm-${suffix}`, `cr03-mvi-${suffix}`]) {
+      for (const pii of [adminSid, creatorSid, viMemberSid, enMemberSid, outsiderSid, inactiveSid, `cr03-adm-${suffix}`, `cr03-mvi-${suffix}`, `cr03-out-${suffix}`]) {
         expect(serialized).not.toContain(pii);
       }
     });

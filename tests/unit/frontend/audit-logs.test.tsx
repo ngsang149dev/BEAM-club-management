@@ -126,7 +126,7 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(html).toContain('task.assign');
     expect(html).toContain('board.create');
     expect(html).toContain('Tải thêm');
-    expect(html).toContain('Bản ghi không chứa MSSV hay email');
+    expect(html).toContain('Nhật ký không lưu MSSV hay email.');
     expect(html).not.toContain('Lọc theo người thực hiện');
     expect(html).not.toContain('>Sửa<');
     expect(html).not.toContain('>Xóa<');
@@ -138,7 +138,7 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(html).toContain('Filter by actor');
     expect(html).toContain('Filter by target');
     expect(html).toContain('Load more');
-    expect(html).toContain('Records hold no student ID or email');
+    expect(html).toContain('Logs never store student IDs or emails.');
     expect(html).not.toContain('>Edit<');
     expect(html).not.toContain('>Delete<');
   });

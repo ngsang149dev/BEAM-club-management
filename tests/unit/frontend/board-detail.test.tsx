@@ -62,8 +62,10 @@ vi.mock('next/link', () => ({
 
 import { BoardDetailView } from '@/features/boards/components/BoardDetailView';
 import { ColumnDeleteModal } from '@/features/boards/components/ColumnModals';
-import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
+import { CreateTaskModal, buildCreateTaskRequestPayload } from '@/features/tasks/components/CreateTaskModal';
 import { TaskDetailDrawer } from '@/features/tasks/components/TaskDetailDrawer';
+import { buildReplaceTaskAssigneesPayload } from '@/features/tasks/components/TaskDrawerSections';
+import { TaskNotificationOptions } from '@/features/tasks/components/TaskNotificationOptions';
 
 type BoardDetailDto = components['schemas']['BoardDetailDto'];
 type TaskDto = components['schemas']['TaskDto'];
@@ -187,9 +189,19 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
 
     authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-inactive' } } });
     const assignedEditHtml = renderWithIntl(<TaskDetailDrawer taskId="t-1" onClose={vi.fn()} />, { permissions: ['task.update_assigned', 'task.assign', 'task.delete'] });
+    expect(assignedEditHtml).toContain('ui-drawer ui-drawer-task');
+    expect(assignedEditHtml).toContain('task-drawer-grid');
+    expect(assignedEditHtml).toContain('task-drawer-col-main');
+    expect(assignedEditHtml).toContain('task-drawer-col-side');
+    expect(assignedEditHtml).toContain('task-assigned-summary');
+    expect(assignedEditHtml).toContain('rows="6"');
     expect(assignedEditHtml).toContain('Lưu thay đổi');
     expect(assignedEditHtml).toContain('type="date"');
-    expect(assignedEditHtml).toContain('Cần quyền member.view để chọn danh sách thành viên.');
+    expect(assignedEditHtml).toContain('Bạn không có quyền xem danh sách thành viên.');
+    expect(assignedEditHtml).toContain('Tùy chọn gửi thông báo');
+    expect(assignedEditHtml).toContain('Thông báo trên web');
+    expect(assignedEditHtml).toContain('Gửi email');
+    expect(assignedEditHtml).toContain('Cập nhật giao việc');
     expect(assignedEditHtml).toContain('Xóa task');
 
     tasksHooksMock.useTaskAssigneeMembersQuery.mockReturnValueOnce({
@@ -255,19 +267,45 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     );
     expect(deptDrawerHtml).toContain('Lưu thay đổi');
     expect(deptDrawerHtml).toContain('task-dept-chip');
+    expect(deptDrawerHtml).toContain('Ban được giao');
     expect(deptDrawerHtml).toContain('Giao cho ban');
-    expect(deptDrawerHtml).toContain('Gửi thông báo &amp; email cho thành viên của ban');
+    expect(deptDrawerHtml).toContain('task-notify-card');
+    expect(deptDrawerHtml).toContain('Tùy chọn gửi thông báo');
+    expect(deptDrawerHtml).toContain('Thông báo trên web');
+    expect(deptDrawerHtml).toContain('Gửi email');
+    expect(deptDrawerHtml).not.toContain('Gửi thông báo &amp; email cho thành viên của ban');
     expect(deptDrawerHtml).toContain('class="task-individual-details"');
-    expect(deptDrawerHtml).toContain('Lưu phân công');
+    expect(deptDrawerHtml).toContain('ui-btn secondary');
+    expect(deptDrawerHtml).toContain('Cập nhật giao việc');
+
+    authHooksMock.useMeQuery.mockReturnValueOnce({
+      data: { profile: { id: 'u-dept-member', departments: [{ id: 'd-2', name: 'Truyền thông' }] } },
+    });
+    const deptDrawerEnHtml = renderWithIntl(
+      <TaskDetailDrawer taskId="t-2" onClose={vi.fn()} />,
+      { permissions: ['task.update_assigned', 'task.assign'], locale: 'en' }
+    );
+    expect(deptDrawerEnHtml).toContain('Assigned departments');
+    expect(deptDrawerEnHtml).toContain('Notification options');
+    expect(deptDrawerEnHtml).toContain('Web notification');
+    expect(deptDrawerEnHtml).toContain('Send email');
+    expect(deptDrawerEnHtml).toContain('Update assignments');
 
     const createModalVi = renderWithIntl(
       <CreateTaskModal boardId="b-1" columnId="c-1" columnName="Todo" onClose={vi.fn()} />,
       { permissions: ['task.create', 'task.assign'] }
     );
+    expect(createModalVi).toContain('ui-modal ui-modal-lg');
+    expect(createModalVi).toContain('rows="6"');
     expect(createModalVi.indexOf('Giao cho ban')).toBeLessThan(
-      createModalVi.indexOf('Giao thêm cho từng thành viên (tùy chọn)')
+      createModalVi.indexOf('Giao thêm cho từng thành viên')
     );
-    expect(createModalVi).toContain('Gửi thông báo &amp; email cho thành viên của ban');
+    expect(createModalVi.indexOf('Giao thêm cho từng thành viên')).toBeLessThan(
+      createModalVi.indexOf('Tùy chọn gửi thông báo')
+    );
+    expect(createModalVi).toContain('Thông báo trên web');
+    expect(createModalVi).toContain('Gửi email');
+    expect(createModalVi.match(/task-notify-option is-checked/g) ?? []).toHaveLength(2);
     expect(createModalVi).toContain('Sự kiện');
     expect(createModalVi).toContain('Truyền thông');
     expect(createModalVi).not.toContain('class="task-individual-details" open');
@@ -276,8 +314,116 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       <CreateTaskModal boardId="b-1" columnId="c-1" columnName="Todo" onClose={vi.fn()} />,
       { permissions: ['task.create', 'task.assign'], locale: 'en' }
     );
-    expect(createModalEn).toContain('Assigned departments');
-    expect(createModalEn).toContain('Send notification &amp; email to department members');
-    expect(createModalEn).toContain('Assign specific members (optional)');
+    expect(createModalEn).toContain('Assign to departments');
+    expect(createModalEn).toContain('Notification options');
+    expect(createModalEn).toContain('Web notification');
+    expect(createModalEn).toContain('Send email');
+    expect(createModalEn).toContain('Assign individual members');
+
+    const notifySplitHtml = renderWithIntl(
+      <TaskNotificationOptions
+        notifyInApp
+        onToggleNotifyInApp={vi.fn()}
+        notifyEmail={false}
+        onToggleNotifyEmail={vi.fn()}
+      />
+    );
+    expect(notifySplitHtml.match(/task-notify-option is-checked/g) ?? []).toHaveLength(1);
+
+    expect(
+      buildCreateTaskRequestPayload({
+        boardId: 'b-1',
+        columnId: 'c-1',
+        values: { title: '  Chuẩn bị poster  ', description: '  Khổ A3  ', dueAtInput: '', priority: 3, isHidden: false },
+        canAssign: true,
+        assigneeIds: ['u-1'],
+        departmentIds: ['d-2'],
+        notifyInApp: true,
+        notifyEmail: false,
+      })
+    ).toEqual({
+      boardId: 'b-1',
+      columnId: 'c-1',
+      title: 'Chuẩn bị poster',
+      description: 'Khổ A3',
+      dueAt: null,
+      priority: 3,
+      assigneeIds: ['u-1'],
+      departmentIds: ['d-2'],
+      notifyInApp: true,
+      notifyEmail: false,
+      notifyDepartmentMembers: true,
+      isHidden: false,
+    });
+
+    expect(
+      buildCreateTaskRequestPayload({
+        boardId: 'b-1',
+        columnId: 'c-1',
+        values: { title: 'Silent', description: '', dueAtInput: '', priority: 2, isHidden: false },
+        canAssign: true,
+        assigneeIds: ['u-1'],
+        departmentIds: [],
+        notifyInApp: false,
+        notifyEmail: false,
+      })
+    ).toMatchObject({
+      notifyInApp: false,
+      notifyEmail: false,
+      notifyDepartmentMembers: false,
+    });
+
+    expect(
+      buildCreateTaskRequestPayload({
+        boardId: 'b-1',
+        columnId: 'c-1',
+        values: { title: 'No Assign Perm', description: '', dueAtInput: '', priority: 2, isHidden: false },
+        canAssign: false,
+        assigneeIds: ['u-1'],
+        departmentIds: ['d-2'],
+        notifyInApp: true,
+        notifyEmail: true,
+      })
+    ).toMatchObject({
+      assigneeIds: [],
+      departmentIds: [],
+      notifyInApp: false,
+      notifyEmail: false,
+      notifyDepartmentMembers: false,
+    });
+
+    expect(
+      buildReplaceTaskAssigneesPayload({
+        assigneeIds: ['u-1'],
+        departmentIds: ['d-1', 'd-2'],
+        notifyInApp: false,
+        notifyEmail: true,
+        version: 4,
+      })
+    ).toEqual({
+      assigneeIds: ['u-1'],
+      departmentIds: ['d-1', 'd-2'],
+      notifyInApp: false,
+      notifyEmail: true,
+      notifyDepartmentMembers: true,
+      version: 4,
+    });
+
+    expect(
+      buildReplaceTaskAssigneesPayload({
+        assigneeIds: ['u-1'],
+        departmentIds: ['d-1'],
+        canViewMembers: false,
+        notifyInApp: false,
+        notifyEmail: false,
+        version: 5,
+      })
+    ).toEqual({
+      departmentIds: ['d-1'],
+      notifyInApp: false,
+      notifyEmail: false,
+      notifyDepartmentMembers: false,
+      version: 5,
+    });
   });
 });

@@ -5,16 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ErrorState } from '@/components/ErrorState';
-import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { isApiClientError, type components } from '@/features/shared/api/client';
 import type { PermissionCode } from '@/features/shared/permissions/can';
-import type { AppLocale } from '@/i18n/locale';
 import {
   useLogoutMutation,
   useMeQuery,
   useRemoveMyAvatarMutation,
   useSessionQuery,
-  useUpdateLocaleMutation,
   useUpdateMyAvatarMutation,
   type SessionInfoResponse,
 } from '../hooks/useAuth';
@@ -33,7 +30,6 @@ export interface ProfileContentProps {
   permissions: readonly PermissionCode[];
   session?: Pick<SessionInfoResponse, 'rememberMe' | 'expiresAt'> | null;
   isSigningOut?: boolean;
-  localeError?: boolean;
   forceChangePasswordPrompt?: boolean;
   passwordChanged?: boolean;
   avatarBusy?: boolean;
@@ -44,7 +40,6 @@ export interface ProfileContentProps {
   onPasswordChanged?: () => void;
   onClearPasswordChanged?: () => void;
   onSignOut: () => void;
-  onLocaleChange: (locale: AppLocale) => unknown | Promise<unknown>;
 }
 
 function ProfileMainColumn({
@@ -100,7 +95,6 @@ export function ProfileContent({
   permissions,
   session,
   isSigningOut = false,
-  localeError = false,
   forceChangePasswordPrompt = false,
   passwordChanged,
   avatarBusy,
@@ -111,14 +105,12 @@ export function ProfileContent({
   onPasswordChanged,
   onClearPasswordChanged,
   onSignOut,
-  onLocaleChange,
 }: ProfileContentProps) {
   const tProfile = useTranslations('profile');
   return (
     <div className="profile-page">
       <header className="profile-pagehead">
         <h1>{tProfile('title')}</h1>
-        <p>{tProfile('subtitle')}</p>
       </header>
       <div className="profile-grid">
         <ProfileMainColumn
@@ -135,12 +127,6 @@ export function ProfileContent({
         />
         <aside className="profile-side">
           <ProfilePermissionsCard isAdmin={profile.isAdmin} permissions={permissions} />
-          <section className="profile-card">
-            <h3>{tProfile('languageTitle')}</h3>
-            <LanguageSwitch onLocaleChange={onLocaleChange} />
-            <p className="profile-note">{tProfile('languageSyncedNote')}</p>
-            {localeError ? <p className="profile-error" role="alert">{tProfile('languageSaveError')}</p> : null}
-          </section>
           <ProfileSessionCard session={session} isSigningOut={isSigningOut} onSignOut={onSignOut} />
         </aside>
       </div>
@@ -202,7 +188,6 @@ export function ProfileView() {
   const meQuery = useMeQuery();
   const sessionQuery = useSessionQuery();
   const logoutMutation = useLogoutMutation();
-  const updateLocaleMutation = useUpdateLocaleMutation();
   const updateAvatarMutation = useUpdateMyAvatarMutation();
   const removeAvatarMutation = useRemoveMyAvatarMutation();
 
@@ -220,7 +205,6 @@ export function ProfileView() {
     permissions: meQuery.data.permissions,
     session: sessionQuery.data ?? null,
     isSigningOut: logoutMutation.isPending,
-    localeError: updateLocaleMutation.isError,
     passwordChanged,
     avatarBusy: updateAvatarMutation.isPending || removeAvatarMutation.isPending,
     avatarError: updateAvatarMutation.error ?? removeAvatarMutation.error,
@@ -239,7 +223,6 @@ export function ProfileView() {
     onPasswordChanged: () => setPasswordChanged(true),
     onClearPasswordChanged: () => setPasswordChanged(false),
     onSignOut: () => logoutMutation.mutate(),
-    onLocaleChange: (locale) => updateLocaleMutation.mutateAsync(locale),
   };
 
   return (

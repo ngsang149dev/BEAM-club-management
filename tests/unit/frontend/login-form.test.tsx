@@ -63,12 +63,14 @@ describe('LoginForm (S01)', () => {
     expect(checkboxes).toHaveLength(1);
     expect(checkboxes[0]).not.toContain('checked');
 
-    expect(htmlVi).toContain('Chỉ tích trên thiết bị của bạn.');
+    expect(htmlVi).toContain('Ghi nhớ đăng nhập');
+    expect(htmlVi).not.toContain('Chỉ tích trên thiết bị của bạn.');
     expect(htmlVi).not.toContain('không có mật khẩu');
     expect(htmlVi).not.toContain('Phiên đã hết hạn');
 
     const htmlEn = renderLogin('en');
-    expect(htmlEn).toContain('Only tick this on your own device.');
+    expect(htmlEn).toContain('Remember me');
+    expect(htmlEn).not.toContain('Only tick this on your own device.');
     expect(htmlEn).toContain('aria-label="Show password"');
     expect(htmlEn).toContain('Sign in');
     expect(htmlEn).not.toContain('no self sign-up, password or OTP');

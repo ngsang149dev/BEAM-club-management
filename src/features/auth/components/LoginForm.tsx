@@ -159,7 +159,6 @@ function LoginFormFields({
         <input type="checkbox" className="login-remember-checkbox" disabled={isBusy} {...register('remember')} />
         <span className="login-remember-text">
           <span className="login-remember-label">{tAuth('rememberLabel')}</span>
-          <span className="login-remember-hint">{tAuth('rememberHint')}</span>
         </span>
       </label>
     </>

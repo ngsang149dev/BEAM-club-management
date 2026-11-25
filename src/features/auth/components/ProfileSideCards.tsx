@@ -68,12 +68,10 @@ export function ProfileContactAndDepartments({ profile }: { profile: MemberDetai
           <div className="profile-field">
             <span>{tProfile('studentIdLabel')}</span>
             <b className="profile-mono">{profile.studentId}</b>
-            <span className="profile-lock">{tProfile('onlyYouAndAdmins')}</span>
           </div>
           <div className="profile-field">
             <span>{tProfile('emailLabel')}</span>
             <b>{profile.email}</b>
-            <span className="profile-lock">{tProfile('onlyYouAndAdmins')}</span>
           </div>
         </div>
       </div>
@@ -88,7 +86,6 @@ export function ProfileContactAndDepartments({ profile }: { profile: MemberDetai
         ) : (
           <p className="profile-note">{tProfile('departmentsEmpty')}</p>
         )}
-        <p className="profile-note">{tProfile('departmentsManagedByAdmin')}</p>
       </div>
     </>
   );
@@ -135,7 +132,6 @@ export function ProfilePermissionsCard({
           })}
         </div>
       )}
-      <p className="profile-note">{tProfile('permissionsManagedByAdmin')}</p>
     </section>
   );
 }

@@ -69,21 +69,25 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
   const hrUpdaterUserId = randomUUID();
   const targetUserId = randomUUID();
   const auditViewerUserId = randomUUID();
+  const inactiveUserId = randomUUID();
 
   const adminStudentId = `MSSV-E4-ADM-${suffix}`;
   const hrStudentId = `MSSV-E4-HR-${suffix}`;
   const targetStudentId = `MSSV-E4-TGT-${suffix}`;
   const auditViewerStudentId = `MSSV-E4-AUD-${suffix}`;
+  const inactiveStudentId = `MSSV-E4-OFF-${suffix}`;
 
   const adminEmail = `e4-admin-${suffix}@eiu.edu.vn`;
   const hrEmail = `e4-hr-${suffix}@eiu.edu.vn`;
   const targetEmail = `e4-target-${suffix}@eiu.edu.vn`;
   const auditViewerEmail = `e4-audit-${suffix}@eiu.edu.vn`;
+  const inactiveEmail = `e4-inactive-${suffix}@eiu.edu.vn`;
 
   const adminFullName = `E4 Admin ${suffix}`;
   const hrFullName = `E4 HR Updater ${suffix}`;
   const targetFullName = `E4 Target ${suffix}`;
   const auditViewerFullName = `E4 Audit Viewer ${suffix}`;
+  const inactiveFullName = `E4 Departed ${suffix}`;
 
   const tempDeptName = `Ban E4 Temp ${suffix}`;
 
@@ -157,6 +161,18 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
         isActive: true,
         locale: 'vi',
       },
+      {
+        id: inactiveUserId,
+        studentId: inactiveStudentId,
+        email: inactiveEmail,
+        fullName: inactiveFullName,
+        passwordHash: seedPasswordHash,
+        mustChangePassword: false,
+        isAdmin: false,
+        isActive: false,
+        leftAt: new Date('2026-09-01T00:00:00.000Z'),
+        locale: 'vi',
+      },
     ]);
 
     await db.insert(userPermissions).values([
@@ -183,6 +199,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
             hrStudentId,
             targetStudentId,
             auditViewerStudentId,
+            inactiveStudentId,
           ]),
           inArray(loginAttempts.ip, LOOPBACK_IPS),
         ),
@@ -191,7 +208,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
 
   test.afterAll(async () => {
     if (db) {
-      const cleanupIds = [adminUserId, hrUpdaterUserId, targetUserId, auditViewerUserId];
+      const cleanupIds = [adminUserId, hrUpdaterUserId, targetUserId, auditViewerUserId, inactiveUserId];
       await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
       await db.delete(sessions).where(inArray(sessions.userId, cleanupIds));
       await db.delete(userPermissions).where(inArray(userPermissions.userId, cleanupIds));
@@ -205,6 +222,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
               hrStudentId,
               targetStudentId,
               auditViewerStudentId,
+              inactiveStudentId,
             ]),
             inArray(loginAttempts.ip, LOOPBACK_IPS),
           ),
@@ -212,7 +230,7 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
       await db
         .update(profiles)
         .set({ isActive: false, leftAt: new Date(), updatedAt: new Date() })
-        .where(inArray(profiles.id, [hrUpdaterUserId, targetUserId, auditViewerUserId]));
+        .where(inArray(profiles.id, [hrUpdaterUserId, targetUserId, auditViewerUserId, inactiveUserId]));
 
       const remainingAdmins = await db
         .select({ id: profiles.id })
@@ -268,14 +286,41 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     page,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
+    const initialMembersPromise = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/v1/members') &&
+        res.request().method() === 'GET' &&
+        res.status() === 200,
+    );
     await signInAs(page, adminStudentId, '/admin/permissions');
+    const initialMembersRes = await initialMembersPromise;
+    expect(new URL(initialMembersRes.url()).searchParams.get('isActive')).toBe('true');
+
+    // CR-05: Deactivated/departed members are excluded from /admin/permissions sidebar (unfiltered & when searched)
+    const membersSidebar = page.locator('.perm-people');
+    await expect(membersSidebar.locator('button.perm-person').first()).toBeVisible();
+    await expect(membersSidebar).not.toContainText(inactiveFullName);
+    await expect(membersSidebar).not.toContainText(viMessages.member.leftBadge);
+
+    const searchInput = page.getByLabel(viMessages.permissionsAdmin.searchLabel);
+    const inactiveSearchPromise = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/v1/members') &&
+        res.request().method() === 'GET' &&
+        new URL(res.url()).searchParams.get('q') === inactiveFullName,
+    );
+    await searchInput.fill(inactiveFullName);
+    const inactiveSearchRes = await inactiveSearchPromise;
+    expect(inactiveSearchRes.status()).toBe(200);
+    expect(new URL(inactiveSearchRes.url()).searchParams.get('isActive')).toBe('true');
+    await expect(membersSidebar).not.toContainText(inactiveFullName);
+    await expect(membersSidebar).toContainText(viMessages.permissionsAdmin.noMembers);
 
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
     try {
       await signInAs(memberPage, targetStudentId, '/profile');
 
-      const searchInput = page.getByLabel(viMessages.permissionsAdmin.searchLabel);
       await searchInput.fill(targetFullName);
       const targetBtn = page.getByRole('button', { name: new RegExp(targetFullName) });
       await expect(targetBtn).toBeVisible();
@@ -399,7 +444,6 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     expect((await grantAdminPromise).status()).toBe(200);
     await expect(page.getByText(viMessages.permissionsAdmin.adminAccessNotice)).toBeVisible();
 
-    const searchInput = page.getByLabel(viMessages.permissionsAdmin.searchLabel);
     const adminPanel = page.locator('.perm-admin-panel');
     const removeAdminBtn = adminPanel.getByRole('button', {
       name: viMessages.permissionsAdmin.removeAdminButton,
@@ -585,8 +629,51 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
       }
     });
 
+    await page.setViewportSize({ width: 1280, height: 720 });
     await signInAs(page, auditViewerStudentId, '/admin/audit');
     await expect(page.locator('.audit-table tbody tr').first()).toBeVisible();
+
+    // CR-05: Custom .ui-select styling (appearance: none + SVG chevron + preserved desktop right padding) and zero clipping/overflow at 1280x720
+    const selectMetrics = await page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll<HTMLSelectElement>('select.ui-select'));
+      const toolbar = document.querySelector<HTMLElement>('.audit-toolbar');
+      const toolbarRect = toolbar?.getBoundingClientRect();
+      return {
+        docOverflow: document.documentElement.scrollWidth > window.innerWidth,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        toolbarOverflow: toolbar ? toolbar.scrollWidth > toolbar.clientWidth + 1 : false,
+        toolbarRight: toolbarRect?.right ?? 0,
+        items: selects.map((el) => {
+          const style = getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return {
+            appearance: style.appearance || style.webkitAppearance,
+            backgroundImage: style.backgroundImage,
+            paddingRight: Number.parseFloat(style.paddingRight),
+            width: rect.width,
+            height: rect.height,
+            left: rect.left,
+            right: rect.right,
+            bottom: rect.bottom,
+          };
+        }),
+      };
+    });
+    expect(selectMetrics.docOverflow).toBe(false);
+    expect(selectMetrics.toolbarOverflow).toBe(false);
+    expect(selectMetrics.toolbarRight).toBeLessThanOrEqual(selectMetrics.viewportWidth);
+    expect(selectMetrics.items.length).toBeGreaterThanOrEqual(2);
+    for (const item of selectMetrics.items) {
+      expect(item.appearance).toBe('none');
+      expect(item.backgroundImage).toContain('data:image/svg+xml');
+      expect(item.paddingRight).toBeGreaterThanOrEqual(36);
+      expect(item.width).toBeGreaterThanOrEqual(160);
+      expect(item.height).toBeGreaterThanOrEqual(36);
+      expect(item.left).toBeGreaterThanOrEqual(0);
+      expect(item.right).toBeLessThanOrEqual(selectMetrics.viewportWidth);
+      expect(item.bottom).toBeLessThanOrEqual(selectMetrics.viewportHeight);
+    }
 
     const actionFilter = page.getByLabel(viMessages.auditLogs.actionFilterLabel);
     const detailPane = page.locator('aside.audit-side');

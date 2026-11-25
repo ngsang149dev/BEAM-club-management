@@ -124,7 +124,7 @@ describe('DepartmentsAdminView & DepartmentModals (S11)', () => {
         onConfirm={vi.fn()}
       />
     );
-    expect(html).toContain('Ban này hiện có 7 thành viên và 2 board liên kết');
+    expect(html).toContain('Ban này đang có 7 thành viên và 2 board nên chưa thể xóa.');
     expect(html).toContain('Không thể xóa ban vì vẫn còn 7 thành viên và 2 board liên quan.');
   });
 

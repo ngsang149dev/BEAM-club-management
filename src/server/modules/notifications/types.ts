@@ -42,6 +42,13 @@ export interface DepartmentRecipientRecord {
   readonly departmentId: string;
 }
 
+export interface DirectAssigneeRecipientRecord {
+  readonly userId: string;
+  readonly email: string;
+  readonly fullName: string;
+  readonly locale: 'vi' | 'en';
+}
+
 export interface DepartmentAssignmentContextRecord {
   readonly task: {
     readonly id: string;
@@ -58,6 +65,7 @@ export interface DepartmentAssignmentContextRecord {
   };
   readonly departments: readonly NotificationDepartmentSummaryRecord[];
   readonly members: readonly DepartmentRecipientRecord[];
+  readonly directAssignees?: readonly DirectAssigneeRecipientRecord[];
 }
 
 export interface CreateNotificationRowInput {
@@ -83,6 +91,9 @@ export interface NotifyDepartmentAssignmentInput {
   readonly boardId: string;
   readonly actorId: string;
   readonly departmentIds: readonly string[];
+  readonly assigneeIds?: readonly string[];
+  readonly notifyInApp?: boolean;
+  readonly notifyEmail?: boolean;
   readonly isHiddenTask: boolean;
   readonly now: Date;
 }
@@ -99,6 +110,7 @@ export interface NotificationsRepository {
     readonly boardId: string;
     readonly actorId: string;
     readonly departmentIds: readonly string[];
+    readonly assigneeIds?: readonly string[];
   }): Promise<DepartmentAssignmentContextRecord | null>;
   insertNotifications(
     rows: readonly CreateNotificationRowInput[],

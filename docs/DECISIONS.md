@@ -128,4 +128,36 @@ Trạng thái: Đã duyệt bởi chủ dự án
      - Khi `notifyDepartmentMembers` (mặc định `true`) bật và có ban mới được thêm vào task, gửi 1 thông báo `notifications` + 1 email song ngữ theo `profiles.locale` tới từng thành viên hoạt động của các ban vừa gán (khử trùng lặp nếu thuộc nhiều ban). Lỗi SMTP được ghi log cấu trúc qua `Logger` (không PII) và không rollback mutation task.
      - Bảo mật `WQ-27`: Với task ẩn (`is_hidden = true`), **không đưa tiêu đề task** vào email lẫn `notifications.payload.taskTitle = null` (UI hiển thị thông báo chung về task ẩn; không bao giờ kèm MSSV/email người khác).
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cộng thêm `docs/ERD.md` (21 bảng miền), `db/migrations/0005_task_departments_and_notifications.sql`, `src/lib/notifications.ts`, `docs/openapi.yaml`.
-- **Trạng thái:** Đã duyệt bởi chủ dự án (`A2`, `A3`, `A5`, 2026-11-24); đang triển khai trên nhánh `feat/CR03-department-assign-notifications`.
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`A2`, `A3`, `A5`, 2026-11-24); đã hoàn tất & merge vào `main`.
+
+---
+
+## Quyết định `CR-06` (`[RỦI RO CAO]`) — Mở rộng trình chỉnh sửa Task 2 cột & Tách riêng tùy chọn Thông báo / Email (`A1`–`A3`) — 2026-11-25
+
+- **Ngữ cảnh:** Giao diện chỉnh sửa task `TaskDetailDrawer` hẹp (`580px`) và checkbox gửi thông báo nằm chung trong khung `Giao cho Ban` khiến người dùng khó hiểu; chủ CLB yêu cầu mở rộng không gian chỉnh sửa task và tách thành khu vực **Tùy chọn gửi thông báo** riêng gồm hai kênh độc lập (**Thông báo trên web** và **Gửi email**) áp dụng cho cả Ban lẫn thành viên lẻ mới được gán.
+- **Quyết định kỹ thuật (đã hợp nhất với chuẩn `CR-03` trên `main`):**
+  1. **Hợp đồng API & Schema Zod dùng chung (`docs/openapi.yaml`, `src/lib/tasks.ts`):**
+     - Bổ sung cộng thêm hai cờ tùy chọn `notifyInApp?: boolean` và `notifyEmail?: boolean` trên `CreateTaskRequest` (`POST /api/v1/tasks`) và `ReplaceTaskAssigneesRequest` (`PUT /api/v1/tasks/{id}/assignees`), giữ nguyên hỗ trợ cập nhật từng phần `assigneeIds` / `departmentIds` và giữ nguyên cấu trúc phẳng của `NotificationDto` + `NotificationReadAllResponse.updatedCount`.
+     - Giữ `notifyDepartmentMembers` (mặc định `true`) để bảo toàn tương thích ngược qua `resolveTaskNotificationChannels`: nếu không truyền `notifyInApp`/`notifyEmail`, kế thừa giá trị từ `notifyDepartmentMembers ?? true`.
+  2. **Phạm vi phát thông báo & khử trùng lặp (`tasks` + `notifications`):**
+     - Mở rộng `runTaskAssigneesInTx` trả về đồng thời `addedDepartmentIds` và `addedAssigneeIds`; cả `createTask` lẫn `replaceAssignees` gửi tới thành viên hoạt động của các Ban mới gán (`type: 'task.department_assigned'`) lẫn thành viên lẻ mới gán (`type: 'task.assigned'`, `departmentId = null`, `departmentName = null`).
+     - Loại trừ `actorId` khỏi tự nhận thông báo của chính thao tác mình vừa thực hiện, đồng thời khử trùng lặp mỗi người nhận tối đa `1` bản ghi thông báo chuông (khi `notifyInApp = true`) và tối đa `1` email SMTP (khi `notifyEmail = true`), ưu tiên `task.department_assigned` nếu vừa thuộc Ban vừa được gán trực tiếp.
+     - Giữ nguyên toàn bộ bảo mật `WQ-27` (không đưa tiêu đề task ẩn vào email hay `NotificationDto.taskTitle = null` kể cả khi gán trực tiếp thành viên) và lọc PII (`scrubPiiText`) khi ghi log lỗi SMTP (`Error`/`AggregateError`). Không cần thêm migration CSDL mới vì `0005_task_departments_and_notifications.sql` đã hỗ trợ sẵn `'task.assigned'` và `department_id NULL`.
+  3. **Bố cục UI `S04`/`S05`:**
+     - Mở rộng `TaskDetailDrawer` thành 2 cột thoáng trên desktop (`~900px`: cột trái chi tiết & form chỉnh sửa, cột phải tóm tắt giao việc + khối phân công + thẻ độc lập `TaskNotificationOptions` + nút `Cập nhật giao việc`), và nới rộng `CreateTaskModal` (`720px` desktop).
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cập nhật cộng thêm `docs/openapi.yaml` (`src/features/shared/api/schema.d.ts`) và `src/lib/tasks.ts`; không đổi schema PostgreSQL.
+- **Trạng thái:** Đã duyệt bởi chủ dự án (`A1`–`A3`, 2026-11-25); đã hoàn tất & đạt QA độc lập (`PASS`) trên nhánh `feat/CR05-CR06-unified`.
+
+---
+
+## Quyết định `E6` — Bổ sung cộng thêm OpenAPI lọc/đếm Board & chuẩn hóa quá hạn Task — 2026-11-25
+
+- **Ngữ cảnh:** Chuẩn bị triển khai Epic `E6` (`FR-22`, `FR-25`, `FR-27`, `AC-15`, `S03`, `S04`): cần tìm kiếm board phía server thay vì lọc client trên các trang đã tải, hiển thị số task/số task quá hạn trên từng thẻ board `S03` theo đúng quyền người xem (không lộ task ẩn), và thống nhất quy tắc cột cuối `Done` không tính quá hạn cả ở bộ lọc API lẫn huy hiệu UI.
+- **Quyết định kỹ thuật:**
+  1. **Tìm kiếm & đếm Board theo quyền xem (`GET /api/v1/boards`):**
+     - Thêm tham số query tùy chọn `q` (`maxLength: 200`, `ilike` sau `escapeLikePattern` trên `boards.name`).
+     - Thêm hai trường bắt buộc trên `BoardSummaryDto` (và kế thừa trên `BoardDetailDto`): `visibleTaskCount` & `overdueTaskCount` (`integer >= 0`), tính theo `visibleTaskSqlCondition` (`deleted_at IS NULL AND purged_at IS NULL` + `taskAccessSqlCondition` theo `AuthActor`), trong đó `overdueTaskCount` loại bỏ các task nằm ở cột cuối (`Done` — tên `'done'` không phân biệt hoa thường/khoảng trắng hoặc `orderIndex = max(order_index)` của board). Ở ngữ cảnh Kho lưu trữ (`archive`), mapper giữ mặc định `0` để không rò rỉ dữ liệu ẩn.
+  2. **Chuẩn hóa `GET /api/v1/tasks?dueStatus=overdue`:** Tái sử dụng chung biểu thức `notDoneColumnSqlCondition` để loại bỏ các task ở cột cuối `Done` khỏi kết quả `dueStatus=overdue`, đồng nhất với `S04` wireframe và `/me/tasks`.
+  3. **Nguồn sự thật SQL cho quyền xem task (`taskAccessSqlCondition`):** Tách hàm dùng chung `taskAccessSqlCondition` tại `src/server/modules/tasks/repository.ts` (export qua `src/server/modules/tasks/index.ts`) để cả `tasks/repository.ts` và `archive/repository.ts` dùng chung một biểu thức (xử lý ghi chú Minor từ QA `CR-03`).
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Cập nhật cộng thêm `docs/openapi.yaml` (`GET /boards?q`, `BoardSummaryDto`, `BoardDetailDto`, mô tả `GET /tasks`), sinh lại `src/features/shared/api/schema.d.ts`; không thay đổi schema CSDL PostgreSQL.
+- **Trạng thái:** Đã duyệt bởi chủ dự án (2026-11-25).

@@ -424,15 +424,32 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     expect(sessionCookie?.sameSite).toBe('Lax');
     expect(sessionCookie?.expires).toBeGreaterThan(Date.now() / 1000 + 20 * 86_400);
 
+    // CR-05: /profile no longer renders a standalone language switch card; language switching lives in AppShell
+    const profileSide = page.locator('.profile-side');
+    await expect(profileSide.locator('.lang-switch')).toHaveCount(0);
+    await expect(profileSide.getByRole('button', { name: 'EN', exact: true })).toHaveCount(0);
+    await expect(profileSide.getByRole('button', { name: 'VI', exact: true })).toHaveCount(0);
+    await expect(profileSide).not.toContainText('Ngôn ngữ hiển thị');
+    await expect(profileSide).not.toContainText('Ngôn ngữ giao diện');
+    await expect(profileSide).not.toContainText('Display language');
+
     const patchPromise = page.waitForResponse(
       (response) => response.url().endsWith('/api/v1/me') && response.request().method() === 'PATCH',
     );
-    await page.locator('.profile-side').getByRole('button', { name: 'EN', exact: true }).click();
+    await page
+      .locator('.app-side .app-side-lang')
+      .getByRole('button', { name: 'EN', exact: true })
+      .click();
     const patchResponse = await patchPromise;
     expect(patchResponse.status()).toBe(200);
+    expect(patchResponse.request().postDataJSON()).toEqual({ locale: 'en' });
+    await expect(page.getByRole('heading', { level: 1, name: enMessages.profile.title })).toBeVisible();
 
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: enMessages.profile.title })).toBeVisible();
+    await expect(
+      page.locator('.app-side .app-side-lang').getByRole('button', { name: 'EN', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
 
     await page.locator('.profile-signout').click();
     await page.waitForURL(`${BASE_ORIGIN}/login`);

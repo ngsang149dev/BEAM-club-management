@@ -47,16 +47,9 @@ function PermissionMemberButton({
   onSelect: () => void;
 }) {
   const t = useTranslations('permissionsAdmin');
-  const tBadge = useTranslations('member');
   const isAdmin = isMemberDetail(member) && member.isAdmin;
   const subtitle = getMemberSubtitle(member, isAdmin, t);
-  const buttonClass = [
-    'perm-person',
-    isSelected ? 'is-active' : '',
-    !member.isActive ? 'is-off' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const buttonClass = isSelected ? 'perm-person is-active' : 'perm-person';
 
   return (
     <button type="button" className={buttonClass} aria-pressed={isSelected} onClick={onSelect}>
@@ -67,10 +60,7 @@ function PermissionMemberButton({
         isActive={member.isActive}
       />
       <span className="perm-person-text">
-        <b>
-          {member.fullName}
-          {!member.isActive ? <span className="member-left-badge"> {tBadge('leftBadge')}</span> : null}
-        </b>
+        <b>{member.fullName}</b>
         <span>{subtitle}</span>
       </span>
       {isAdmin ? <AdminShieldIcon /> : null}

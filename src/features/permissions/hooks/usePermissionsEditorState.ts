@@ -49,7 +49,9 @@ export function usePermissionsEditorState(isAdmin: boolean) {
   const catalogQuery = usePermissionCatalogQuery(isAdmin);
   const presetsQuery = usePermissionPresetsQuery(isAdmin);
   const membersQuery = usePermissionMembersQuery(searchQuery, isAdmin);
-  const members = isAdmin ? (membersQuery.data?.pages.flatMap((page) => page.items) ?? []) : [];
+  const members = isAdmin
+    ? (membersQuery.data?.pages.flatMap((page) => page.items).filter((member) => member.isActive) ?? [])
+    : [];
   const activeMember = members.find((m) => m.id === selectedId) ?? members[0] ?? null;
   const activeUserId = activeMember?.id ?? null;
 

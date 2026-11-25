@@ -10,7 +10,6 @@ const hooksMock = vi.hoisted(() => ({
   useMeQuery: vi.fn(),
   useSessionQuery: vi.fn(),
   useLogoutMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
-  useUpdateLocaleMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isError: false })),
   useChangeMyPasswordMutation: vi.fn(() => ({
     mutateAsync: vi.fn(),
     reset: vi.fn(),
@@ -75,7 +74,6 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     navMock.searchParams = new URLSearchParams();
     hooksMock.useSessionQuery.mockReturnValue({ data: null });
     hooksMock.useLogoutMutation.mockReturnValue({ mutate: vi.fn(), isPending: false });
-    hooksMock.useUpdateLocaleMutation.mockReturnValue({ mutateAsync: vi.fn(), isError: false });
     hooksMock.useChangeMyPasswordMutation.mockReturnValue({
       mutateAsync: vi.fn(),
       reset: vi.fn(),
@@ -96,7 +94,7 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     });
   });
 
-  it('renders own MSSV, email, privacy note, department chips, permission labels, and ChangePasswordCard', () => {
+  it('renders own MSSV, email, department chips, permission labels, ChangePasswordCard, and no language card', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
         <ProfileContent
@@ -104,14 +102,17 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
           permissions={['member.view', 'task.update_assigned', 'comment.create']}
           session={{ rememberMe: false, expiresAt: '2026-11-24T08:30:00.000Z' }}
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );
 
     expect(html).toContain('21010001');
     expect(html).toContain('nguyenvana@eiu.edu.vn');
-    expect(html).toContain('Chỉ bạn và admin thấy');
+    expect(html).not.toContain('Chỉ bạn và admin thấy');
+    expect(html).not.toContain('Ngôn ngữ hiển thị');
+    expect(html).not.toContain('Ngôn ngữ giao diện');
+    expect(html).not.toContain('Display language');
+    expect(html).not.toContain('lang-switch');
     expect(html).toContain('Truyền thông');
     expect(html).toContain('Sự kiện');
     expect(html).toContain('member.view');
@@ -125,26 +126,26 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     expect(html).not.toContain('Cần đổi mật khẩu ngay');
   });
 
-  it('renders admin all-permissions state, remember-on state, locale error, and English ChangePasswordCard', () => {
+  it('renders admin all-permissions state, remember-on state, no language card, and English ChangePasswordCard', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
         <ProfileContent
           profile={{ ...BASE_PROFILE, isAdmin: true, locale: 'en' }}
           permissions={[]}
           session={{ rememberMe: true, expiresAt: '2026-12-24T01:15:00.000Z' }}
-          localeError
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );
 
-    expect(html).toContain('Only you and admins');
-    expect(html).toContain('Administrator account: holds all permissions across the club workspace.');
+    expect(html).not.toContain('Only you and admins');
+    expect(html).not.toContain('Display language');
+    expect(html).not.toContain('Ngôn ngữ hiển thị');
+    expect(html).not.toContain('Ngôn ngữ giao diện');
+    expect(html).not.toContain('lang-switch');
+    expect(html).toContain('Admin accounts have full access across the workspace.');
     expect(html).toContain('On (30 days)');
     expect(html).toContain('Sign out');
-    expect(html).toContain('role="alert"');
-    expect(html).toContain('Could not save language preference');
     expect(html).toContain('Change password');
     expect(html).not.toContain('Password change required');
   });
@@ -156,7 +157,6 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
           profile={{ ...BASE_PROFILE, mustChangePassword: true }}
           permissions={[]}
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );
@@ -192,7 +192,6 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
           forceChangePasswordPrompt
           passwordChanged={false}
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );
@@ -212,14 +211,13 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
           forceChangePasswordPrompt={false}
           passwordChanged
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );
     expect(postSubmitHtml).toContain('profile-main is-password-priority');
     expect(postSubmitHtml).not.toContain('ui-banner is-warn');
     expect(postSubmitHtml).toContain('ui-banner is-success');
-    expect(postSubmitHtml).toContain('Mật khẩu của bạn đã được cập nhật và các phiên đăng nhập khác đã bị thu hồi.');
+    expect(postSubmitHtml).toContain('Đã đổi mật khẩu. Các thiết bị khác đã được đăng xuất.');
 
     const contactIdxAfter = postSubmitHtml.indexOf('Thông tin liên hệ');
     const changePwIdxAfter = postSubmitHtml.indexOf('id="change-password"');
@@ -237,12 +235,11 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
           forceChangePasswordPrompt={false}
           passwordChanged
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );
     expect(enPostSubmitHtml).toContain('ui-banner is-success');
-    expect(enPostSubmitHtml).toContain('Your password has been updated and other active sessions have been signed out.');
+    expect(enPostSubmitHtml).toContain('Password updated. Other active sessions were signed out.');
     expect(enPostSubmitHtml).not.toContain('ui-banner is-warn');
   });
 
@@ -358,7 +355,6 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
           profile={{ ...BASE_PROFILE, avatarUrl: null }}
           permissions={['member.view']}
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );
@@ -379,7 +375,6 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
             details: {},
           })}
           onSignOut={vi.fn()}
-          onLocaleChange={vi.fn()}
         />
       </NextIntlClientProvider>
     );

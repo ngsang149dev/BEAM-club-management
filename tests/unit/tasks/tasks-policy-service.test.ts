@@ -414,6 +414,9 @@ describe('tasks policy & TasksService', () => {
     expect(dispatches[0]).toMatchObject({
       taskId: createdDept.task.id,
       departmentIds: [DEPT_1],
+      assigneeIds: [],
+      notifyInApp: true,
+      notifyEmail: true,
       isHiddenTask: true,
     });
 
@@ -427,8 +430,9 @@ describe('tasks policy & TasksService', () => {
     expect(deptOnlyUpdate.task.assignedDepartments.map((d) => d.id)).toEqual([DEPT_1, DEPT_2]);
     expect(dispatches).toHaveLength(2);
     expect(dispatches[1]!.departmentIds).toEqual([DEPT_2]);
+    expect(dispatches[1]!.assigneeIds).toEqual([]);
 
-    // Partial replaceAssignees: omitting departmentIds preserves assignedDepartments and triggers 0 dept notifications
+    // Partial replaceAssignees: omitting departmentIds preserves assignedDepartments and triggers 0 notifications when only removing assignees
     const userOnlyUpdate = await service.replaceAssignees(UPDATE_ANY_OTHER, TASK_1, {
       assigneeIds: [],
       notifyDepartmentMembers: true,
@@ -445,6 +449,71 @@ describe('tasks policy & TasksService', () => {
       version: 3,
     });
     await expect(service.updateTask(DEPT_MEMBER_ACTOR, TASK_1, { title: 'Deny', version: 4 })).rejects.toMatchObject({ httpStatus: 403 });
+
+    // Direct assignee additions + independent notifyInApp / notifyEmail channels
+    const createdDirect = await service.createTask(ADMIN, {
+      boardId: BOARD_ID,
+      columnId: COL_TODO,
+      title: 'Direct InApp Only',
+      priority: 2,
+      assigneeIds: [ASSIGNEE_ID, OTHER_USER_ID],
+      departmentIds: [],
+      notifyDepartmentMembers: true,
+      notifyInApp: true,
+      notifyEmail: false,
+      isHidden: false,
+    });
+    expect(dispatches).toHaveLength(3);
+    expect(dispatches[2]).toMatchObject({
+      taskId: createdDirect.task.id,
+      departmentIds: [],
+      assigneeIds: [ASSIGNEE_ID, OTHER_USER_ID],
+      notifyInApp: true,
+      notifyEmail: false,
+      isHiddenTask: false,
+    });
+
+    // Both channels false -> skips dispatcher even when assignees & departments exist
+    await service.createTask(ADMIN, {
+      boardId: BOARD_ID,
+      columnId: COL_TODO,
+      title: 'Both Off',
+      priority: 2,
+      assigneeIds: [ASSIGNEE_ID],
+      departmentIds: [DEPT_1],
+      notifyDepartmentMembers: true,
+      notifyInApp: false,
+      notifyEmail: false,
+      isHidden: false,
+    });
+    expect(dispatches).toHaveLength(3);
+
+    // replaceAssignees dispatches ONLY newly added assigneeIds (not pre-existing) and respects notifyInApp=false / notifyEmail=true
+    const addedDirectRes = await service.replaceAssignees(ADMIN, createdDirect.task.id, {
+      assigneeIds: [ASSIGNEE_ID, OTHER_USER_ID, DEPT_MEMBER_ID],
+      notifyDepartmentMembers: false,
+      notifyInApp: false,
+      notifyEmail: true,
+      version: 1,
+    });
+    expect(addedDirectRes.eventId).toBeTruthy();
+    expect(dispatches).toHaveLength(4);
+    expect(dispatches[3]).toMatchObject({
+      taskId: createdDirect.task.id,
+      departmentIds: [],
+      assigneeIds: [DEPT_MEMBER_ID],
+      notifyInApp: false,
+      notifyEmail: true,
+    });
+
+    // No-op replaceAssignees -> eventId null and 0 dispatches
+    const noopAssignRes = await service.replaceAssignees(ADMIN, createdDirect.task.id, {
+      assigneeIds: [DEPT_MEMBER_ID, ASSIGNEE_ID, OTHER_USER_ID],
+      notifyDepartmentMembers: true,
+      version: 2,
+    });
+    expect(noopAssignRes.eventId).toBeNull();
+    expect(dispatches).toHaveLength(4);
 
     // departmentId query param forwarded to repo
     await service.listTasks(ADMIN, { departmentId: DEPT_1, sortBy: 'position', sortOrder: 'asc', limit: 20 });

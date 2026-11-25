@@ -6,6 +6,8 @@ import {
   type ListTasksQueryInput,
   type MoveTaskRequestInput,
   type ReplaceTaskAssigneesRequestInput,
+  resolveTaskNotificationChannels,
+  type TaskNotificationChannels,
   type UpdateTaskRequestInput,
 } from '@/lib/tasks';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
@@ -43,6 +45,17 @@ export interface TasksServiceDeps {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly notificationsDispatcher?: TaskAssignmentNotifier;
+}
+
+function shouldDispatchNotifications(
+  channels: TaskNotificationChannels,
+  departmentIds: readonly string[],
+  assigneeIds: readonly string[],
+): boolean {
+  return (
+    (channels.notifyInApp || channels.notifyEmail) &&
+    (departmentIds.length > 0 || assigneeIds.length > 0)
+  );
 }
 
 export class TasksService {
@@ -131,8 +144,19 @@ export class TasksService {
       ),
     );
     this.deps.logger.info('Task created', { actorId: actor.id, taskId: result.task.id, boardId: result.task.boardId, isHidden: result.task.isHidden });
-    if (input.notifyDepartmentMembers && departmentIds.length > 0) {
-      await this.dispatchDepartmentNotifications({ taskId: result.task.id, boardId: result.task.boardId, actorId: actor.id, departmentIds, isHiddenTask: result.task.isHidden, now });
+    const channels = resolveTaskNotificationChannels(input);
+    if (shouldDispatchNotifications(channels, departmentIds, assigneeIds)) {
+      await this.dispatchDepartmentNotifications({
+        taskId: result.task.id,
+        boardId: result.task.boardId,
+        actorId: actor.id,
+        departmentIds,
+        assigneeIds,
+        notifyInApp: channels.notifyInApp,
+        notifyEmail: channels.notifyEmail,
+        isHiddenTask: result.task.isHidden,
+        now,
+      });
     }
     return toTaskMutationResponseDto(result);
   }
@@ -198,12 +222,16 @@ export class TasksService {
         eventId: result.eventId,
       });
     }
-    if (input.notifyDepartmentMembers && result.addedDepartmentIds.length > 0) {
+    const channels = resolveTaskNotificationChannels(input);
+    if (shouldDispatchNotifications(channels, result.addedDepartmentIds, result.addedAssigneeIds)) {
       await this.dispatchDepartmentNotifications({
         taskId: result.task.id,
         boardId: result.task.boardId,
         actorId: actor.id,
         departmentIds: result.addedDepartmentIds,
+        assigneeIds: result.addedAssigneeIds,
+        notifyInApp: channels.notifyInApp,
+        notifyEmail: channels.notifyEmail,
         isHiddenTask: result.task.isHidden,
         now,
       });
@@ -237,6 +265,9 @@ export class TasksService {
     readonly boardId: string;
     readonly actorId: string;
     readonly departmentIds: readonly string[];
+    readonly assigneeIds: readonly string[];
+    readonly notifyInApp: boolean;
+    readonly notifyEmail: boolean;
     readonly isHiddenTask: boolean;
     readonly now: Date;
   }): Promise<void> {
@@ -249,6 +280,7 @@ export class TasksService {
         boardId: input.boardId,
         actorId: input.actorId,
         departmentCount: input.departmentIds.length,
+        assigneeCount: input.assigneeIds.length,
         error,
       });
     }

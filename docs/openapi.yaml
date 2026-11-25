@@ -1241,7 +1241,7 @@ paths:
       description: |
         Requires `task.create` (or admin). Supplying non-empty `assigneeIds` or `departmentIds` also requires `task.assign` (or admin).
         Creates the task and records a `task.created` event in `task_events` inside the same transaction, returning `eventId`.
-        When `notifyDepartmentMembers` is `true` (default) and `departmentIds` is non-empty, dispatches in-app notifications and bilingual emails to active members of those departments post-commit (with `WQ-27` hidden-task title redaction).
+        Post-commit, dispatches notifications to active members of newly assigned departments (`task.department_assigned`) and newly assigned individual members (`task.assigned`), deduplicated per user (excluding `actorId`), controlled independently by `notifyInApp` and `notifyEmail` (inheriting `notifyDepartmentMembers`, default `true`), with `WQ-27` hidden-task title redaction.
       requestBody:
         required: true
         content:
@@ -1386,7 +1386,7 @@ paths:
         Requires `task.assign` (or admin) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
         At least one of `assigneeIds` or `departmentIds` is required; omitting one preserves its existing assignments.
         Records `task.assignees_changed` with IDs only (no names/MSSV/email) in `task_events` and returns `eventId`.
-        When `notifyDepartmentMembers` is `true` (default) and new departments are added, dispatches in-app notifications and bilingual emails post-commit.
+        Post-commit, dispatches notifications to active members of newly assigned departments (`task.department_assigned`) and newly assigned individual members (`task.assigned`), deduplicated per user (excluding `actorId`), controlled independently by `notifyInApp` and `notifyEmail` (inheriting `notifyDepartmentMembers`, default `true`), with `WQ-27` hidden-task title redaction.
       parameters:
         - $ref: "#/components/parameters/ResourceIdParam"
       requestBody:
@@ -2949,7 +2949,13 @@ components:
             format: uuid
         notifyDepartmentMembers:
           type: boolean
-          description: Whether to dispatch notifications and emails to active members of assigned departments (defaults to `true` on the server).
+          description: Whether to dispatch notifications and emails to active members of assigned departments and assigned individual members unless overridden by `notifyInApp` / `notifyEmail` (defaults to `true` on the server).
+        notifyInApp:
+          type: boolean
+          description: Optional toggle for in-app bell notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`).
+        notifyEmail:
+          type: boolean
+          description: Optional toggle for bilingual email notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`).
         isHidden:
           type: boolean
           default: false
@@ -3008,7 +3014,13 @@ components:
             format: uuid
         notifyDepartmentMembers:
           type: boolean
-          description: Whether to dispatch notifications and emails to active members of newly added departments (defaults to `true` on the server).
+          description: Whether to dispatch notifications and emails to active members of newly added departments and newly added individual assignees unless overridden by `notifyInApp` / `notifyEmail` (defaults to `true` on the server).
+        notifyInApp:
+          type: boolean
+          description: Optional toggle for in-app bell notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`).
+        notifyEmail:
+          type: boolean
+          description: Optional toggle for bilingual email notifications; when omitted, inherits `notifyDepartmentMembers` (default `true`).
         version:
           type: integer
           minimum: 1

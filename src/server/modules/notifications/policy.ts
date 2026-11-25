@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { badRequest } from '@/lib/errors';
 import { uuidSchema } from '@/lib/members';
+import type { NotificationType } from '@/lib/notifications';
 import type {
   DepartmentRecipientRecord,
+  DirectAssigneeRecipientRecord,
   NotificationCursor,
   NotificationDepartmentSummaryRecord,
   NotificationPayloadRecord,
@@ -13,6 +15,7 @@ export interface DeduplicatedDepartmentRecipient {
   readonly email: string;
   readonly fullName: string;
   readonly locale: 'vi' | 'en';
+  readonly type: NotificationType;
   readonly representativeDepartmentId: string | null;
   readonly departmentNames: readonly string[];
   readonly departmentName: string | null;
@@ -95,28 +98,65 @@ function groupMembersByUser(
   return byUser;
 }
 
+function addDirectAssignees(
+  byUser: Map<string, RecipientAccumulator>,
+  directAssignees: readonly DirectAssigneeRecipientRecord[],
+  actorId: string,
+): void {
+  for (const assignee of directAssignees) {
+    if (assignee.userId === actorId || byUser.has(assignee.userId)) continue;
+    byUser.set(assignee.userId, {
+      userId: assignee.userId,
+      email: assignee.email,
+      fullName: assignee.fullName,
+      locale: assignee.locale,
+      matchedDeptIds: new Set(),
+    });
+  }
+}
+
+function toDeduplicatedRecipient(
+  entry: RecipientAccumulator,
+  orderedDepts: readonly NotificationDepartmentSummaryRecord[],
+): DeduplicatedDepartmentRecipient {
+  const matched = orderedDepts.filter((d) => entry.matchedDeptIds.has(d.id));
+  if (matched.length > 0) {
+    const departmentNames = matched.map((d) => d.name);
+    return {
+      userId: entry.userId,
+      email: entry.email,
+      fullName: entry.fullName,
+      locale: entry.locale,
+      type: 'task.department_assigned',
+      representativeDepartmentId: matched[0]?.id ?? null,
+      departmentNames,
+      departmentName: departmentNames.join(', '),
+    };
+  }
+  return {
+    userId: entry.userId,
+    email: entry.email,
+    fullName: entry.fullName,
+    locale: entry.locale,
+    type: 'task.assigned',
+    representativeDepartmentId: null,
+    departmentNames: [],
+    departmentName: null,
+  };
+}
+
 export function dedupeDepartmentRecipients(params: {
   readonly departments: readonly NotificationDepartmentSummaryRecord[];
   readonly members: readonly DepartmentRecipientRecord[];
+  readonly directAssignees?: readonly DirectAssigneeRecipientRecord[];
   readonly actorId: string;
 }): DeduplicatedDepartmentRecipient[] {
   const orderedDepts = [...params.departments].sort(
     (a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
   );
   const byUser = groupMembersByUser(params.members, params.actorId);
+  addDirectAssignees(byUser, params.directAssignees ?? [], params.actorId);
   return Array.from(byUser.values())
     .sort((a, b) => a.userId.localeCompare(b.userId))
-    .map((entry) => {
-      const matched = orderedDepts.filter((d) => entry.matchedDeptIds.has(d.id));
-      const departmentNames = matched.map((d) => d.name);
-      return {
-        userId: entry.userId,
-        email: entry.email,
-        fullName: entry.fullName,
-        locale: entry.locale,
-        representativeDepartmentId: matched[0]?.id ?? null,
-        departmentNames,
-        departmentName: departmentNames.length > 0 ? departmentNames.join(', ') : null,
-      };
-    });
+    .map((entry) => toDeduplicatedRecipient(entry, orderedDepts));
 }

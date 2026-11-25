@@ -22,7 +22,15 @@ const authHooksMock = vi.hoisted(() => ({
   useSessionQuery: vi.fn(),
 }));
 
-vi.mock('@/features/permissions/hooks/usePermissionsAdmin', () => permHooksMock);
+vi.mock('@/features/permissions/hooks/usePermissionsAdmin', async () => {
+  const actual = await vi.importActual<typeof import('@/features/permissions/hooks/usePermissionsAdmin')>(
+    '@/features/permissions/hooks/usePermissionsAdmin'
+  );
+  return {
+    ...actual,
+    ...permHooksMock,
+  };
+});
 vi.mock('@/features/auth/hooks/useAuth', () => authHooksMock);
 
 vi.mock('next/link', () => ({
@@ -35,6 +43,7 @@ import { AdminFlagPanel } from '@/features/permissions/components/AdminFlagPanel
 import { PermissionPresetModal } from '@/features/permissions/components/PermissionPresetModal';
 import { PermissionsAdminView } from '@/features/permissions/components/PermissionsAdminView';
 import { describePermissionsError } from '@/features/permissions/error-mapping';
+import { buildPermissionMembersQuery } from '@/features/permissions/hooks/usePermissionsAdmin';
 
 type MemberDetail = components['schemas']['MemberDetail'];
 
@@ -59,6 +68,19 @@ const INACTIVE_ADMIN: MemberDetail = {
   departments: [],
   studentId: '21110002',
   email: 'ttb@eiu.edu.vn',
+  locale: 'vi',
+  isAdmin: true,
+  mustChangePassword: false,
+};
+
+const ACTIVE_ADMIN: MemberDetail = {
+  id: '00000000-0000-4000-8000-000000000003',
+  fullName: 'Le Minh C',
+  isActive: true,
+  leftAt: null,
+  departments: [{ id: 'd-1', name: 'Truyền thông' }],
+  studentId: '21110003',
+  email: 'lmc@eiu.edu.vn',
   locale: 'vi',
   isAdmin: true,
   mustChangePassword: false,
@@ -156,14 +178,16 @@ describe('PermissionsAdminView & S10 components', () => {
     expect(html).not.toContain('member.view · task.update_assigned · comment.create');
     expect(html).not.toContain('Đang sửa quyền của');
     expect(html).toContain('Lưu thay đổi');
-    expect(html).toContain('(đã rời)');
+    expect(html).not.toContain('Tran Thi B');
+    expect(html).not.toContain('(đã rời)');
+    expect(html).not.toContain('is-off');
     expect(html).not.toContain('21110001');
     expect(html).not.toContain('nva@eiu.edu.vn');
   });
 
-  it('disables self-demote button with hint when editing own admin record and enables when editing another admin', () => {
+  it('disables self-demote button with hint when editing own active admin record and enables when editing another admin', () => {
     authHooksMock.useSessionQuery.mockReturnValueOnce({
-      data: { userId: INACTIVE_ADMIN.id },
+      data: { userId: ACTIVE_ADMIN.id },
     });
     permHooksMock.usePermissionMembersQuery.mockReturnValueOnce({
       isPending: false,
@@ -173,7 +197,7 @@ describe('PermissionsAdminView & S10 components', () => {
       isFetchingNextPage: false,
       fetchNextPage: vi.fn(),
       refetch: vi.fn(),
-      data: { pages: [{ items: [INACTIVE_ADMIN, ACTIVE_MEMBER], meta: { nextCursor: null, limit: 50 } }] },
+      data: { pages: [{ items: [INACTIVE_ADMIN, ACTIVE_ADMIN, ACTIVE_MEMBER], meta: { nextCursor: null, limit: 50 } }] },
     });
     permHooksMock.useMemberPermissionsQuery.mockReturnValueOnce({
       isPending: false,
@@ -181,7 +205,7 @@ describe('PermissionsAdminView & S10 components', () => {
       error: null,
       refetch: vi.fn(),
       data: {
-        userId: INACTIVE_ADMIN.id,
+        userId: ACTIVE_ADMIN.id,
         isAdmin: true,
         permissionCodes: [],
       },
@@ -192,12 +216,15 @@ describe('PermissionsAdminView & S10 components', () => {
         <PermissionsAdminView />
       </PermissionsProvider>
     );
+    expect(selfHtml).toContain(ACTIVE_ADMIN.fullName);
+    expect(selfHtml).not.toContain(INACTIVE_ADMIN.fullName);
+    expect(selfHtml).not.toContain('(đã rời)');
     expect(selfHtml).toContain('Không thể tự gỡ quyền admin của chính bạn.');
     expect(selfHtml).toMatch(/disabled=""[^>]*>Gỡ admin<\/button>/);
 
     const otherAdminHtml = renderWithIntl(
       <AdminFlagPanel
-        memberName="Tran Thi B"
+        memberName={ACTIVE_ADMIN.fullName}
         isAdmin
         isSelf={false}
         isUpdating={false}
@@ -212,7 +239,7 @@ describe('PermissionsAdminView & S10 components', () => {
 
     const selfEnHtml = renderWithIntl(
       <AdminFlagPanel
-        memberName="Tran Thi B"
+        memberName={ACTIVE_ADMIN.fullName}
         isAdmin
         isSelf
         isUpdating={false}
@@ -326,5 +353,22 @@ describe('PermissionsAdminView & S10 components', () => {
     );
     expect(html).toContain('403');
     expect(html).toContain('req-perm-403');
+  });
+
+  it('builds permission members query with isActive: true and trimmed search/cursor params', () => {
+    expect(buildPermissionMembersQuery('')).toEqual({
+      isActive: true,
+      limit: 50,
+    });
+    expect(buildPermissionMembersQuery('   ')).toEqual({
+      isActive: true,
+      limit: 50,
+    });
+    expect(buildPermissionMembersQuery('  Nguyen Van A  ', 'cursor-2')).toEqual({
+      isActive: true,
+      q: 'Nguyen Van A',
+      cursor: 'cursor-2',
+      limit: 50,
+    });
   });
 });

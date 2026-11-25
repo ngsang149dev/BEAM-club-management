@@ -115,7 +115,6 @@ export function BoardUpsertModal({
             <option value="">{t('clubWideLabel')}</option>
             {departments.map((dept) => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
           </select>
-          <p className="ui-field-hint">{t('boardDepartmentHint')}</p>
         </div>
         <div className="ui-modal-actions">
           <button type="button" className="ui-btn ghost" onClick={onClose} disabled={isSubmitting}>{tCommon('cancel')}</button>

@@ -97,27 +97,35 @@ function TaskDrawerLoaded({
 
   return (
     <div className="ui-drawer-body">
-      <TaskDrawerHiddenBanner isHidden={task.isHidden} />
-      <div className="task-drawer-badges">
-        <TaskPriorityBadge priority={task.priority} />
-        <TaskDueBadge dueAt={task.dueAt} />
-        <span className="ui-chip">{tTasks('commentsCount', { count: task.commentCount })}</span>
+      <div className="task-drawer-grid">
+        <div className="task-drawer-col-main">
+          <TaskDrawerHiddenBanner isHidden={task.isHidden} />
+          <div className="task-drawer-badges">
+            <TaskPriorityBadge priority={task.priority} />
+            <TaskDueBadge dueAt={task.dueAt} />
+            <span className="ui-chip">{tTasks('commentsCount', { count: task.commentCount })}</span>
+          </div>
+          <div className="task-drawer-meta-grid">
+            <div><span>{tTasks('creatorLabel')}</span><b><MemberInlineName member={task.creator} /></b></div>
+            <div><span>{tTasks('createdAtLabel')}</span><b className="mono">{formatTaskDateTime(task.createdAt, locale)}</b></div>
+          </div>
+          {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
+        </div>
+        <div className="task-drawer-col-side">
+          <section className="task-assigned-summary">
+            <div className="task-assigned-summary-group">
+              <h3 className="task-section-title">{tTasks('assignedDepartmentsLabel')}</h3>
+              <TaskDepartmentChips departments={task.assignedDepartments} emptyLabel={tTasks('departmentsEmpty')} />
+            </div>
+            <div className="task-assigned-summary-group">
+              <h3 className="task-section-title">{tTasks('assigneesLabel')}</h3>
+              <TaskAssigneeChips assignees={task.assignees} />
+            </div>
+          </section>
+          {can('task.assign') ? <TaskAssigneesSection task={task} onReload={onReload} /> : null}
+          {can('task.delete') ? <TaskDeleteSection task={task} onDeleted={onClose} /> : null}
+        </div>
       </div>
-      <div className="task-drawer-meta-grid">
-        <div><span>{tTasks('creatorLabel')}</span><b><MemberInlineName member={task.creator} /></b></div>
-        <div><span>{tTasks('createdAtLabel')}</span><b className="mono">{formatTaskDateTime(task.createdAt, locale)}</b></div>
-      </div>
-      {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
-      <section className="task-drawer-section">
-        <h3 className="task-section-title">{tTasks('departmentsLabel')}</h3>
-        <TaskDepartmentChips departments={task.assignedDepartments} emptyLabel={tTasks('departmentsEmpty')} />
-      </section>
-      <section className="task-drawer-section">
-        <h3 className="task-section-title">{tTasks('assigneesLabel')}</h3>
-        <TaskAssigneeChips assignees={task.assignees} />
-      </section>
-      {can('task.assign') ? <TaskAssigneesSection task={task} onReload={onReload} /> : null}
-      {can('task.delete') ? <TaskDeleteSection task={task} onDeleted={onClose} /> : null}
     </div>
   );
 }
@@ -173,7 +181,7 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
 
   return (
     <div className="ui-drawer-backdrop" role="presentation">
-      <aside className="ui-drawer ui-drawer-wide" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <aside className="ui-drawer ui-drawer-task" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="ui-modal-header">
           <h2 id={titleId} className="ui-modal-title">{tTasks('drawerTitle')}</h2>
           <button type="button" className="ui-icon-btn" aria-label={tCommon('close')} onClick={onClose}>✕</button>

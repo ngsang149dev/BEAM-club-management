@@ -22,6 +22,7 @@ import {
 const ACTOR_ID = '10000000-0000-4000-8000-000000000001';
 const USER_A = '10000000-0000-4000-8000-000000000002';
 const USER_B = '10000000-0000-4000-8000-000000000003';
+const USER_DIRECT = '10000000-0000-4000-8000-000000000004';
 const DEPT_MEDIA = '20000000-0000-4000-8000-000000000001';
 const DEPT_EVENT = '20000000-0000-4000-8000-000000000002';
 const BOARD_ID = '30000000-0000-4000-8000-000000000001';
@@ -36,10 +37,12 @@ const MOCK_TX: TransactionRunner = {
 
 class InMemoryNotificationsRepo implements NotificationsRepository {
   context: DepartmentAssignmentContextRecord | null = null;
+  loadCalls = 0;
   insertedRows: CreateNotificationRowInput[] = [];
   records: Array<NotificationRecord & { userId: string; canView?: boolean }> = [];
 
   async loadDepartmentAssignmentContext(): Promise<DepartmentAssignmentContextRecord | null> {
+    this.loadCalls += 1;
     return this.context;
   }
 
@@ -115,13 +118,45 @@ describe('notifications policy & NotificationsService', () => {
         { userId: USER_A, email: 'a@eiu.edu.vn', fullName: 'User A', locale: 'vi', departmentId: DEPT_EVENT },
         { userId: USER_B, email: 'b@eiu.edu.vn', fullName: 'User B', locale: 'en', departmentId: DEPT_MEDIA },
       ],
+      directAssignees: [
+        { userId: ACTOR_ID, email: 'actor@eiu.edu.vn', fullName: 'Actor', locale: 'vi' },
+        { userId: USER_B, email: 'b@eiu.edu.vn', fullName: 'User B', locale: 'en' },
+        { userId: USER_DIRECT, email: 'direct@eiu.edu.vn', fullName: 'Direct User', locale: 'vi' },
+      ],
       actorId: ACTOR_ID,
     });
-    expect(deduped).toHaveLength(2);
+    expect(deduped).toHaveLength(3);
     const recA = deduped.find((r) => r.userId === USER_A)!;
+    expect(recA.type).toBe('task.department_assigned');
     expect(recA.representativeDepartmentId).toBe(DEPT_EVENT);
     expect(recA.departmentNames).toEqual(['Sự kiện', 'Truyền thông']);
     expect(recA.departmentName).toBe('Sự kiện, Truyền thông');
+
+    // USER_B is in BOTH DEPT_MEDIA and directAssignees -> 1 entry of task.department_assigned
+    const recB = deduped.find((r) => r.userId === USER_B)!;
+    expect(recB).toEqual({
+      userId: USER_B,
+      email: 'b@eiu.edu.vn',
+      fullName: 'User B',
+      locale: 'en',
+      type: 'task.department_assigned',
+      representativeDepartmentId: DEPT_MEDIA,
+      departmentNames: ['Truyền thông'],
+      departmentName: 'Truyền thông',
+    });
+
+    // USER_DIRECT is ONLY in directAssignees -> 1 entry of task.assigned
+    const recDirect = deduped.find((r) => r.userId === USER_DIRECT)!;
+    expect(recDirect).toEqual({
+      userId: USER_DIRECT,
+      email: 'direct@eiu.edu.vn',
+      fullName: 'Direct User',
+      locale: 'vi',
+      type: 'task.assigned',
+      representativeDepartmentId: null,
+      departmentNames: [],
+      departmentName: null,
+    });
 
     expect(
       buildNotificationPayload({
@@ -167,6 +202,78 @@ describe('notifications policy & NotificationsService', () => {
     });
     expect(publicEn.subject).toContain('Design Poster');
     expect(publicEn.text).toContain('Design Poster');
+    expect(publicEn.text).toContain('Leader assigned a task to department Media.');
+
+    // Direct assignment copy (departmentNames: []) in vi & en (public + WQ-27 hidden)
+    const directHiddenVi = buildDepartmentAssignedEmail({
+      locale: 'vi',
+      recipientName: 'Trần C',
+      actorName: 'Leader',
+      boardName: 'Board Ops',
+      departmentNames: [],
+      taskTitle: 'SECRET_DIRECT_VI',
+      isHiddenTask: true,
+      appUrl: 'https://beam.example.org',
+      boardId: BOARD_ID,
+      taskId: TASK_ID,
+    });
+    expect(directHiddenVi.subject).toBe('[BEAM] Công việc ẩn mới được giao cho bạn');
+    expect(directHiddenVi.text).toContain('Leader đã giao một công việc cho bạn.');
+    expect(directHiddenVi.text).not.toContain('ban BEAM');
+    expect(directHiddenVi.subject).not.toContain('SECRET_DIRECT_VI');
+    expect(directHiddenVi.text).not.toContain('SECRET_DIRECT_VI');
+    expect(directHiddenVi.html).not.toContain('SECRET_DIRECT_VI');
+
+    const directPublicVi = buildDepartmentAssignedEmail({
+      locale: 'vi',
+      recipientName: 'Trần C',
+      actorName: 'Leader',
+      boardName: 'Board Ops',
+      departmentNames: [],
+      taskTitle: 'Chuẩn bị slide',
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org',
+      boardId: BOARD_ID,
+      taskId: TASK_ID,
+    });
+    expect(directPublicVi.subject).toBe('[BEAM] Công việc mới được giao cho bạn: Chuẩn bị slide');
+    expect(directPublicVi.text).toContain('Leader đã giao một công việc cho bạn.');
+    expect(directPublicVi.text).not.toContain('ban BEAM');
+
+    const directHiddenEn = buildDepartmentAssignedEmail({
+      locale: 'en',
+      recipientName: 'Alex',
+      actorName: 'Leader',
+      boardName: 'Board Ops',
+      departmentNames: [],
+      taskTitle: 'SECRET_DIRECT_EN',
+      isHiddenTask: true,
+      appUrl: 'https://beam.example.org',
+      boardId: BOARD_ID,
+      taskId: TASK_ID,
+    });
+    expect(directHiddenEn.subject).toBe('[BEAM] New hidden task assigned to you');
+    expect(directHiddenEn.text).toContain('Leader assigned a task to you.');
+    expect(directHiddenEn.text).not.toContain('department BEAM');
+    expect(directHiddenEn.subject).not.toContain('SECRET_DIRECT_EN');
+    expect(directHiddenEn.text).not.toContain('SECRET_DIRECT_EN');
+    expect(directHiddenEn.html).not.toContain('SECRET_DIRECT_EN');
+
+    const directPublicEn = buildDepartmentAssignedEmail({
+      locale: 'en',
+      recipientName: 'Alex',
+      actorName: 'Leader',
+      boardName: 'Board Ops',
+      departmentNames: [],
+      taskTitle: 'Prepare slides',
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org',
+      boardId: BOARD_ID,
+      taskId: TASK_ID,
+    });
+    expect(directPublicEn.subject).toBe('[BEAM] New task assigned to you: Prepare slides');
+    expect(directPublicEn.text).toContain('Leader assigned a task to you.');
+    expect(directPublicEn.text).not.toContain('department BEAM');
   });
 
   it('dispatches deduplicated bilingual emails, survives SMTP failure without throwing, and enforces markRead 404/unreadCount', async () => {
@@ -294,5 +401,114 @@ describe('notifications policy & NotificationsService', () => {
 
     const readAllRes = await service.markAllRead(userBActor);
     expect(readAllRes).toEqual({ updatedCount: 0, unreadCount: 0 });
+  });
+
+  it('respects independent notifyInApp / notifyEmail toggles, direct task.assigned rows, and AggregateError PII scrubbing', async () => {
+    const repo = new InMemoryNotificationsRepo();
+    const clock = new FakeClock('2026-11-24T12:00:00.000Z');
+    const logs: string[] = [];
+    const logger = new StructuredLogger({
+      writeOut: (line) => logs.push(line),
+      writeErr: (line) => logs.push(line),
+    });
+    const sentMessages: MailMessage[] = [];
+    const mailer: Mailer = {
+      send: async (msg) => {
+        if (msg.to === 'agg-fail@eiu.edu.vn') {
+          throw new AggregateError(
+            [new Error('connect ECONNREFUSED 127.0.0.1:25 for agg-fail@eiu.edu.vn')],
+            '',
+          );
+        }
+        sentMessages.push(msg);
+      },
+    };
+
+    const service = new NotificationsService({
+      notificationsRepo: repo,
+      transactionRunner: MOCK_TX,
+      mailer,
+      clock,
+      config: { appUrl: 'http://localhost:3000' },
+      logger,
+    });
+
+    repo.context = {
+      task: { id: TASK_ID, title: 'Direct + Dept Task', isHidden: false },
+      board: { id: BOARD_ID, name: 'Board Ops' },
+      actor: { id: ACTOR_ID, fullName: 'Coordinator' },
+      departments: [{ id: DEPT_MEDIA, name: 'Truyền thông' }],
+      members: [
+        { userId: USER_A, email: 'a@eiu.edu.vn', fullName: 'User A', locale: 'vi', departmentId: DEPT_MEDIA },
+      ],
+      directAssignees: [
+        { userId: USER_A, email: 'a@eiu.edu.vn', fullName: 'User A', locale: 'vi' },
+        { userId: USER_DIRECT, email: 'agg-fail@eiu.edu.vn', fullName: 'Direct User', locale: 'en' },
+      ],
+    };
+
+    // 1. Both false -> returns early without loading context, inserting, or sending email
+    await service.notifyDepartmentAssignment({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ACTOR_ID,
+      departmentIds: [DEPT_MEDIA],
+      assigneeIds: [USER_DIRECT],
+      notifyInApp: false,
+      notifyEmail: false,
+      isHiddenTask: false,
+      now: clock.now(),
+    });
+    expect(repo.loadCalls).toBe(0);
+    expect(repo.insertedRows).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+
+    // 2. notifyInApp=true, notifyEmail=false -> inserts deduplicated rows (task.department_assigned + task.assigned), sends 0 emails
+    await service.notifyDepartmentAssignment({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ACTOR_ID,
+      departmentIds: [DEPT_MEDIA],
+      assigneeIds: [USER_DIRECT],
+      notifyInApp: true,
+      notifyEmail: false,
+      isHiddenTask: false,
+      now: clock.now(),
+    });
+    expect(repo.insertedRows).toHaveLength(2);
+    expect(repo.insertedRows.find((r) => r.userId === USER_A)?.type).toBe('task.department_assigned');
+    expect(repo.insertedRows.find((r) => r.userId === USER_DIRECT)).toMatchObject({
+      userId: USER_DIRECT,
+      type: 'task.assigned',
+      departmentId: null,
+      payload: {
+        taskTitle: 'Direct + Dept Task',
+        boardName: 'Board Ops',
+        departmentName: null,
+      },
+    });
+    expect(sentMessages).toHaveLength(0);
+
+    // 3. notifyInApp=false, notifyEmail=true -> inserts 0 new rows, sends email, logs notificationId=null + scrubbed AggregateError
+    repo.insertedRows = [];
+    await service.notifyDepartmentAssignment({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ACTOR_ID,
+      departmentIds: [DEPT_MEDIA],
+      assigneeIds: [USER_DIRECT],
+      notifyInApp: false,
+      notifyEmail: true,
+      isHiddenTask: false,
+      now: clock.now(),
+    });
+    expect(repo.insertedRows).toHaveLength(0);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]!.to).toBe('a@eiu.edu.vn');
+    const joinedLogs = logs.join('\n');
+    expect(joinedLogs).toContain('"notificationId":null');
+    expect(joinedLogs).toContain('ECONNREFUSED');
+    expect(joinedLogs).not.toContain('agg-fail@eiu.edu.vn');
+    expect(joinedLogs).not.toContain('a@eiu.edu.vn');
   });
 });

@@ -8,6 +8,8 @@ import type { TransactionContext } from '@/server/shared/transaction';
 import type {
   CreateNotificationRowInput,
   DepartmentAssignmentContextRecord,
+  DepartmentRecipientRecord,
+  DirectAssigneeRecipientRecord,
   ListNotificationsRepoParams,
   NotificationDepartmentSummaryRecord,
   NotificationRecord,
@@ -67,26 +69,44 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
     readonly boardId: string;
     readonly actorId: string;
     readonly departmentIds: readonly string[];
+    readonly assigneeIds?: readonly string[];
   }): Promise<DepartmentAssignmentContextRecord | null> {
-    if (input.departmentIds.length === 0) return null;
-    const [[taskRow], [boardRow], [actorRow], deptRows, memberRows] = await Promise.all([
+    const assigneeIds = input.assigneeIds ?? [];
+    if (input.departmentIds.length === 0 && assigneeIds.length === 0) return null;
+    const [[taskRow], [boardRow], [actorRow], deptRows, memberRows, directRows] = await Promise.all([
       this.db.select({ id: tasks.id, title: tasks.title, isHidden: tasks.isHidden }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
       this.db.select({ id: boards.id, name: boards.name }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).limit(1),
       this.db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(eq(profiles.id, input.actorId)).limit(1),
-      this.db.select({ id: departments.id, name: departments.name }).from(departments).where(inArray(departments.id, [...input.departmentIds])).orderBy(asc(departments.name), asc(departments.id)),
-      this.db.select({ userId: profiles.id, email: profiles.email, fullName: profiles.fullName, locale: profiles.locale, departmentId: memberDepartments.departmentId })
-        .from(memberDepartments)
-        .innerJoin(profiles, eq(memberDepartments.userId, profiles.id))
-        .where(and(inArray(memberDepartments.departmentId, [...input.departmentIds]), eq(profiles.isActive, true), isNull(profiles.purgedAt), ne(profiles.id, input.actorId))),
+      this.loadAssignedDepartments(input.departmentIds),
+      this.loadDepartmentMembers(input.departmentIds, input.actorId),
+      this.loadDirectAssignees(assigneeIds, input.actorId),
     ]);
     if (!taskRow || !boardRow || !actorRow) return null;
-    return {
-      task: taskRow,
-      board: boardRow,
-      actor: actorRow,
-      departments: deptRows,
-      members: memberRows.map((m) => ({ ...m, locale: m.locale === 'en' ? 'en' : 'vi' })),
-    };
+    return { task: taskRow, board: boardRow, actor: actorRow, departments: deptRows, members: memberRows, directAssignees: directRows };
+  }
+
+  private async loadAssignedDepartments(departmentIds: readonly string[]): Promise<NotificationDepartmentSummaryRecord[]> {
+    if (departmentIds.length === 0) return [];
+    return this.db.select({ id: departments.id, name: departments.name }).from(departments).where(inArray(departments.id, [...departmentIds])).orderBy(asc(departments.name), asc(departments.id));
+  }
+
+  private async loadDepartmentMembers(departmentIds: readonly string[], actorId: string): Promise<DepartmentRecipientRecord[]> {
+    if (departmentIds.length === 0) return [];
+    const rows = await this.db
+      .select({ userId: profiles.id, email: profiles.email, fullName: profiles.fullName, locale: profiles.locale, departmentId: memberDepartments.departmentId })
+      .from(memberDepartments)
+      .innerJoin(profiles, eq(memberDepartments.userId, profiles.id))
+      .where(and(inArray(memberDepartments.departmentId, [...departmentIds]), eq(profiles.isActive, true), isNull(profiles.purgedAt), ne(profiles.id, actorId)));
+    return rows.map((m) => ({ ...m, locale: m.locale === 'en' ? 'en' : 'vi' }));
+  }
+
+  private async loadDirectAssignees(assigneeIds: readonly string[], actorId: string): Promise<DirectAssigneeRecipientRecord[]> {
+    if (assigneeIds.length === 0) return [];
+    const rows = await this.db
+      .select({ userId: profiles.id, email: profiles.email, fullName: profiles.fullName, locale: profiles.locale })
+      .from(profiles)
+      .where(and(inArray(profiles.id, [...assigneeIds]), eq(profiles.isActive, true), isNull(profiles.purgedAt), ne(profiles.id, actorId)));
+    return rows.map((m) => ({ ...m, locale: m.locale === 'en' ? 'en' : 'vi' }));
   }
 
   async insertNotifications(

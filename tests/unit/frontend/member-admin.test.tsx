@@ -309,12 +309,12 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       />
     );
     expect(html).toContain('method="post"');
-    expect(html).toContain('MSSV không thể thay đổi sau khi tạo tài khoản.');
+    expect(html).toContain('Không thể đổi sau khi tạo.');
     expect(html).toContain('Email phải thuộc tên miền @eiu.edu.vn.');
     expect(html).toContain('Mật khẩu ban đầu');
     expect(html).toContain('Tạo mật khẩu');
     expect(html).toContain('type="password"');
-    expect(html).toContain('đổi mật khẩu này ngay khi đăng nhập lần đầu');
+    expect(html).toContain('thành viên cần đổi khi đăng nhập lần đầu');
 
     const generated = generateCompliantPassword();
     expect(generated.length).toBeGreaterThanOrEqual(12);
@@ -437,8 +437,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
     );
     expect(viHtml).toContain('Đặt lại mật khẩu thành viên');
     expect(viHtml).toContain('Nguyen Minh Anh');
-    expect(viHtml).toContain('Mọi phiên đăng nhập đang hoạt động của thành viên sẽ bị đăng xuất ngay lập tức');
-    expect(viHtml).toContain('buộc đổi mật khẩu');
+    expect(viHtml).toContain('Tạo mật khẩu tạm cho Nguyen Minh Anh. Các phiên hiện tại sẽ đăng xuất ngay.');
     expect(viHtml).toContain('Tạo mật khẩu');
     expect(viHtml).toContain('Bạn không có quyền thực hiện thao tác này.');
 
@@ -453,7 +452,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
       'en'
     );
     expect(enHtml).toContain('Reset member password');
-    expect(enHtml).toContain('All active sessions for this member will be terminated immediately');
+    expect(enHtml).toContain('Set a temporary password for Nguyen Minh Anh. Active sessions will be signed out immediately.');
     expect(enHtml).toContain('Generate password');
 
     expect(
@@ -483,7 +482,7 @@ describe('MemberAdminView & Member Forms (S09)', () => {
         onConfirm={vi.fn()}
       />
     );
-    expect(html).toContain('Toàn bộ task, bình luận và lịch sử thao tác vẫn được giữ nguyên.');
+    expect(html).toContain('Nguyen Minh Anh sẽ ngừng đăng nhập và hiển thị nhãn &quot;(đã rời)&quot;. Dữ liệu lịch sử vẫn được giữ nguyên.');
     expect(html).toContain('Không thể vô hiệu hóa hoặc gỡ quyền admin hoạt động cuối cùng.');
     expect(
       describeMemberError(

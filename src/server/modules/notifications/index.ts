@@ -26,6 +26,7 @@ export type {
   CreateNotificationRowInput,
   DepartmentAssignmentContextRecord,
   DepartmentRecipientRecord,
+  DirectAssigneeRecipientRecord,
   ListNotificationsRepoParams,
   NotificationCursor,
   NotificationDepartmentSummaryRecord,

@@ -185,6 +185,40 @@ function MemberAdminListArea({ canView, canViewDetail, state }: MemberAdminListA
   );
 }
 
+function MemberAdminTopActions({
+  isAdmin,
+  canView,
+  onOpenLogo,
+  onOpenCreate,
+}: {
+  isAdmin: boolean;
+  canView: boolean;
+  onOpenLogo: () => void;
+  onOpenCreate: () => void;
+}) {
+  const t = useTranslations('memberAdmin');
+  if (!isAdmin && canView) {
+    return null;
+  }
+
+  return (
+    <div className="directory-header-row is-end">
+      <div className="admin-header-actions">
+        <Can adminOnly>
+          <button type="button" className="ui-btn secondary" onClick={onOpenLogo}>
+            {t('clubLogoButton')}
+          </button>
+        </Can>
+        {!canView ? (
+          <Can permission="member.create">
+            <button type="button" className="ui-btn primary" onClick={onOpenCreate}>{t('addMember')}</button>
+          </Can>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function MemberAdminView() {
   const { isAdmin, can, canAny } = usePermissions();
   const allowed = canAny(['member.create', 'member.update', 'member.deactivate']);
@@ -216,21 +250,12 @@ export function MemberAdminView() {
 
   return (
     <div className="admin-page-stack">
-      <div className="directory-header-row">
-        <p className="page-subtitle">{t('subtitle')}</p>
-        <div className="admin-header-actions">
-          <Can adminOnly>
-            <button type="button" className="ui-btn secondary" onClick={() => setLogoModalOpen(true)}>
-              {t('clubLogoButton')}
-            </button>
-          </Can>
-          {!canView ? (
-            <Can permission="member.create">
-              <button type="button" className="ui-btn primary" onClick={openCreate}>{t('addMember')}</button>
-            </Can>
-          ) : null}
-        </div>
-      </div>
+      <MemberAdminTopActions
+        isAdmin={isAdmin}
+        canView={canView}
+        onOpenLogo={() => setLogoModalOpen(true)}
+        onOpenCreate={openCreate}
+      />
       {state.toastMessage ? <div className="ui-banner" role="status"><div className="ui-banner-body"><span className="ui-banner-text">{state.toastMessage}</span></div></div> : null}
       {canView ? (
         <MembersToolbar
