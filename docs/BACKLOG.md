@@ -18,8 +18,8 @@
 | **CR-05** | Tinh gọn UX: bỏ chọn ngôn ngữ ở Hồ sơ, ẩn thành viên đã rời ở Phân quyền, gọn lời giải thích tự nhiên, làm đẹp ô `select` | Hoàn thiện UX & UI | Done |
 | **CR-06** | Thiết kế lại trình chỉnh sửa Task 2 cột (`~900px` / modal `720px`) & tách riêng tùy chọn Thông báo trên web / Email cho cả Ban & thành viên lẻ (`A1`–`A3`, `[RỦI RO CAO]`) | Nâng cấp `S04`, `S05`, `CR-03` | Done |
 | **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Done |
-| **CR-07** | Trang Quản trị Giao diện CLB (`/admin/branding`) & Khung treo ảnh Polaroid động trang Login Desktop (`A1`–`A4`, `[RỦI RO CAO]`) | Nâng cấp `S01`/`CR-02` | Done (chờ duyệt merge vào main) |
-| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog (tạm hoãn sau CR-07) |
+| **CR-07** | Trang Quản trị Giao diện CLB (`/admin/branding`) & Khung treo ảnh Polaroid động trang Login Desktop (`A1`–`A4`, `[RỦI RO CAO]`) | Nâng cấp `S01`/`CR-02` | Done |
+| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Backlog (chờ duyệt danh sách item) |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Backlog |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Backlog |
@@ -440,7 +440,7 @@
 
 ---
 
-## Yêu cầu thay đổi CR-07 (`[RỦI RO CAO]`): Trang Quản trị Giao diện CLB & Khung treo ảnh động Login *(Done trên `feat/CR07-branding-and-login-gallery` — chờ duyệt merge vào main)*
+## Yêu cầu thay đổi CR-07 (`[RỦI RO CAO]`): Trang Quản trị Giao diện CLB & Khung treo ảnh động Login *(Done — đã duyệt & merge vào main)*
 
 ### CR-07-01
 - **ID:** `CR-07-01`
@@ -452,7 +452,7 @@
 - **Phạm vi file được sửa:** `db/migrations/0006_login_gallery.sql`, `db/schema/*`, `docs/ERD.md`, `docs/openapi.yaml`, `src/features/shared/api/schema.d.ts`, `src/lib/media.ts`, `src/server/shared/media.ts`, `src/server/modules/branding/*`, `src/app/api/v1/branding/**`, `tests/unit/{branding,shared}/*`, `tests/integration/branding/*`
 - **Tiêu chí chấp nhận:** Bảng `login_gallery_items` cộng thêm (PNG/JPEG/WEBP `<= 512 KB`, magic-byte check, không SVG, giới hạn 12 ảnh trả `409 GALLERY_LIMIT_REACHED`); `GET /branding` trả thêm `wordmarkUrl` & `galleryItems` metadata (không SELECT `bytea`); `/branding/wordmark` (`GET` công khai với `nosniff` + `CSP sandbox`, `PUT`/`DELETE` chỉ Admin dùng chung bảng `club_assets`); `GET /branding/gallery/{id}/image` gắn `nosniff` + `CSP sandbox`; các endpoint ghi chỉ Admin (`403` cho non-admin) và ghi `audit_logs` không nhị phân/PII.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ duyệt merge vào main)`
+- **Trạng thái:** `Done`
 
 ### CR-07-02
 - **ID:** `CR-07-02`
@@ -463,7 +463,7 @@
 - **Phạm vi file được sửa:** `src/app/admin/branding/page.tsx`, `src/app/globals.css`, `src/components/{AppShell.tsx,AppShellNav.tsx,ClubWordmark.tsx}`, `src/features/branding/*`, `src/features/auth/components/{LoginShowcase.tsx,LoginPhotoWall.tsx,LoginForm.tsx}`, `src/features/members/components/MemberAdminView.tsx`, `src/features/shared/image-compress.ts`, `src/features/audit/formatters.ts`, `messages/{vi,en}.json`, `tests/unit/frontend/*`
 - **Tiêu chí chấp nhận:** Mục `/admin/branding` (Admin-only, non-admin `403`) quản lý cả Logo CLB (`<= 256 KB`), Chữ ảnh thương hiệu (`<= 256 KB`, hỗ trợ chọn `.svg` rasterize trong suốt client-side) & tối đa 12 khung ảnh Login (`<= 512 KB`, thêm/sửa/xóa/đổi thứ tự); gỡ nút `Logo CLB` khỏi `/admin/members`; `/login` Desktop (`>= 900px`) hiện nền tường gạch triển lãm + đèn rọi làm nổi bật khung Polaroid tự trôi chậm + kéo chuột ngang + `<`/`>` + 4 khung mẫu khi trống; Mobile ẩn hoàn toàn gallery; chân trang `/login` hiện `BEAM CLUB × Sang` gắn link Facebook; 100% chuỗi `vi`/`en`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Done (chờ duyệt merge vào main)`
+- **Trạng thái:** `Done`
 
 ### CR-07-03
 - **ID:** `CR-07-03`
@@ -474,4 +474,4 @@
 - **Phạm vi file được sửa:** `tests/e2e/members-departments.spec.ts` (chuyển test logo về `/admin/branding`), `tests/e2e/branding-login-gallery.spec.ts`
 - **Tiêu chí chấp nhận:** Đủ 8 cổng CI + Chrome E2E xác minh Admin CRUD/reorder/giới hạn 12, `.svg` wordmark upload -> raster an toàn + hiển thị toàn site, non-admin `403`, `/login` Desktop kéo ngang/mũi tên/4 khung mẫu & Mobile ẩn, footer `BEAM CLUB × Sang`, `audit_logs` không nhị phân/PII, và audit `6A.8`/`§7`/`§8` đạt `VERDICT: PASS`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ duyệt merge vào main — 8/8 cổng CI, 266 unit / 50 tệp, 27 integration / 15 tệp, 35/35 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
+- **Trạng thái:** `Done (8/8 cổng CI, 266 unit / 50 tệp, 27 integration / 15 tệp, 35/35 Chrome E2E, audit 6A.8/§7/§8 VERDICT: PASS)`
