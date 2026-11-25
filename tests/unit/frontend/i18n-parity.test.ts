@@ -216,7 +216,6 @@ describe('i18n message dictionaries (vi/en)', () => {
       'branding.restoreDefaultButton',
       'profile.avatarUpdatedToast',
       'profile.avatarRemovedToast',
-      'memberAdmin.clubLogoButton',
       'memberAdmin.memberAvatarTitle',
       'auditLogs.actions.memberAvatarUpdated',
       'auditLogs.actions.memberAvatarRemoved',
@@ -309,6 +308,13 @@ describe('i18n message dictionaries (vi/en)', () => {
       'auditLogs.actions.brandingGalleryUpdated',
       'auditLogs.actions.brandingGalleryDeleted',
       'auditLogs.actions.brandingGalleryReordered',
+      'auditLogs.actions.brandingWordmarkUpdated',
+      'auditLogs.actions.brandingWordmarkRemoved',
+      'branding.wordmarkTitle',
+      'branding.wordmarkUploadButton',
+      'branding.wordmarkUpdatedToast',
+      'errors.galleryImageTooLarge',
+      'auth.collabLabel',
     ];
 
     for (const key of e3Keys) {

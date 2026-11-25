@@ -12,6 +12,8 @@ const brandingHookMock = vi.hoisted(() => ({
   useBrandingQuery: vi.fn(),
   useUpdateClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useRemoveClubLogoMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useUpdateClubWordmarkMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useRemoveClubWordmarkMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useCreateGalleryItemMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useUpdateGalleryItemMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useDeleteGalleryItemMutation: vi.fn(() => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
@@ -36,6 +38,7 @@ import { LoginGalleryDeleteModal, LoginGalleryItemModal } from '@/features/brand
 import { describeBrandingError } from '@/features/branding/error-mapping';
 import type { LoginGalleryItemDto } from '@/features/branding/hooks/useBranding';
 import { swapAdjacentGalleryIds } from '@/features/branding/hooks/useLoginGalleryAdmin';
+import { BRAND_ASSET_FILE_ACCEPT } from '@/features/shared/image-compress';
 
 function makeGalleryItem(index: number): LoginGalleryItemDto {
   return {
@@ -64,7 +67,7 @@ describe('BrandingAdminView & LoginGalleryAdminSection (CR-07-02)', () => {
       isError: false,
       error: null,
       refetch: vi.fn(),
-      data: { logoUrl: null, updatedAt: null, galleryItems: [] },
+      data: { logoUrl: null, wordmarkUrl: null, updatedAt: null, galleryItems: [] },
     });
   });
 
@@ -78,7 +81,7 @@ describe('BrandingAdminView & LoginGalleryAdminSection (CR-07-02)', () => {
     expect(brandingHookMock.useBrandingQuery).toHaveBeenCalledWith(false);
   });
 
-  it('renders ClubLogoSection and LoginGalleryAdminSection empty state (0 / 12) for admins', () => {
+  it('renders ClubLogoSection, ClubWordmarkSection, and LoginGalleryAdminSection empty state (0 / 12) for admins', () => {
     const html = renderWithIntl(
       <PermissionsProvider isAdmin permissions={[]}>
         <BrandingAdminView />
@@ -86,6 +89,12 @@ describe('BrandingAdminView & LoginGalleryAdminSection (CR-07-02)', () => {
     );
     expect(brandingHookMock.useBrandingQuery).toHaveBeenCalledWith(true);
     expect(html).toContain('Logo CLB BEAM');
+    expect(html).toContain('Ảnh chữ thương hiệu');
+    expect(html).toContain('class="branding-identity-grid"');
+    expect(html).toContain('class="club-wordmark-preview-stage"');
+    expect(html).toContain(`accept="${BRAND_ASSET_FILE_ACCEPT}"`);
+    expect(html).toContain('Mặc định');
+    expect(html).toContain('Tải ảnh chữ mới');
     expect(html).toContain('Khung ảnh trang đăng nhập');
     expect(html).toContain('0 / 12');
     expect(html).toContain('<button type="button" class="ui-btn primary">Thêm ảnh</button>');
@@ -93,15 +102,16 @@ describe('BrandingAdminView & LoginGalleryAdminSection (CR-07-02)', () => {
     expect(html).toContain('<button type="button" class="ui-btn ghost" disabled="">Khôi phục mặc định</button>');
   });
 
-  it('renders gallery cards with order badges, move controls, and disables Add when 12 items reached', () => {
+  it('renders gallery cards with order badges, move controls, custom wordmark, and disables Add when 12 items reached', () => {
     const twoItems = [makeGalleryItem(1), makeGalleryItem(0)];
-    brandingHookMock.useBrandingQuery.mockReturnValueOnce({
+    brandingHookMock.useBrandingQuery.mockReturnValue({
       isPending: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
       data: {
         logoUrl: '/api/v1/branding/logo?v=10',
+        wordmarkUrl: '/api/v1/branding/wordmark?v=20',
         updatedAt: '2026-11-26T00:00:00.000Z',
         galleryItems: twoItems,
       },
@@ -111,6 +121,9 @@ describe('BrandingAdminView & LoginGalleryAdminSection (CR-07-02)', () => {
         <BrandingAdminView />
       </PermissionsProvider>
     );
+    expect(listHtml).toContain('Đã có ảnh chữ');
+    expect(listHtml).toContain('Thay ảnh chữ khác');
+    expect(listHtml).toContain('src="/api/v1/branding/wordmark?v=20"');
     expect(listHtml).toContain('2 / 12');
     expect(listHtml).toContain('#1');
     expect(listHtml).toContain('#2');
@@ -119,12 +132,12 @@ describe('BrandingAdminView & LoginGalleryAdminSection (CR-07-02)', () => {
     expect(listHtml).toContain('src="/api/v1/branding/gallery/item-1/image?v=100"');
 
     const fullItems = Array.from({ length: MAX_LOGIN_GALLERY_ITEMS }, (_, idx) => makeGalleryItem(idx));
-    brandingHookMock.useBrandingQuery.mockReturnValueOnce({
+    brandingHookMock.useBrandingQuery.mockReturnValue({
       isPending: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-      data: { logoUrl: null, updatedAt: null, galleryItems: fullItems },
+      data: { logoUrl: null, wordmarkUrl: null, updatedAt: null, galleryItems: fullItems },
     });
     const fullEnHtml = renderWithIntl(
       <PermissionsProvider isAdmin permissions={[]}>
@@ -181,5 +194,19 @@ describe('BrandingAdminView & LoginGalleryAdminSection (CR-07-02)', () => {
     );
     expect(deleteModalHtml).toContain('Delete login photo');
     expect(deleteModalHtml).toContain('Khoảnh khắc 1');
+
+    const tooLargeGalleryModalHtml = renderWithIntl(
+      <LoginGalleryItemModal
+        mode="create"
+        isSubmitting={false}
+        error={new ApiClientError({ status: 400, code: 'IMAGE_TOO_LARGE', messageKey: 'errors.imageTooLarge', details: {} })}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+      'en'
+    );
+    expect(tooLargeGalleryModalHtml).toContain('512 KB');
+    expect(tooLargeGalleryModalHtml).not.toContain('256 KB after compression');
   });
 });

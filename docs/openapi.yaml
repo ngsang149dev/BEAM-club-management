@@ -130,6 +130,71 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /branding/wordmark:
+    get:
+      tags: [Branding]
+      summary: Fetch the custom club wordmark binary asset
+      description: "Returns raw PNG/JPEG/WEBP image bytes (`X-Content-Type-Options: nosniff`) or `404` when using the default wordmark text."
+      security: []
+      responses:
+        "200":
+          description: Binary wordmark image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [Branding]
+      summary: Upload or replace the custom club wordmark (Admin-only)
+      description: Requires `is_admin=true`. Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`), rejects SVG/unsupported formats and payloads over `262144` bytes, stores `'club_wordmark'` in PostgreSQL, and writes `audit_logs` (`branding.wordmark_updated`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageUploadRequest"
+      responses:
+        "200":
+          description: Updated club branding metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    delete:
+      tags: [Branding]
+      summary: Remove custom club wordmark and restore default text (Admin-only)
+      description: Requires `is_admin=true`. Removes `'club_wordmark'` from `club_assets` and records `audit_logs` (`branding.wordmark_removed`).
+      responses:
+        "200":
+          description: Reset club branding metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandingResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /branding/gallery:
     post:
       tags: [Branding]
@@ -2658,10 +2723,12 @@ components:
 
     BrandingResponse:
       type: object
-      required: [logoUrl, updatedAt, galleryItems]
+      required: [logoUrl, wordmarkUrl, updatedAt, galleryItems]
       additionalProperties: false
       properties:
         logoUrl:
+          type: ["string", "null"]
+        wordmarkUrl:
           type: ["string", "null"]
         updatedAt:
           type: ["string", "null"]

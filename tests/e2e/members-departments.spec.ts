@@ -364,6 +364,21 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     }
 
     const basicRow = table.locator('tbody tr', { hasText: basicFullName });
+    const adminRow = table.locator('tbody tr', { hasText: adminFullName });
+    const loadMoreButton = page.getByRole('button', { name: viMessages.members.loadMore, exact: true });
+    for (let pageStep = 0; pageStep < 10; pageStep += 1) {
+      if ((await basicRow.count()) > 0 && (await adminRow.count()) > 0) {
+        break;
+      }
+      if (!(await loadMoreButton.isVisible())) {
+        break;
+      }
+      const nextMembersPromise = page.waitForResponse(
+        (res) => res.url().includes('/api/v1/members') && res.request().method() === 'GET' && res.status() === 200,
+      );
+      await loadMoreButton.click();
+      await nextMembersPromise;
+    }
     await expect(basicRow).toBeVisible();
     await expectColorfulInitialsAvatar(basicRow.locator('.ui-avatar'), basicUserId, basicFullName);
 
@@ -927,7 +942,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     try {
       await signInAs(hrPage, hrDetailStudentId, '/admin/members');
       await expect(
-        hrPage.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }),
+        hrPage.getByRole('button', { name: 'Logo CLB', exact: true }),
       ).toHaveCount(0);
       await expect(
         hrPage.locator('.app-side').getByRole('link', { name: viMessages.nav.branding, exact: true }),
@@ -940,7 +955,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     // Admin also does not see Logo CLB button in /admin/members, and can reach /admin/branding from sidebar
     await signInAs(page, adminStudentId, '/admin/members');
     await expect(
-      page.getByRole('button', { name: viMessages.memberAdmin.clubLogoButton, exact: true }),
+      page.getByRole('button', { name: 'Logo CLB', exact: true }),
     ).toHaveCount(0);
     const brandingNavLink = page
       .locator('.app-side')

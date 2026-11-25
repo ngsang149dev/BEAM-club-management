@@ -15,6 +15,7 @@ import type {
 } from './types';
 
 export const CLUB_LOGO_ASSET_KEY = 'club_logo';
+export const CLUB_WORDMARK_ASSET_KEY = 'club_wordmark';
 
 const GALLERY_METADATA_SELECT = {
   id: loginGalleryItems.id,
@@ -39,8 +40,12 @@ function buildGalleryUpdatePatch(input: UpdateLoginGalleryItemParams) {
 export class DrizzleBrandingRepository implements BrandingRepository {
   constructor(private readonly db: DbExecutor) {}
 
-  async findMetadataByKey(key: string): Promise<ClubAssetMetadataRecord | null> {
-    const rows = await this.db
+  async findMetadataByKey(
+    key: string,
+    tx?: TransactionContext,
+  ): Promise<ClubAssetMetadataRecord | null> {
+    const executor = tx ?? this.db;
+    const rows = await executor
       .select({ key: clubAssets.key, updatedAt: clubAssets.updatedAt })
       .from(clubAssets)
       .where(eq(clubAssets.key, key))

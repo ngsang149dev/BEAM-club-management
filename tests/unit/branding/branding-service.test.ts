@@ -11,6 +11,7 @@ import {
   type BrandingRepository,
   BrandingService,
   CLUB_LOGO_ASSET_KEY,
+  CLUB_WORDMARK_ASSET_KEY,
   type ClubAssetBinaryRecord,
   type ClubAssetMetadataRecord,
   type CreateLoginGalleryItemParams,
@@ -249,11 +250,12 @@ function createHarness() {
 }
 
 describe('BrandingService', () => {
-  it('returns null metadata with empty galleryItems and 404 binary when club logo is not set', async () => {
+  it('returns null metadata with empty galleryItems and 404 binary when club logo or wordmark is not set', async () => {
     const { service } = createHarness();
 
     await expect(service.getBranding()).resolves.toEqual({
       logoUrl: null,
+      wordmarkUrl: null,
       updatedAt: null,
       galleryItems: [],
     });
@@ -261,9 +263,13 @@ describe('BrandingService', () => {
       httpStatus: 404,
       code: 'NOT_FOUND',
     });
+    await expect(service.getClubWordmark()).rejects.toMatchObject({
+      httpStatus: 404,
+      code: 'NOT_FOUND',
+    });
   });
 
-  it('enforces admin-only authorization for logo and gallery mutations', async () => {
+  it('enforces admin-only authorization for logo, wordmark, and gallery mutations', async () => {
     const { service, auditWriter } = createHarness();
     const fakeId = '20000000-0000-4000-8000-000000000001';
 
@@ -278,6 +284,19 @@ describe('BrandingService', () => {
     ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
     await expect(
       service.removeClubLogo({ actor: INACTIVE_ADMIN }),
+    ).rejects.toMatchObject({ httpStatus: 401, code: 'ACCOUNT_INACTIVE' });
+
+    await expect(
+      service.updateClubWordmark({ actor: ALL_PERMS_NON_ADMIN, dataUrl: SAMPLE_PNG_DATA_URL }),
+    ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+    await expect(
+      service.updateClubWordmark({ actor: INACTIVE_ADMIN, dataUrl: SAMPLE_PNG_DATA_URL }),
+    ).rejects.toMatchObject({ httpStatus: 401, code: 'ACCOUNT_INACTIVE' });
+    await expect(
+      service.removeClubWordmark({ actor: ALL_PERMS_NON_ADMIN }),
+    ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
+    await expect(
+      service.removeClubWordmark({ actor: INACTIVE_ADMIN }),
     ).rejects.toMatchObject({ httpStatus: 401, code: 'ACCOUNT_INACTIVE' });
 
     await expect(
@@ -362,6 +381,7 @@ describe('BrandingService', () => {
     });
     expect(pngResult).toEqual({
       logoUrl: `/api/v1/branding/logo?v=${clock.now().getTime()}`,
+      wordmarkUrl: null,
       updatedAt: clock.now().toISOString(),
       galleryItems: [created.item],
     });
@@ -396,11 +416,13 @@ describe('BrandingService', () => {
     const removed = await service.removeClubLogo({ actor: ADMIN_ACTOR });
     expect(removed).toEqual({
       logoUrl: null,
+      wordmarkUrl: null,
       updatedAt: null,
       galleryItems: [created.item],
     });
     await expect(service.getBranding()).resolves.toEqual({
       logoUrl: null,
+      wordmarkUrl: null,
       updatedAt: null,
       galleryItems: [created.item],
     });
@@ -582,5 +604,103 @@ describe('BrandingService', () => {
     const serializedLogs = JSON.stringify(rawLogs);
     expect(serializedAudit).not.toContain(largeGalleryDataUrl);
     expect(serializedLogs).not.toContain(largeGalleryDataUrl);
+  });
+
+  it('supports wordmark upload/remove, rejects SVG & > 256 KB, preserves logoUrl/galleryItems, and logs clean audit entries', async () => {
+    const { service, auditWriter, clock, rawLogs } = createHarness();
+    const svgBase64 = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><text>BEAM</text></svg>',
+    ).toString('base64');
+
+    await expect(
+      service.updateClubWordmark({
+        actor: ADMIN_ACTOR,
+        dataUrl: `data:image/svg+xml;base64,${svgBase64}`,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_IMAGE_FORMAT' });
+
+    const oversized = Buffer.concat([
+      SAMPLE_PNG_BYTES,
+      Buffer.alloc(MAX_IMAGE_BYTES + 1 - SAMPLE_PNG_BYTES.length, 0x01),
+    ]);
+    await expect(
+      service.updateClubWordmark({
+        actor: ADMIN_ACTOR,
+        dataUrl: `data:image/png;base64,${oversized.toString('base64')}`,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'IMAGE_TOO_LARGE' });
+
+    const created = await service.createGalleryItem({
+      actor: ADMIN_ACTOR,
+      title: 'Showcase',
+      dataUrl: SAMPLE_PNG_DATA_URL,
+    });
+    clock.advanceByMs(1_000);
+    const withLogo = await service.updateClubLogo({
+      actor: ADMIN_ACTOR,
+      dataUrl: SAMPLE_PNG_DATA_URL,
+    });
+
+    clock.advanceByMs(2_000);
+    const withWordmark = await service.updateClubWordmark({
+      actor: ADMIN_ACTOR,
+      dataUrl: SAMPLE_WEBP_DATA_URL,
+    });
+    expect(withWordmark).toEqual({
+      logoUrl: withLogo.logoUrl,
+      wordmarkUrl: `/api/v1/branding/wordmark?v=${clock.now().getTime()}`,
+      updatedAt: withLogo.updatedAt,
+      galleryItems: [created.item],
+    });
+    await expect(service.getBranding()).resolves.toEqual(withWordmark);
+    const wordmarkBinary = await service.getClubWordmark();
+    expect(wordmarkBinary.mimeType).toBe('image/webp');
+    expect(wordmarkBinary.data.equals(SAMPLE_WEBP_BYTES)).toBe(true);
+
+    // Updating club logo preserves wordmarkUrl
+    clock.advanceByMs(3_000);
+    const logoUpdated = await service.updateClubLogo({
+      actor: ADMIN_ACTOR,
+      dataUrl: SAMPLE_JPEG_DATA_URL,
+    });
+    expect(logoUpdated.wordmarkUrl).toBe(withWordmark.wordmarkUrl);
+    expect(logoUpdated.galleryItems).toEqual([created.item]);
+
+    // Removing wordmark preserves logoUrl, updatedAt, and galleryItems
+    clock.advanceByMs(4_000);
+    const wordmarkRemoved = await service.removeClubWordmark({
+      actor: ADMIN_ACTOR,
+    });
+    expect(wordmarkRemoved).toEqual({
+      logoUrl: logoUpdated.logoUrl,
+      wordmarkUrl: null,
+      updatedAt: logoUpdated.updatedAt,
+      galleryItems: [created.item],
+    });
+    await expect(service.getClubWordmark()).rejects.toMatchObject({
+      httpStatus: 404,
+      code: 'NOT_FOUND',
+    });
+
+    expect(auditWriter.entries.map((e) => e.action)).toEqual([
+      'branding.gallery_item_created',
+      'branding.logo_updated',
+      'branding.wordmark_updated',
+      'branding.logo_updated',
+      'branding.wordmark_removed',
+    ]);
+    expect(auditWriter.entries[2]?.detail).toEqual({
+      assetKey: CLUB_WORDMARK_ASSET_KEY,
+      mimeType: 'image/webp',
+      byteLength: SAMPLE_WEBP_BYTES.byteLength,
+    });
+    expect(auditWriter.entries[4]?.detail).toEqual({
+      assetKey: CLUB_WORDMARK_ASSET_KEY,
+    });
+
+    const serializedAudit = JSON.stringify(auditWriter.entries);
+    const serializedLogs = JSON.stringify(rawLogs);
+    expect(serializedAudit).not.toContain(SAMPLE_WEBP_DATA_URL);
+    expect(serializedLogs).not.toContain(SAMPLE_WEBP_DATA_URL);
   });
 });

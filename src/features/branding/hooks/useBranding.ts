@@ -54,6 +54,10 @@ export function useOptionalClubLogoUrl(): string | null {
   return useOptionalBranding()?.logoUrl ?? null;
 }
 
+export function useOptionalClubWordmarkUrl(): string | null {
+  return useOptionalBranding()?.wordmarkUrl ?? null;
+}
+
 async function syncBrandingAfterGalleryChange(
   queryClient: QueryClient,
   transform: (items: readonly LoginGalleryItemDto[]) => LoginGalleryItemDto[],
@@ -76,16 +80,18 @@ async function syncBrandingAfterGalleryChange(
   ]);
 }
 
+async function syncBrandingAsset(queryClient: QueryClient, data: BrandingResponse) {
+  queryClient.setQueryData(BRANDING_QUERY_KEYS.branding, data);
+  await queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+}
+
 export function useUpdateClubLogoMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (payload: ImageUploadRequest) =>
       apiFetch('/branding/logo', { method: 'put', body: payload }),
-    onSuccess: async (data) => {
-      queryClient.setQueryData(BRANDING_QUERY_KEYS.branding, data);
-      await queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
-    },
+    onSuccess: (data) => syncBrandingAsset(queryClient, data),
   });
 }
 
@@ -94,10 +100,26 @@ export function useRemoveClubLogoMutation() {
 
   return useMutation({
     mutationFn: () => apiFetch('/branding/logo', { method: 'delete' }),
-    onSuccess: async (data) => {
-      queryClient.setQueryData(BRANDING_QUERY_KEYS.branding, data);
-      await queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
-    },
+    onSuccess: (data) => syncBrandingAsset(queryClient, data),
+  });
+}
+
+export function useUpdateClubWordmarkMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: ImageUploadRequest) =>
+      apiFetch('/branding/wordmark', { method: 'put', body: payload }),
+    onSuccess: (data) => syncBrandingAsset(queryClient, data),
+  });
+}
+
+export function useRemoveClubWordmarkMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => apiFetch('/branding/wordmark', { method: 'delete' }),
+    onSuccess: (data) => syncBrandingAsset(queryClient, data),
   });
 }
 

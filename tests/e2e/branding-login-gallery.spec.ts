@@ -26,6 +26,15 @@ import {
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
 
+const SVG_WORDMARK_BYTES = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" width="320" height="100">' +
+    '<rect x="8" y="16" width="60" height="68" rx="14" fill="#DB2777"/>' +
+    '<text x="86" y="64" font-family="sans-serif" font-size="44" font-weight="800" fill="#111827">BEAM</text>' +
+    '</svg>',
+  'utf8',
+);
+const GIF_PAYLOAD_BYTES = Buffer.from('GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;', 'binary');
+
 function createOversizedDataUrl(maxBytes: number): string {
   const basePng = createSolidPngBuffer(8, 8);
   const padding = Buffer.alloc(maxBytes + 1 - basePng.length, 0x01);
@@ -96,6 +105,21 @@ async function expectImageLoaded(img: Locator): Promise<void> {
     .toBe(true);
 }
 
+async function expectLoginCollabFooter(page: Page): Promise<void> {
+  const footer = page.locator('.login-foot');
+  await expect(footer).toBeVisible();
+  const beamLink = footer.getByRole('link', { name: 'BEAM CLUB', exact: true });
+  const sangLink = footer.getByRole('link', { name: 'Sang', exact: true });
+  await expect(beamLink).toBeVisible();
+  await expect(beamLink).toHaveAttribute('href', 'https://www.facebook.com/eiu.beam.club');
+  await expect(beamLink).toHaveAttribute('target', '_blank');
+  await expect(beamLink).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(sangLink).toBeVisible();
+  await expect(sangLink).toHaveAttribute('href', 'https://www.facebook.com/ng.sanggg149');
+  await expect(sangLink).toHaveAttribute('target', '_blank');
+  await expect(sangLink).toHaveAttribute('rel', 'noopener noreferrer');
+}
+
 test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
   let pool: Pool;
   let db: Database;
@@ -118,7 +142,7 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
     db = createDb(pool);
     const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
 
-    await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+    await db.delete(clubAssets).where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
     await db.delete(loginGalleryItems);
 
     await db
@@ -178,7 +202,7 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
   test.afterAll(async () => {
     if (db) {
       const cleanupIds = [adminUserId, hrMemberUserId];
-      await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+      await db.delete(clubAssets).where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
       await db.delete(loginGalleryItems);
       await db.delete(sessions).where(inArray(sessions.userId, cleanupIds));
       await db.delete(userPermissions).where(inArray(userPermissions.userId, cleanupIds));
@@ -242,6 +266,9 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
         await expect(forbiddenState.locator('.ui-state-body')).toContainText(viMessages.errors['403'].description);
         await expect(forbiddenState.locator('.ui-state-meta')).toContainText(viMessages.errors['403'].code);
 
+        const emptyWordmarkRes = await hrPage.request.get('/api/v1/branding/wordmark');
+        expect(emptyWordmarkRes.status()).toBe(404);
+
         const forbiddenResponses = await Promise.all([
           hrPage.request.post('/api/v1/branding/gallery', {
             data: { title: 'Blocked', dataUrl: pngDataUrl },
@@ -257,6 +284,10 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
             data: { dataUrl: pngDataUrl },
           }),
           hrPage.request.delete('/api/v1/branding/logo'),
+          hrPage.request.put('/api/v1/branding/wordmark', {
+            data: { dataUrl: pngDataUrl },
+          }),
+          hrPage.request.delete('/api/v1/branding/wordmark'),
         ]);
 
         for (const response of forbiddenResponses) {
@@ -290,7 +321,7 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
     const svgDataUrl = `data:image/svg+xml;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
     const spoofedPngDataUrl = `data:image/png;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
 
-    await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+    await db.delete(clubAssets).where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
     await db.delete(loginGalleryItems);
 
     try {
@@ -315,9 +346,9 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
       }
 
       await logoSection.locator('input[type="file"]').setInputFiles({
-        name: 'bad-logo.svg',
-        mimeType: 'image/svg+xml',
-        buffer: SVG_PAYLOAD_BYTES,
+        name: 'bad-logo.gif',
+        mimeType: 'image/gif',
+        buffer: GIF_PAYLOAD_BYTES,
       });
       await expect(logoSection.locator('.ui-banner.is-danger')).toContainText(
         viMessages.errors.invalidImageFormat,
@@ -615,8 +646,177 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
         await expect(page.locator('.audit-table tbody tr', { hasText: item.label }).first()).toBeVisible();
       }
     } finally {
-      await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+      await db.delete(clubAssets).where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
       await db.delete(loginGalleryItems);
+    }
+
+    await tracker.assertClean();
+  });
+
+  test('uploads .svg wordmark as safe raster binary, renders across AppShell and /login desktop/mobile, restores default, and logs clean audit_logs', async ({
+    page,
+    browser,
+  }) => {
+    const tracker = await attachRuntimeErrorTracker(page);
+    const svgDataUrl = `data:image/svg+xml;base64,${SVG_WORDMARK_BYTES.toString('base64')}`;
+
+    await db.delete(clubAssets).where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
+
+    try {
+      await signInAs(page, adminStudentId, '/admin/branding');
+      const wordmarkSection = page.locator('section.admin-card', {
+        hasText: viMessages.branding.wordmarkTitle,
+      });
+      await expect(wordmarkSection).toContainText(viMessages.branding.defaultWordmarkActive);
+      await expect(
+        wordmarkSection.getByRole('button', { name: viMessages.branding.restoreDefaultButton, exact: true }),
+      ).toBeDisabled();
+
+      // Raw API still strictly rejects SVG data URLs
+      const rawSvgRes = await page.request.put('/api/v1/branding/wordmark', {
+        data: { dataUrl: svgDataUrl },
+      });
+      expect(rawSvgRes.status()).toBe(400);
+      expect(JSON.parse(await rawSvgRes.text())).toMatchObject({
+        error: { code: 'INVALID_IMAGE_FORMAT' },
+      });
+
+      // Empty wordmark returns 404 before upload
+      expect((await page.request.get('/api/v1/branding/wordmark')).status()).toBe(404);
+
+      // Client-side SVG upload rasterizes 5.svg into transparent PNG/WEBP <= 256 KB
+      const putWordmarkPromise = page.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/branding/wordmark') && res.request().method() === 'PUT',
+      );
+      await wordmarkSection.locator('input[type="file"]').setInputFiles({
+        name: '5.svg',
+        mimeType: 'image/svg+xml',
+        buffer: SVG_WORDMARK_BYTES,
+      });
+      const putWordmarkRes = await putWordmarkPromise;
+      expect(putWordmarkRes.status()).toBe(200);
+
+      const sentPayload = JSON.parse(putWordmarkRes.request().postData() ?? '{}') as { dataUrl?: string };
+      expect(sentPayload.dataUrl).toMatch(/^data:image\/(webp|png);base64,/);
+      const sentBase64 = (sentPayload.dataUrl ?? '').split(',')[1] ?? '';
+      expect(Buffer.from(sentBase64, 'base64').byteLength).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
+
+      const putWordmarkJson = (await putWordmarkRes.json()) as { wordmarkUrl: string | null };
+      expect(putWordmarkJson.wordmarkUrl).toMatch(/^\/api\/v1\/branding\/wordmark\?v=\d+$/);
+      await expect(wordmarkSection).toContainText(viMessages.branding.customWordmarkActive);
+      await expect(
+        wordmarkSection.getByRole('button', { name: viMessages.branding.restoreDefaultButton, exact: true }),
+      ).toBeEnabled();
+
+      // GET /api/v1/branding/wordmark returns safe raster binary with strict security headers
+      const getWordmarkRes = await page.request.get('/api/v1/branding/wordmark');
+      expect(getWordmarkRes.status()).toBe(200);
+      const wordmarkContentType = getWordmarkRes.headers()['content-type'];
+      expect(['image/webp', 'image/png']).toContain(wordmarkContentType);
+      expectSafeBinaryHeaders(getWordmarkRes.headers(), wordmarkContentType!);
+      const wordmarkBytes = await getWordmarkRes.body();
+      expect(wordmarkBytes.byteLength).toBeGreaterThan(0);
+      expect(wordmarkBytes.byteLength).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
+      const isPngBytes = wordmarkBytes.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      const isWebpBytes =
+        wordmarkBytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        wordmarkBytes.subarray(8, 12).toString('ascii') === 'WEBP';
+      expect(isPngBytes || isWebpBytes).toBe(true);
+
+      // Sidebar AppShell displays wordmark img next to club logo
+      const shellBrand = page.locator('.app-side .app-brand');
+      await expect(shellBrand.locator('.ui-logo')).toBeVisible();
+      const shellWordmarkImg = shellBrand.locator('img.club-wordmark-img');
+      await expectImageLoaded(shellWordmarkImg);
+      await expect(shellWordmarkImg).toHaveAttribute('src', putWordmarkJson.wordmarkUrl!);
+
+      // /login Desktop (1280x720) & /login Mobile (390x844) both display custom wordmark img
+      const anonDesktopContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+      const anonDesktopPage = await anonDesktopContext.newPage();
+      const anonDesktopTracker = await attachRuntimeErrorTracker(anonDesktopPage);
+      const anonMobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const anonMobilePage = await anonMobileContext.newPage();
+      const anonMobileTracker = await attachRuntimeErrorTracker(anonMobilePage);
+      try {
+        await anonDesktopPage.goto('/login');
+        const desktopWord = anonDesktopPage.locator('.login-left .login-word');
+        await expect(desktopWord.locator('.ui-logo')).toBeVisible();
+        await expectImageLoaded(desktopWord.locator('img.club-wordmark-img'));
+        await expect(desktopWord.locator('img.club-wordmark-img')).toHaveAttribute(
+          'src',
+          putWordmarkJson.wordmarkUrl!,
+        );
+
+        await anonMobilePage.goto('/login');
+        const mobileWord = anonMobilePage.locator('.login-mobile-brand');
+        await expect(mobileWord.locator('.ui-logo')).toBeVisible();
+        await expectImageLoaded(mobileWord.locator('img.club-wordmark-img'));
+        await expect(mobileWord.locator('img.club-wordmark-img')).toHaveAttribute(
+          'src',
+          putWordmarkJson.wordmarkUrl!,
+        );
+
+        // Restore default wordmark -> text fallback BEAM returns everywhere
+        const delWordmarkPromise = page.waitForResponse(
+          (res) => res.url().endsWith('/api/v1/branding/wordmark') && res.request().method() === 'DELETE',
+        );
+        await wordmarkSection
+          .getByRole('button', { name: viMessages.branding.restoreDefaultButton, exact: true })
+          .click();
+        expect((await delWordmarkPromise).status()).toBe(200);
+        await expect(wordmarkSection).toContainText(viMessages.branding.defaultWordmarkActive);
+        await expect(
+          wordmarkSection.getByRole('button', { name: viMessages.branding.restoreDefaultButton, exact: true }),
+        ).toBeDisabled();
+
+        await expect(shellBrand.locator('img.club-wordmark-img')).toHaveCount(0);
+        await expect(shellBrand.locator('.app-brand-text')).toContainText(viMessages.app.name);
+        expect((await page.request.get('/api/v1/branding/wordmark')).status()).toBe(404);
+
+        await anonDesktopPage.reload();
+        await expect(desktopWord.locator('img.club-wordmark-img')).toHaveCount(0);
+        await expect(desktopWord).toContainText(viMessages.app.name);
+
+        await anonMobilePage.reload();
+        await expect(mobileWord.locator('img.club-wordmark-img')).toHaveCount(0);
+        await expect(mobileWord).toContainText(viMessages.app.name);
+
+        await anonDesktopTracker.assertClean();
+        await anonMobileTracker.assertClean();
+      } finally {
+        await anonDesktopContext.close();
+        await anonMobileContext.close();
+      }
+
+      // Audit logs record clean branding.wordmark_updated & branding.wordmark_removed with zero binary/PII
+      await page.goto('/admin/audit');
+      await expect(page.locator('.audit-table tbody tr').first()).toBeVisible();
+      const forbiddenWordmarkAuditArtifacts = [
+        sentBase64,
+        SVG_WORDMARK_BYTES.toString('utf8'),
+        SVG_WORDMARK_BYTES.toString('base64'),
+        adminStudentId,
+        hrMemberStudentId,
+        adminEmail,
+        hrMemberEmail,
+      ];
+      for (const item of [
+        { action: 'branding.wordmark_updated', label: viMessages.auditLogs.actions.brandingWordmarkUpdated },
+        { action: 'branding.wordmark_removed', label: viMessages.auditLogs.actions.brandingWordmarkRemoved },
+      ]) {
+        const respPromise = page.waitForResponse(
+          (res) =>
+            res.url().includes('/api/v1/audit-logs') &&
+            res.url().includes(`action=${item.action}`) &&
+            res.status() === 200,
+        );
+        await page.getByLabel(viMessages.auditLogs.actionFilterLabel, { exact: true }).selectOption(item.action);
+        const rawBody = await (await respPromise).text();
+        assertNoSecretsInText(rawBody, forbiddenWordmarkAuditArtifacts);
+        await expect(page.locator('.audit-table tbody tr', { hasText: item.label }).first()).toBeVisible();
+      }
+    } finally {
+      await db.delete(clubAssets).where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
     }
 
     await tracker.assertClean();
@@ -640,6 +840,7 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
       await expect(loginLeft.locator('svg.login-polaroid-svg')).toHaveCount(4);
       await expect(loginLeft).toContainText(viMessages.auth.showcase.samples.kickoff.title);
       await expect(loginLeft).toContainText(viMessages.auth.showcase.samples.community.title);
+      await expectLoginCollabFooter(page);
 
       // 2. Admin uploads 5 frames -> /login renders ONLY real frames in orderIndex order
       const adminContext = await browser.newContext();
@@ -730,6 +931,7 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
       try {
         await mobilePage.goto('/login');
         await expect(mobilePage.locator('.login-left')).not.toBeVisible();
+        await expectLoginCollabFooter(mobilePage);
         await expect(mobilePage.getByLabel(viMessages.auth.studentIdLabel, { exact: true })).toBeVisible();
         await mobilePage.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(hrMemberStudentId);
         await mobilePage.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);

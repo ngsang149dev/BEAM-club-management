@@ -168,6 +168,16 @@ export function toClubLogoUrl(
   return `/api/v1/branding/logo?v=${version}`;
 }
 
+export function toClubWordmarkUrl(
+  updatedAt: Date | string | null | undefined,
+): string | null {
+  const version = toEpochVersion(updatedAt);
+  if (version === null) {
+    return null;
+  }
+  return `/api/v1/branding/wordmark?v=${version}`;
+}
+
 export function toLoginGalleryImageUrl(
   itemId: string,
   updatedAt: Date | string,

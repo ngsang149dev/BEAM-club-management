@@ -221,7 +221,9 @@ function useGalleryModalController(props: {
 
   const labels = resolveGalleryModalLabels(props.mode, props.isSubmitting, t);
   const previewSrc = picker.dataUrl || props.item?.imageUrl || null;
-  const errorKey = describeBrandingError(picker.compressError ?? props.error);
+  const rawErrorKey = describeBrandingError(picker.compressError ?? props.error);
+  const errorKey: BrandingErrorKey | null =
+    rawErrorKey === 'imageTooLarge' ? 'galleryImageTooLarge' : rawErrorKey;
   const onSubmit = form.handleSubmit((values) =>
     void submitGalleryModalForm({ mode: props.mode, item: props.item, values, picker, onCreate: props.onCreate, onEdit: props.onEdit }),
   );

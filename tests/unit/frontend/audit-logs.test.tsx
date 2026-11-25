@@ -169,6 +169,8 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(resolveAuditActionKey('member.avatar_removed')).toBe('memberAvatarRemoved');
     expect(resolveAuditActionKey('branding.logo_updated')).toBe('brandingLogoUpdated');
     expect(resolveAuditActionKey('branding.logo_removed')).toBe('brandingLogoRemoved');
+    expect(resolveAuditActionKey('branding.wordmark_updated')).toBe('brandingWordmarkUpdated');
+    expect(resolveAuditActionKey('branding.wordmark_removed')).toBe('brandingWordmarkRemoved');
 
     const pwResetEntry: AuditLogDto = {
       ...ENTRY_PERM,
@@ -422,5 +424,27 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(enHtml).toContain('Updated login gallery photo');
     expect(enHtml).toContain('Deleted login gallery photo');
     expect(enHtml).toContain('Reordered login gallery');
+
+    const wordmarkEntries: AuditLogDto[] = [
+      { ...ENTRY_PERM, targetUser: null, action: 'branding.wordmark_updated', detail: { assetKey: 'club_wordmark', mimeType: 'image/webp', byteLength: 2048 } },
+      { ...ENTRY_PERM, targetUser: null, action: 'branding.wordmark_removed', detail: { assetKey: 'club_wordmark', removed: true } },
+    ];
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: wordmarkEntries, meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const wordmarkViHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(wordmarkViHtml).toContain('Cập nhật ảnh chữ CLB');
+    expect(wordmarkViHtml).toContain('Khôi phục chữ CLB mặc định');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: wordmarkEntries, meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const wordmarkEnHtml = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(wordmarkEnHtml).toContain('Updated club wordmark');
+    expect(wordmarkEnHtml).toContain('Restored default club wordmark');
   });
 });

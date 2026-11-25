@@ -8,6 +8,7 @@ import { usePermissions } from '@/features/shared/permissions/can';
 import { describeBrandingError } from '../error-mapping';
 import { useBrandingQuery } from '../hooks/useBranding';
 import { ClubLogoSection } from './ClubLogoSection';
+import { ClubWordmarkSection } from './ClubWordmarkSection';
 import { LoginGalleryAdminSection } from './LoginGalleryAdminSection';
 
 export function BrandingAdminView() {
@@ -57,7 +58,10 @@ export function BrandingAdminView() {
   return (
     <div className="admin-page-stack">
       <div className="admin-sections-stack">
-        <ClubLogoSection />
+        <div className="branding-identity-grid">
+          <ClubLogoSection />
+          <ClubWordmarkSection />
+        </div>
         <LoginGalleryAdminSection items={galleryItems} />
       </div>
     </div>

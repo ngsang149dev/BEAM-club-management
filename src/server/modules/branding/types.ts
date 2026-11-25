@@ -65,7 +65,10 @@ export interface UpdateLoginGalleryItemParams {
 }
 
 export interface BrandingRepository {
-  findMetadataByKey(key: string): Promise<ClubAssetMetadataRecord | null>;
+  findMetadataByKey(
+    key: string,
+    tx?: TransactionContext,
+  ): Promise<ClubAssetMetadataRecord | null>;
   findAssetByKey(key: string): Promise<ClubAssetBinaryRecord | null>;
   upsertAsset(
     input: UpsertClubAssetParams,
@@ -114,6 +117,15 @@ export interface UpdateClubLogoCommand {
 }
 
 export interface RemoveClubLogoCommand {
+  readonly actor: AuthActor;
+}
+
+export interface UpdateClubWordmarkCommand {
+  readonly actor: AuthActor;
+  readonly dataUrl: string;
+}
+
+export interface RemoveClubWordmarkCommand {
   readonly actor: AuthActor;
 }
 

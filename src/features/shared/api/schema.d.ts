@@ -140,6 +140,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/branding/wordmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch the custom club wordmark binary asset
+         * @description Returns raw PNG/JPEG/WEBP image bytes (`X-Content-Type-Options: nosniff`) or `404` when using the default wordmark text.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Binary wordmark image */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        /**
+         * Upload or replace the custom club wordmark (Admin-only)
+         * @description Requires `is_admin=true`. Validates magic bytes (`image/png`, `image/jpeg`, `image/webp`), rejects SVG/unsupported formats and payloads over `262144` bytes, stores `'club_wordmark'` in PostgreSQL, and writes `audit_logs` (`branding.wordmark_updated`).
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImageUploadRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated club branding metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandingResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        post?: never;
+        /**
+         * Remove custom club wordmark and restore default text (Admin-only)
+         * @description Requires `is_admin=true`. Removes `'club_wordmark'` from `club_assets` and records `audit_logs` (`branding.wordmark_removed`).
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reset club branding metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandingResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/branding/gallery": {
         parameters: {
             query?: never;
@@ -3437,6 +3534,7 @@ export interface components {
         };
         BrandingResponse: {
             logoUrl: string | null;
+            wordmarkUrl: string | null;
             /** Format: date-time */
             updatedAt: string | null;
             galleryItems: components["schemas"]["LoginGalleryItemDto"][];

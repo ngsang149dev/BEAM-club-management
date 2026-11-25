@@ -1,17 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '@/features/shared/api/client';
 import {
+  BRAND_ASSET_FILE_ACCEPT,
   compressImageFileToDataUrl,
   computeScaledDimensions,
   estimateDataUrlDecodedBytes,
   GALLERY_IMAGE_COMPRESSION_OPTIONS,
   ImageCompressError,
   isDataUrlWithinBudget,
+  LOGO_IMAGE_COMPRESSION_OPTIONS,
   MAX_GALLERY_DATA_URL_LENGTH,
   MAX_GALLERY_IMAGE_BYTES,
   MAX_IMAGE_BYTES,
   prepareImageUpload,
   resolveImageUploadErrorKey,
+  WORDMARK_IMAGE_COMPRESSION_OPTIONS,
 } from '@/features/shared/image-compress';
 
 function createFakeFile(byteLength: number, name: string, type: string): File {
@@ -123,6 +126,8 @@ describe('image-compress helper (CR-02)', () => {
 
     expect(resolveImageUploadErrorKey(new ImageCompressError('INVALID_IMAGE_FORMAT'))).toBe('invalidImageFormat');
     expect(resolveImageUploadErrorKey(new ImageCompressError('IMAGE_TOO_LARGE'))).toBe('imageTooLarge');
+    expect(resolveImageUploadErrorKey(new ImageCompressError('IMAGE_TOO_LARGE', MAX_IMAGE_BYTES))).toBe('imageTooLarge');
+    expect(resolveImageUploadErrorKey(new ImageCompressError('IMAGE_TOO_LARGE', MAX_GALLERY_IMAGE_BYTES))).toBe('galleryImageTooLarge');
     expect(
       resolveImageUploadErrorKey(
         new ApiClientError({ status: 400, code: 'INVALID_IMAGE_FORMAT', messageKey: 'errors.invalidImageFormat', details: {} })
@@ -192,5 +197,86 @@ describe('image-compress helper (CR-02)', () => {
     );
     expect(compressed).toBe(sharpGallery);
     expect(calls[0]).toEqual({ width: 1280, height: 960 });
+  });
+
+  it('rasterizes SVG wordmark/logo via URL.createObjectURL on a transparent canvas without black fill or jpeg fallback', async () => {
+    expect(BRAND_ASSET_FILE_ACCEPT).toContain('image/svg+xml,.svg');
+    expect(WORDMARK_IMAGE_COMPRESSION_OPTIONS.dimensions).toEqual([640, 480, 320]);
+    expect(WORDMARK_IMAGE_COMPRESSION_OPTIONS.allowSvgRasterize).toBe(true);
+    expect(WORDMARK_IMAGE_COMPRESSION_OPTIONS.preserveAlpha).toBe(true);
+    expect(LOGO_IMAGE_COMPRESSION_OPTIONS.allowSvgRasterize).toBe(true);
+    expect(LOGO_IMAGE_COMPRESSION_OPTIONS.preserveAlpha).toBe(true);
+
+    const encodedAttempts: { mime: string; width: number; height: number }[] = [];
+    const transparentWebp = `data:image/webp;base64,${'D'.repeat(400)}`;
+    const mockCtx = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      drawImage: vi.fn(),
+    };
+    const mockCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => mockCtx),
+      toDataURL: vi.fn((mime: string) => {
+        encodedAttempts.push({ mime, width: mockCanvas.width, height: mockCanvas.height });
+        return mime === 'image/png' ? transparentWebp.replace('image/webp', 'image/png') : transparentWebp;
+      }),
+    };
+    class MockZeroDimensionSvgImage {
+      naturalWidth = 0;
+      naturalHeight = 0;
+      width = 0;
+      height = 0;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    const createObjectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-svg');
+    const revokeObjectUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.stubGlobal('document', { createElement: vi.fn(() => mockCanvas) });
+    vi.stubGlobal('Image', MockZeroDimensionSvgImage);
+
+    const svgFile = new File(['<svg viewBox="0 0 320 100"><text>BEAM</text></svg>'], '5.svg', {
+      type: 'image/svg+xml',
+    });
+    const output = await compressImageFileToDataUrl(svgFile, WORDMARK_IMAGE_COMPRESSION_OPTIONS);
+    expect(output).toBe(transparentWebp);
+    expect(createObjectUrlSpy).toHaveBeenCalledWith(svgFile);
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:mock-svg');
+    expect(mockCtx.clearRect).toHaveBeenCalledWith(0, 0, 640, 200);
+    expect(mockCtx.fillRect).not.toHaveBeenCalled();
+    expect(encodedAttempts[0]).toEqual({ mime: 'image/webp', width: 640, height: 200 });
+
+    // Oversized PNG with preserveAlpha only uses webp/png encodings (never jpeg)
+    const oversizedAlpha = `data:image/webp;base64,${'E'.repeat(400_000)}`;
+    const alphaPng = `data:image/png;base64,${'F'.repeat(500)}`;
+    const alphaCalls: string[] = [];
+    class MockOversizedPngImage {
+      naturalWidth = 1000;
+      naturalHeight = 400;
+      width = 1000;
+      height = 400;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal('Image', MockOversizedPngImage);
+    mockCanvas.toDataURL = vi.fn((mime: string) => {
+      alphaCalls.push(mime);
+      return mime === 'image/png' ? alphaPng : oversizedAlpha;
+    });
+    const pngOutput = await compressImageFileToDataUrl(
+      createFakeFile(1024, 'alpha.png', 'image/png'),
+      WORDMARK_IMAGE_COMPRESSION_OPTIONS
+    );
+    expect(pngOutput).toBe(alphaPng);
+    expect(alphaCalls.length).toBeGreaterThan(0);
+    expect(alphaCalls.every((m) => m === 'image/webp' || m === 'image/png')).toBe(true);
+    expect(alphaCalls).not.toContain('image/jpeg');
   });
 });

@@ -22,6 +22,8 @@ export type AuditActionMessageKey =
   | 'boardArchived'
   | 'brandingLogoUpdated'
   | 'brandingLogoRemoved'
+  | 'brandingWordmarkUpdated'
+  | 'brandingWordmarkRemoved'
   | 'brandingGalleryCreated'
   | 'brandingGalleryUpdated'
   | 'brandingGalleryDeleted'
@@ -60,6 +62,8 @@ const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
   'board.archived': 'boardArchived',
   'branding.logo_updated': 'brandingLogoUpdated',
   'branding.logo_removed': 'brandingLogoRemoved',
+  'branding.wordmark_updated': 'brandingWordmarkUpdated',
+  'branding.wordmark_removed': 'brandingWordmarkRemoved',
   'branding.gallery_item_created': 'brandingGalleryCreated',
   'branding.gallery_item_updated': 'brandingGalleryUpdated',
   'branding.gallery_item_deleted': 'brandingGalleryDeleted',
@@ -96,6 +100,8 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'reminders.updated', key: 'remindersUpdated' },
   { value: 'branding.logo_updated', key: 'brandingLogoUpdated' },
   { value: 'branding.logo_removed', key: 'brandingLogoRemoved' },
+  { value: 'branding.wordmark_updated', key: 'brandingWordmarkUpdated' },
+  { value: 'branding.wordmark_removed', key: 'brandingWordmarkRemoved' },
   { value: 'branding.gallery_item_created', key: 'brandingGalleryCreated' },
   { value: 'branding.gallery_item_updated', key: 'brandingGalleryUpdated' },
   { value: 'branding.gallery_item_deleted', key: 'brandingGalleryDeleted' },

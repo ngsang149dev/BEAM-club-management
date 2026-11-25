@@ -1,4 +1,8 @@
-import { toClubLogoUrl, toLoginGalleryImageUrl } from '@/lib/media';
+import {
+  toClubLogoUrl,
+  toClubWordmarkUrl,
+  toLoginGalleryImageUrl,
+} from '@/lib/media';
 import type {
   ClubAssetMetadataRecord,
   LoginGalleryItemMetadataRecord,
@@ -15,11 +19,18 @@ export interface LoginGalleryItemDto {
 
 export interface BrandingDto {
   readonly logoUrl: string | null;
+  readonly wordmarkUrl: string | null;
   readonly updatedAt: string | null;
   readonly galleryItems: readonly LoginGalleryItemDto[];
 }
 
 export type BrandingResponseDto = BrandingDto;
+
+export interface ToBrandingDtoInput {
+  readonly logoAsset: ClubAssetMetadataRecord | null;
+  readonly wordmarkAsset: ClubAssetMetadataRecord | null;
+  readonly galleryItems?: readonly LoginGalleryItemMetadataRecord[];
+}
 
 export interface LoginGalleryItemResponseDto {
   readonly item: LoginGalleryItemDto;
@@ -47,21 +58,15 @@ export function toLoginGalleryItemDto(
   };
 }
 
-export function toBrandingDto(
-  asset: ClubAssetMetadataRecord | null,
-  galleryItems: readonly LoginGalleryItemMetadataRecord[] = [],
-): BrandingDto {
-  const mappedGallery = galleryItems.map(toLoginGalleryItemDto);
-  if (!asset) {
-    return {
-      logoUrl: null,
-      updatedAt: null,
-      galleryItems: mappedGallery,
-    };
-  }
+export function toBrandingDto({
+  logoAsset,
+  wordmarkAsset,
+  galleryItems = [],
+}: ToBrandingDtoInput): BrandingDto {
   return {
-    logoUrl: toClubLogoUrl(asset.updatedAt),
-    updatedAt: asset.updatedAt.toISOString(),
-    galleryItems: mappedGallery,
+    logoUrl: toClubLogoUrl(logoAsset?.updatedAt),
+    wordmarkUrl: toClubWordmarkUrl(wordmarkAsset?.updatedAt),
+    updatedAt: logoAsset ? logoAsset.updatedAt.toISOString() : null,
+    galleryItems: galleryItems.map(toLoginGalleryItemDto),
   };
 }

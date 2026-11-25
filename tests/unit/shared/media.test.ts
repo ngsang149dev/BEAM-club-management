@@ -13,6 +13,7 @@ import {
   getMemberInitials,
   reorderLoginGalleryRequestSchema,
   toClubLogoUrl,
+  toClubWordmarkUrl,
   toLoginGalleryImageUrl,
   toMemberAvatarUrl,
   updateLoginGalleryItemRequestSchema,
@@ -132,6 +133,9 @@ describe('shared media helpers', () => {
     expect(toMemberAvatarUrl('user-1', ts)).toBe(`/api/v1/members/user-1/avatar?v=${ts.getTime()}`);
     expect(toClubLogoUrl(null)).toBeNull();
     expect(toClubLogoUrl(ts)).toBe(`/api/v1/branding/logo?v=${ts.getTime()}`);
+    expect(toClubWordmarkUrl(null)).toBeNull();
+    expect(toClubWordmarkUrl(undefined)).toBeNull();
+    expect(toClubWordmarkUrl(ts)).toBe(`/api/v1/branding/wordmark?v=${ts.getTime()}`);
     expect(toLoginGalleryImageUrl('item-1', ts)).toBe(
       `/api/v1/branding/gallery/item-1/image?v=${ts.getTime()}`,
     );

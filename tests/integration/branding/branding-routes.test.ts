@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -26,6 +26,11 @@ import {
   PUT as logoPut,
 } from '@/app/api/v1/branding/logo/route';
 import { GET as brandingGet } from '@/app/api/v1/branding/route';
+import {
+  DELETE as wordmarkDelete,
+  GET as wordmarkGet,
+  PUT as wordmarkPut,
+} from '@/app/api/v1/branding/wordmark/route';
 import { SESSION_COOKIE_NAME } from '@/lib/auth';
 import {
   MAX_GALLERY_IMAGE_BYTES,
@@ -278,7 +283,9 @@ describe('Branding Route Handlers integration', () => {
         { userId: memberId, permissionCode: 'member.update', grantedBy: null },
         { userId: memberId, permissionCode: 'member.view', grantedBy: null },
       ]);
-      await tx.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
+      await tx
+        .delete(clubAssets)
+        .where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
       await tx.delete(loginGalleryItems);
 
       const loginAs = async (studentId: string, hostOffset: number) =>
@@ -306,6 +313,7 @@ describe('Branding Route Handlers integration', () => {
       expect(initialMetaRes.headers.get('cache-control')).toBe('no-store');
       expect(await initialMetaRes.json()).toEqual({
         logoUrl: null,
+        wordmarkUrl: null,
         updatedAt: null,
         galleryItems: [],
       });
@@ -314,6 +322,10 @@ describe('Branding Route Handlers integration', () => {
         new Request('http://localhost:3000/api/v1/branding/logo'),
       );
       expect(missingLogoRes.status).toBe(404);
+      const missingWordmarkRes = await wordmarkGet(
+        new Request('http://localhost:3000/api/v1/branding/wordmark'),
+      );
+      expect(missingWordmarkRes.status).toBe(404);
 
       const pngDataUrl = `data:image/png;base64,${SAMPLE_PNG_BYTES.toString('base64')}`;
       const webpDataUrl = `data:image/webp;base64,${SAMPLE_WEBP_BYTES.toString('base64')}`;
@@ -418,10 +430,12 @@ describe('Branding Route Handlers integration', () => {
       expect(putPngRes.status).toBe(200);
       const putPngBody = (await putPngRes.json()) as {
         logoUrl: string | null;
+        wordmarkUrl: string | null;
         updatedAt: string | null;
         galleryItems: LoginGalleryItemDto[];
       };
       expect(putPngBody.logoUrl).toMatch(/^\/api\/v1\/branding\/logo\?v=\d+$/);
+      expect(putPngBody.wordmarkUrl).toBeNull();
       expect(putPngBody.updatedAt).toBeTruthy();
       expect(putPngBody.galleryItems).toEqual([galleryItem]);
 
@@ -472,6 +486,7 @@ describe('Branding Route Handlers integration', () => {
       expect(delRes.status).toBe(200);
       expect(await delRes.json()).toEqual({
         logoUrl: null,
+        wordmarkUrl: null,
         updatedAt: null,
         galleryItems: [galleryItem],
       });
@@ -482,7 +497,12 @@ describe('Branding Route Handlers integration', () => {
         await (
           await brandingGet(new Request('http://localhost:3000/api/v1/branding'))
         ).json(),
-      ).toEqual({ logoUrl: null, updatedAt: null, galleryItems: [galleryItem] });
+      ).toEqual({
+        logoUrl: null,
+        wordmarkUrl: null,
+        updatedAt: null,
+        galleryItems: [galleryItem],
+      });
 
       // 6. Verify audit_logs and logs contain zero binary, base64 dataUrl, or PII
       const auditRows = await tx
@@ -890,6 +910,285 @@ describe('Branding Route Handlers integration', () => {
         jpegDataUrl,
         webpDataUrl,
         SAMPLE_PNG_BYTES.toString('base64'),
+        adminSid,
+        memberSid,
+      ]) {
+        expect(serializedAudits).not.toContain(forbidden);
+        expect(serializedLogs).not.toContain(forbidden);
+      }
+    });
+  });
+
+  it('serves public wordmark binary, enforces admin-only wordmark routes, preserves logoUrl & galleryItems, and logs clean audit_logs', async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const adminId = randomUUID();
+    const memberId = randomUUID();
+    const adminSid = `MSSV-WM-ADMIN-${suffix}`;
+    const memberSid = `MSSV-WM-MEM-${suffix}`;
+    const baseHost = Math.floor(Math.random() * 150) + 20;
+    const capturedLogs: string[] = [];
+
+    await withRolledBackDb(db, async (tx) => {
+      const container = createContainer({
+        config: makeTestConfig(suffix),
+        db,
+        transactionRunner: { runInTransaction: (fn) => tx.transaction(fn) },
+        auditWriter: new DrizzleAuditRepository(tx),
+        authRepo: new DrizzleAuthRepository(tx),
+        brandingRepo: new DrizzleBrandingRepository(tx),
+        logger: new StructuredLogger({
+          writeOut: (line) => capturedLogs.push(line),
+          writeErr: (line) => capturedLogs.push(line),
+        }),
+      });
+      setContainerForTesting(container);
+
+      await tx
+        .insert(permissions)
+        .values([
+          { code: 'member.view', groupName: 'members', description: 'V', scopable: false },
+        ])
+        .onConflictDoNothing();
+
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
+      await tx.insert(profiles).values([
+        {
+          id: adminId,
+          studentId: adminSid,
+          email: `wm-admin-${suffix}@eiu.edu.vn`,
+          fullName: `Wordmark Admin ${suffix}`,
+          passwordHash: seedPasswordHash,
+          isAdmin: true,
+          isActive: true,
+          locale: 'vi',
+        },
+        {
+          id: memberId,
+          studentId: memberSid,
+          email: `wm-mem-${suffix}@eiu.edu.vn`,
+          fullName: `Wordmark Member ${suffix}`,
+          passwordHash: seedPasswordHash,
+          isAdmin: false,
+          isActive: true,
+          locale: 'vi',
+        },
+      ]);
+      await tx
+        .update(profiles)
+        .set({ isAdmin: false })
+        .where(and(eq(profiles.isAdmin, true), ne(profiles.id, adminId)));
+      await tx.insert(userPermissions).values([
+        { userId: memberId, permissionCode: 'member.view', grantedBy: null },
+      ]);
+      await tx
+        .delete(clubAssets)
+        .where(inArray(clubAssets.key, ['club_logo', 'club_wordmark']));
+      await tx.delete(loginGalleryItems);
+
+      const loginAs = async (studentId: string, hostOffset: number) =>
+        cookiePairFromLogin(
+          await loginPost(
+            new Request('http://localhost:3000/api/v1/auth/login', {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'x-forwarded-for': `198.51.100.${baseHost + hostOffset}`,
+              },
+              body: JSON.stringify({ studentId, password: DEV_SEED_PASSWORD }),
+            }),
+          ),
+        );
+
+      const adminCookie = await loginAs(adminSid, 0);
+      const memberCookie = await loginAs(memberSid, 1);
+      const pngDataUrl = `data:image/png;base64,${SAMPLE_PNG_BYTES.toString('base64')}`;
+      const webpDataUrl = `data:image/webp;base64,${SAMPLE_WEBP_BYTES.toString('base64')}`;
+
+      // 1. Missing wordmark returns 404; unauthenticated & non-admin mutations return 401/403
+      expect(
+        (await wordmarkGet(new Request('http://localhost:3000/api/v1/branding/wordmark')))
+          .status,
+      ).toBe(404);
+      expect(
+        (
+          await wordmarkPut(
+            new Request('http://localhost:3000/api/v1/branding/wordmark', {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ dataUrl: pngDataUrl }),
+            }),
+          )
+        ).status,
+      ).toBe(401);
+      expect(
+        (
+          await wordmarkDelete(
+            new Request('http://localhost:3000/api/v1/branding/wordmark', {
+              method: 'DELETE',
+            }),
+          )
+        ).status,
+      ).toBe(401);
+      expect(
+        (
+          await wordmarkPut(
+            new Request('http://localhost:3000/api/v1/branding/wordmark', {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', cookie: memberCookie },
+              body: JSON.stringify({ dataUrl: pngDataUrl }),
+            }),
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await wordmarkDelete(
+            new Request('http://localhost:3000/api/v1/branding/wordmark', {
+              method: 'DELETE',
+              headers: { cookie: memberCookie },
+            }),
+          )
+        ).status,
+      ).toBe(403);
+
+      // 2. Reject SVG & > 256 KB
+      const svgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString(
+        'base64',
+      );
+      expect(
+        (
+          await wordmarkPut(
+            new Request('http://localhost:3000/api/v1/branding/wordmark', {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({
+                dataUrl: `data:image/svg+xml;base64,${svgBase64}`,
+              }),
+            }),
+          )
+        ).status,
+      ).toBe(400);
+
+      const oversized = Buffer.concat([
+        SAMPLE_PNG_BYTES,
+        Buffer.alloc(MAX_IMAGE_BYTES + 1 - SAMPLE_PNG_BYTES.length, 0x01),
+      ]);
+      expect(
+        (
+          await wordmarkPut(
+            new Request('http://localhost:3000/api/v1/branding/wordmark', {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({
+                dataUrl: `data:image/png;base64,${oversized.toString('base64')}`,
+              }),
+            }),
+          )
+        ).status,
+      ).toBe(400);
+
+      // 3. Seed logo + gallery item, then upload wordmark & verify preservation
+      const galleryRes = await galleryPost(
+        new Request('http://localhost:3000/api/v1/branding/gallery', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ title: 'Wordmark Showcase', dataUrl: pngDataUrl }),
+        }),
+      );
+      expect(galleryRes.status).toBe(201);
+      const { item: galleryItem } = (await galleryRes.json()) as {
+        item: LoginGalleryItemDto;
+      };
+
+      const logoRes = await logoPut(
+        new Request('http://localhost:3000/api/v1/branding/logo', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ dataUrl: pngDataUrl }),
+        }),
+      );
+      expect(logoRes.status).toBe(200);
+      const logoBody = (await logoRes.json()) as {
+        logoUrl: string | null;
+        wordmarkUrl: string | null;
+        updatedAt: string | null;
+        galleryItems: LoginGalleryItemDto[];
+      };
+
+      const putWordmarkRes = await wordmarkPut(
+        new Request('http://localhost:3000/api/v1/branding/wordmark', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ dataUrl: webpDataUrl }),
+        }),
+      );
+      expect(putWordmarkRes.status).toBe(200);
+      const putWordmarkBody = (await putWordmarkRes.json()) as typeof logoBody;
+      expect(putWordmarkBody.logoUrl).toBe(logoBody.logoUrl);
+      expect(putWordmarkBody.updatedAt).toBe(logoBody.updatedAt);
+      expect(putWordmarkBody.wordmarkUrl).toMatch(
+        /^\/api\/v1\/branding\/wordmark\?v=\d+$/,
+      );
+      expect(putWordmarkBody.galleryItems).toEqual([galleryItem]);
+
+      const metaRes = await brandingGet(
+        new Request('http://localhost:3000/api/v1/branding'),
+      );
+      expect(metaRes.status).toBe(200);
+      expect(await metaRes.json()).toEqual(putWordmarkBody);
+
+      const getWordmarkRes = await wordmarkGet(
+        new Request('http://localhost:3000/api/v1/branding/wordmark'),
+      );
+      expect(getWordmarkRes.status).toBe(200);
+      expect(getWordmarkRes.headers.get('content-type')).toBe('image/webp');
+      expect(getWordmarkRes.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(getWordmarkRes.headers.get('content-security-policy')).toBe(
+        "default-src 'none'; sandbox",
+      );
+      expect(getWordmarkRes.headers.get('cache-control')).toBe('no-store');
+      expect(
+        Buffer.from(await getWordmarkRes.arrayBuffer()).equals(SAMPLE_WEBP_BYTES),
+      ).toBe(true);
+
+      // 4. Delete wordmark -> wordmarkUrl resets to null & GET returns 404, preserving logoUrl & galleryItems
+      const delWordmarkRes = await wordmarkDelete(
+        new Request('http://localhost:3000/api/v1/branding/wordmark', {
+          method: 'DELETE',
+          headers: { cookie: adminCookie },
+        }),
+      );
+      expect(delWordmarkRes.status).toBe(200);
+      expect(await delWordmarkRes.json()).toEqual({
+        logoUrl: logoBody.logoUrl,
+        wordmarkUrl: null,
+        updatedAt: logoBody.updatedAt,
+        galleryItems: [galleryItem],
+      });
+      expect(
+        (await wordmarkGet(new Request('http://localhost:3000/api/v1/branding/wordmark')))
+          .status,
+      ).toBe(404);
+
+      // 5. Verify audit_logs and logs contain zero binary, base64 dataUrl, or PII
+      const auditRows = await tx
+        .select()
+        .from(auditLogs)
+        .where(eq(auditLogs.actorId, adminId));
+      expect(auditRows.map((r) => r.action).sort()).toEqual([
+        'branding.gallery_item_created',
+        'branding.logo_updated',
+        'branding.wordmark_removed',
+        'branding.wordmark_updated',
+      ]);
+
+      const serializedAudits = JSON.stringify(auditRows);
+      const serializedLogs = capturedLogs.join('\n');
+      for (const forbidden of [
+        pngDataUrl,
+        webpDataUrl,
+        SAMPLE_PNG_BYTES.toString('base64'),
+        SAMPLE_WEBP_BYTES.toString('base64'),
         adminSid,
         memberSid,
       ]) {

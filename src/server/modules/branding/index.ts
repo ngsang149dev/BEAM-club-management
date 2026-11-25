@@ -5,6 +5,7 @@ export {
   type LoginGalleryItemDto,
   type LoginGalleryItemResponseDto,
   type LoginGalleryListResponseDto,
+  type ToBrandingDtoInput,
   toBrandingDto,
   toLoginGalleryItemDto,
 } from './mapper';
@@ -16,6 +17,7 @@ export {
 } from './policy';
 export {
   CLUB_LOGO_ASSET_KEY,
+  CLUB_WORDMARK_ASSET_KEY,
   DrizzleBrandingRepository,
 } from './repository';
 export { BrandingService } from './service';
@@ -31,8 +33,10 @@ export type {
   LoginGalleryItemBinaryRecord,
   LoginGalleryItemMetadataRecord,
   RemoveClubLogoCommand,
+  RemoveClubWordmarkCommand,
   ReorderGalleryItemsCommand,
   UpdateClubLogoCommand,
+  UpdateClubWordmarkCommand,
   UpdateGalleryItemCommand,
   UpdateLoginGalleryItemParams,
   UpsertClubAssetParams,

@@ -1,16 +1,17 @@
 import { notFound } from '@/lib/errors';
 import type { ParsedImageAsset } from '@/server/shared/media';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { type BrandingDto, toBrandingDto } from './mapper';
 import {
   assertGalleryCapacity,
   computeNextGalleryOrderIndex,
 } from './policy';
-import { CLUB_LOGO_ASSET_KEY } from './repository';
+import { CLUB_LOGO_ASSET_KEY, CLUB_WORDMARK_ASSET_KEY } from './repository';
 import type {
+  BrandingRepository,
   BrandingServiceDeps,
   CreateGalleryItemCommand,
   LoginGalleryItemMetadataRecord,
-  UpdateClubLogoCommand,
   UpdateGalleryItemCommand,
 } from './types';
 
@@ -28,30 +29,44 @@ function buildUpdatedGalleryAuditDetail(
   };
 }
 
-export async function persistClubLogoInTx(params: {
+export async function loadFullBrandingDto(
+  brandingRepo: BrandingRepository,
+  tx?: TransactionContext,
+): Promise<BrandingDto> {
+  const [logoAsset, wordmarkAsset, galleryItems] = await Promise.all([
+    brandingRepo.findMetadataByKey(CLUB_LOGO_ASSET_KEY, tx),
+    brandingRepo.findMetadataByKey(CLUB_WORDMARK_ASSET_KEY, tx),
+    brandingRepo.listGalleryItemsMetadata(tx),
+  ]);
+  return toBrandingDto({ logoAsset, wordmarkAsset, galleryItems });
+}
+
+export async function persistClubAssetInTx(params: {
   readonly deps: Pick<BrandingServiceDeps, 'brandingRepo' | 'auditWriter'>;
   readonly tx: TransactionContext;
-  readonly command: UpdateClubLogoCommand;
+  readonly actorId: string;
+  readonly assetKey: string;
+  readonly auditAction: string;
   readonly parsed: ParsedImageAsset;
   readonly now: Date;
-}) {
-  const { deps, tx, command, parsed, now } = params;
-  const record = await deps.brandingRepo.upsertAsset(
+}): Promise<BrandingDto> {
+  const { deps, tx, actorId, assetKey, auditAction, parsed, now } = params;
+  await deps.brandingRepo.upsertAsset(
     {
-      key: CLUB_LOGO_ASSET_KEY,
+      key: assetKey,
       mimeType: parsed.mimeType,
       data: parsed.buffer,
-      updatedBy: command.actor.id,
+      updatedBy: actorId,
       now,
     },
     tx,
   );
   await deps.auditWriter.record(
     {
-      actorId: command.actor.id,
-      action: 'branding.logo_updated',
+      actorId,
+      action: auditAction,
       detail: {
-        assetKey: CLUB_LOGO_ASSET_KEY,
+        assetKey,
         mimeType: parsed.mimeType,
         byteLength: parsed.buffer.byteLength,
       },
@@ -59,8 +74,29 @@ export async function persistClubLogoInTx(params: {
     },
     tx,
   );
-  const galleryItems = await deps.brandingRepo.listGalleryItemsMetadata(tx);
-  return { record, galleryItems };
+  return loadFullBrandingDto(deps.brandingRepo, tx);
+}
+
+export async function removeClubAssetInTx(params: {
+  readonly deps: Pick<BrandingServiceDeps, 'brandingRepo' | 'auditWriter'>;
+  readonly tx: TransactionContext;
+  readonly actorId: string;
+  readonly assetKey: string;
+  readonly auditAction: string;
+  readonly now: Date;
+}): Promise<BrandingDto> {
+  const { deps, tx, actorId, assetKey, auditAction, now } = params;
+  await deps.brandingRepo.deleteAssetByKey(assetKey, tx);
+  await deps.auditWriter.record(
+    {
+      actorId,
+      action: auditAction,
+      detail: { assetKey },
+      createdAt: now,
+    },
+    tx,
+  );
+  return loadFullBrandingDto(deps.brandingRepo, tx);
 }
 
 export async function persistGalleryItemInTx(params: {

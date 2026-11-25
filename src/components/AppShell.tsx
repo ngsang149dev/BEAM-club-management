@@ -17,6 +17,7 @@ import {
   type NavItemConfig,
 } from './AppShellNav';
 import { ClubLogo } from './ClubLogo';
+import { ClubWordmark } from './ClubWordmark';
 import { LanguageSwitch } from './LanguageSwitch';
 import { MemberAvatar } from './MemberAvatar';
 
@@ -88,14 +89,13 @@ function SidebarContent({
   onLocaleChange,
   onNavigate,
 }: SidebarContentProps) {
-  const tApp = useTranslations('app');
   const tNav = useTranslations('nav');
   const tLang = useTranslations('language');
   return (
     <>
       <Link href="/boards" className="app-brand" onClick={onNavigate}>
         <ClubLogo alt="" />
-        <span className="app-brand-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
+        <ClubWordmark className="app-brand-text" />
       </Link>
       <div className="app-side-label">{tNav('groups.workspace')}</div>
       <NavList items={workspaceItems} activeNav={activeNav} pathname={pathname} ariaLabel={tNav('sidebarAriaLabel')} onNavigate={onNavigate} />

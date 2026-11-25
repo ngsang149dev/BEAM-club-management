@@ -1,33 +1,37 @@
 import { badRequest, notFound } from '@/lib/errors';
 import { MAX_GALLERY_IMAGE_BYTES } from '@/lib/media';
-import { authorizeAdmin } from '@/server/shared/authorize';
+import { type AuthActor, authorizeAdmin } from '@/server/shared/authorize';
 import { parseAndValidateImageDataUrl } from '@/server/shared/media';
 import {
-  persistClubLogoInTx,
+  loadFullBrandingDto,
+  persistClubAssetInTx,
   persistGalleryItemInTx,
   persistUpdatedGalleryItemInTx,
+  removeClubAssetInTx,
 } from './gallery-tx';
 import {
   type BrandingDto,
   type DeleteLoginGalleryItemResponseDto,
   type LoginGalleryItemResponseDto,
   type LoginGalleryListResponseDto,
-  toBrandingDto,
   toLoginGalleryItemDto,
 } from './mapper';
 import {
   assertExactGalleryOrderIds,
   collectUpdatedGalleryFields,
 } from './policy';
-import { CLUB_LOGO_ASSET_KEY } from './repository';
+import { CLUB_LOGO_ASSET_KEY, CLUB_WORDMARK_ASSET_KEY } from './repository';
 import type {
   BrandingServiceDeps,
+  ClubAssetBinaryRecord,
   CreateGalleryItemCommand,
   DeleteGalleryItemCommand,
   LoginGalleryItemBinaryRecord,
   RemoveClubLogoCommand,
+  RemoveClubWordmarkCommand,
   ReorderGalleryItemsCommand,
   UpdateClubLogoCommand,
+  UpdateClubWordmarkCommand,
   UpdateGalleryItemCommand,
 } from './types';
 
@@ -35,19 +39,15 @@ export class BrandingService {
   constructor(private readonly deps: BrandingServiceDeps) {}
 
   async getBranding(): Promise<BrandingDto> {
-    const [asset, galleryItems] = await Promise.all([
-      this.deps.brandingRepo.findMetadataByKey(CLUB_LOGO_ASSET_KEY),
-      this.deps.brandingRepo.listGalleryItemsMetadata(),
-    ]);
-    return toBrandingDto(asset, galleryItems);
+    return loadFullBrandingDto(this.deps.brandingRepo);
   }
 
-  async getClubLogo() {
-    const asset = await this.deps.brandingRepo.findAssetByKey(CLUB_LOGO_ASSET_KEY);
-    if (!asset) {
-      throw notFound('errors.notFound', {}, 'NOT_FOUND');
-    }
-    return asset;
+  async getClubLogo(): Promise<ClubAssetBinaryRecord> {
+    return this.getClubAssetByKey(CLUB_LOGO_ASSET_KEY);
+  }
+
+  async getClubWordmark(): Promise<ClubAssetBinaryRecord> {
+    return this.getClubAssetByKey(CLUB_WORDMARK_ASSET_KEY);
   }
 
   async getGalleryImage(id: string): Promise<LoginGalleryItemBinaryRecord> {
@@ -59,49 +59,82 @@ export class BrandingService {
   }
 
   async updateClubLogo(command: UpdateClubLogoCommand): Promise<BrandingDto> {
+    return this.updateClubAsset(command, CLUB_LOGO_ASSET_KEY, 'branding.logo_updated', 'Club logo updated');
+  }
+
+  async removeClubLogo(command: RemoveClubLogoCommand): Promise<BrandingDto> {
+    return this.removeClubAsset(command.actor, CLUB_LOGO_ASSET_KEY, 'branding.logo_removed', 'Club logo removed');
+  }
+
+  async updateClubWordmark(command: UpdateClubWordmarkCommand): Promise<BrandingDto> {
+    return this.updateClubAsset(command, CLUB_WORDMARK_ASSET_KEY, 'branding.wordmark_updated', 'Club wordmark updated');
+  }
+
+  async removeClubWordmark(command: RemoveClubWordmarkCommand): Promise<BrandingDto> {
+    return this.removeClubAsset(command.actor, CLUB_WORDMARK_ASSET_KEY, 'branding.wordmark_removed', 'Club wordmark removed');
+  }
+
+  private async getClubAssetByKey(assetKey: string): Promise<ClubAssetBinaryRecord> {
+    const asset = await this.deps.brandingRepo.findAssetByKey(assetKey);
+    if (!asset) {
+      throw notFound('errors.notFound', {}, 'NOT_FOUND');
+    }
+    return asset;
+  }
+
+  private async updateClubAsset(
+    command: { readonly actor: AuthActor; readonly dataUrl: string },
+    assetKey: string,
+    auditAction: string,
+    logMessage: string,
+  ): Promise<BrandingDto> {
     authorizeAdmin(command.actor);
     const parsed = parseAndValidateImageDataUrl(command.dataUrl);
     const now = this.deps.clock.now();
 
-    const { record, galleryItems } =
-      await this.deps.transactionRunner.runInTransaction((tx) =>
-        persistClubLogoInTx({ deps: this.deps, tx, command, parsed, now }),
-      );
+    const branding = await this.deps.transactionRunner.runInTransaction((tx) =>
+      persistClubAssetInTx({
+        deps: this.deps,
+        tx,
+        actorId: command.actor.id,
+        assetKey,
+        auditAction,
+        parsed,
+        now,
+      }),
+    );
 
-    this.deps.logger.info('Club logo updated', {
+    this.deps.logger.info(logMessage, {
       actorId: command.actor.id,
-      assetKey: CLUB_LOGO_ASSET_KEY,
+      assetKey,
       mimeType: parsed.mimeType,
       byteLength: parsed.buffer.byteLength,
     });
-    return toBrandingDto(record, galleryItems);
+    return branding;
   }
 
-  async removeClubLogo(command: RemoveClubLogoCommand): Promise<BrandingDto> {
-    authorizeAdmin(command.actor);
+  private async removeClubAsset(
+    actor: AuthActor,
+    assetKey: string,
+    auditAction: string,
+    logMessage: string,
+  ): Promise<BrandingDto> {
+    authorizeAdmin(actor);
     const now = this.deps.clock.now();
 
-    const galleryItems = await this.deps.transactionRunner.runInTransaction(
-      async (tx) => {
-        await this.deps.brandingRepo.deleteAssetByKey(CLUB_LOGO_ASSET_KEY, tx);
-        await this.deps.auditWriter.record(
-          {
-            actorId: command.actor.id,
-            action: 'branding.logo_removed',
-            detail: { assetKey: CLUB_LOGO_ASSET_KEY },
-            createdAt: now,
-          },
-          tx,
-        );
-        return this.deps.brandingRepo.listGalleryItemsMetadata(tx);
-      },
+    const branding = await this.deps.transactionRunner.runInTransaction((tx) =>
+      removeClubAssetInTx({
+        deps: this.deps,
+        tx,
+        actorId: actor.id,
+        assetKey,
+        auditAction,
+        now,
+      }),
     );
 
-    this.deps.logger.info('Club logo removed', {
-      actorId: command.actor.id,
-      assetKey: CLUB_LOGO_ASSET_KEY,
-    });
-    return toBrandingDto(null, galleryItems);
+    this.deps.logger.info(logMessage, { actorId: actor.id, assetKey });
+    return branding;
   }
 
   async createGalleryItem(

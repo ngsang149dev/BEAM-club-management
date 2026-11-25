@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
 import { ClubLogo } from '@/components/ClubLogo';
+import { ClubWordmark } from '@/components/ClubWordmark';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { PasswordInput } from '@/components/PasswordInput';
 import { isApiClientError } from '@/features/shared/api/client';
@@ -90,15 +91,42 @@ export function LoginStatusBanner({
 }
 
 function LoginHeaderBar() {
-  const tApp = useTranslations('app');
   return (
     <header className="login-top">
       <div className="login-word login-mobile-brand">
         <ClubLogo alt="" />
-        <span className="login-word-text"><b>{tApp('name')}</b><span>{tApp('subtitle')}</span></span>
+        <ClubWordmark className="login-word-text" />
       </div>
       <LanguageSwitch />
     </header>
+  );
+}
+
+function LoginCollabFooter() {
+  const tAuth = useTranslations('auth');
+  return (
+    <div className="login-collab">
+      <span className="login-collab-label">{tAuth('collabLabel')}</span>
+      <span className="login-collab-pair">
+        <a
+          href="https://www.facebook.com/eiu.beam.club"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="login-collab-link"
+        >
+          BEAM CLUB
+        </a>
+        <span className="login-collab-x" aria-hidden="true">×</span>
+        <a
+          href="https://www.facebook.com/ng.sanggg149"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="login-collab-link"
+        >
+          Sang
+        </a>
+      </span>
+    </div>
   );
 }
 
@@ -168,7 +196,6 @@ function LoginFormFields({
 export function LoginForm({ expired = false, returnTo }: LoginFormProps) {
   const studentIdInputId = useId();
   const passwordInputId = useId();
-  const tApp = useTranslations('app');
   const tAuth = useTranslations('auth');
   const loginMutation = useLoginMutation();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormInput>({
@@ -212,7 +239,7 @@ export function LoginForm({ expired = false, returnTo }: LoginFormProps) {
             {process.env.NODE_ENV === 'development' ? <p className="login-dev-hint">{tAuth('devSeedHint')}</p> : null}
           </form>
         </div>
-        <footer className="login-foot"><span>{tApp('footerNote')}</span></footer>
+        <footer className="login-foot"><LoginCollabFooter /></footer>
       </main>
     </div>
   );

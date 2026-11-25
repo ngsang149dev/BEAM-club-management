@@ -41,6 +41,8 @@ describe('LoginShowcase & LoginPhotoWall (CR-07-02)', () => {
     expect(viHtml).toContain('Workshop Thiết kế');
     expect(viHtml).toContain('Build Sprint CLB');
     expect(viHtml).toContain('Ngày hội BEAM');
+    expect(viHtml).toContain('class="login-word-text"');
+    expect(viHtml).toContain('<b>BEAM</b>');
     expect((viHtml.match(/class="login-polaroid-svg"/g) ?? [])).toHaveLength(4);
     expect(viHtml).not.toContain('login-mini-col');
 
@@ -52,9 +54,10 @@ describe('LoginShowcase & LoginPhotoWall (CR-07-02)', () => {
     expect(enHtml).toContain('BEAM Open Day');
   });
 
-  it('switches immediately to uploaded galleryItems sorted by orderIndex and renders custom logo', () => {
+  it('switches immediately to uploaded galleryItems sorted by orderIndex and renders custom logo and wordmark', () => {
     const html = renderShowcase('vi', {
       logoUrl: '/api/v1/branding/logo?v=88',
+      wordmarkUrl: '/api/v1/branding/wordmark?v=99',
       updatedAt: '2026-11-26T00:00:00.000Z',
       galleryItems: [
         {
@@ -77,6 +80,9 @@ describe('LoginShowcase & LoginPhotoWall (CR-07-02)', () => {
     });
 
     expect(html).toContain('src="/api/v1/branding/logo?v=88"');
+    expect(html).toContain('src="/api/v1/branding/wordmark?v=99"');
+    expect(html).toContain('class="club-wordmark-img"');
+    expect(html).not.toContain('<b>BEAM</b>');
     expect(html).toContain('2 khung ảnh');
     expect(html).toContain('src="/api/v1/branding/gallery/g-1/image?v=1"');
     expect(html).toContain('src="/api/v1/branding/gallery/g-2/image?v=2"');

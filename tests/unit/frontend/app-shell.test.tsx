@@ -122,10 +122,11 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).toContain('(đã rời)');
   });
 
-  it('renders custom club logo and member avatar from QueryClient cache and renders ErrorState cleanly without QueryClientProvider', () => {
+  it('renders custom club logo, custom wordmark, and member avatar from QueryClient cache and falls back cleanly', () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(BRANDING_QUERY_KEYS.branding, {
       logoUrl: '/api/v1/branding/logo?v=123',
+      wordmarkUrl: '/api/v1/branding/wordmark?v=321',
       updatedAt: '2026-11-24T00:00:00.000Z',
       galleryItems: [],
     });
@@ -149,8 +150,29 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
 
     expect(withBrandingHtml).toContain('src="/api/v1/branding/logo?v=123"');
     expect(withBrandingHtml).toContain('class="club-logo-img"');
+    expect(withBrandingHtml).toContain('src="/api/v1/branding/wordmark?v=321"');
+    expect(withBrandingHtml).toContain('class="club-wordmark-img"');
     expect(withBrandingHtml).toContain('src="/api/v1/members/u-1/avatar?v=456"');
     expect(withBrandingHtml).toContain('class="ui-avatar-img"');
+
+    const fallbackClient = new QueryClient();
+    fallbackClient.setQueryData(BRANDING_QUERY_KEYS.branding, {
+      logoUrl: null,
+      wordmarkUrl: null,
+      updatedAt: null,
+      galleryItems: [],
+    });
+    const fallbackHtml = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <QueryClientProvider client={fallbackClient}>
+          <AppShell user={{ fullName: 'Le Van C' }}>
+            <div>content</div>
+          </AppShell>
+        </QueryClientProvider>
+      </NextIntlClientProvider>
+    );
+    expect(fallbackHtml).toContain('<span class="app-brand-text"><b>BEAM</b><span>CLB nội bộ</span></span>');
+    expect(fallbackHtml).not.toContain('class="club-wordmark-img"');
 
     const errorStandaloneHtml = renderToStaticMarkup(
       <ErrorState fullPage brandName="BEAM" code="404" title="Not found" description="Missing" />
