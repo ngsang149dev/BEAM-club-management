@@ -702,7 +702,7 @@
 
 ---
 
-## Epic E11 — Gia cố Bảo mật Production (OWASP Headers, CSRF Origin Guard & Chống lạm dụng/DDoS nhẹ `0đ`) *(In Review — chờ chủ dự án duyệt merge `main`)*
+## Epic E11 — Gia cố Bảo mật Production (OWASP Headers, CSRF Origin Guard & Chống lạm dụng/DDoS nhẹ `0đ`) *(Done — đã duyệt & merge vào `main`)*
 
 ### E11-01
 - **ID:** `E11-01`
@@ -719,7 +719,7 @@
 - **Kiểm thử bắt buộc:** Unit test cho policy kiểm tra `Origin`/`Sec-Fetch-Site` + cấu hình headers; integration test chứng minh request `POST`/`PUT`/`DELETE` giả mạo `Origin: https://evil.example` có cookie phiên bị chặn `403`, trong khi same-origin hợp lệ và Cron `Bearer` vẫn đi qua; chạy lại toàn bộ CI + E2E.
 - **Ngoài phạm vi:** Đổi contract JSON của `docs/openapi.yaml` hoặc chạm production.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `In Review` *(vượt đủ cổng CI, `next build` `42/42` route + `ƒ Proxy (Middleware)`, Chrome E2E xanh & `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` `13/13` mục `6A.8` — chờ chủ dự án duyệt merge)*
+- **Trạng thái:** `Done` *(đã duyệt & merge vào `main` — vượt đủ cổng CI, `60/60` unit / `330` test, `20/20` integration / `38` test, `next build` `42/42` route + `ƒ Proxy (Middleware)`, `44/44` Chrome E2E xanh & `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` `13/13` mục `6A.8`)*
 
 ### E11-02
 - **ID:** `E11-02`
@@ -738,4 +738,4 @@
 - **Kiểm thử bắt buộc:** Unit & integration test cho rate limit 2 lớp (`(IP, studentId)` không khóa lây tài khoản khác cùng IP; tổng IP vẫn chặn spam; đổi mật khẩu sai quá ngưỡng trả `429`), test `ETag`/`304`/`Cache-Control` cho ảnh branding công khai vs avatar riêng tư; vượt toàn bộ CI và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS`.
 - **Ngoài phạm vi:** Mua gói WAF trả phí hoặc cài Redis bên ngoài trong MVP.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `In Review` *(vượt đủ cổng CI, `next build` `42/42` route + `ƒ Proxy (Middleware)`, Chrome E2E xanh & `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` `13/13` mục `6A.8` — chờ chủ dự án duyệt merge)*
+- **Trạng thái:** `Done` *(đã duyệt & merge vào `main` — vượt đủ cổng CI, `60/60` unit / `330` test, `20/20` integration / `38` test, `next build` `42/42` route + `ƒ Proxy (Middleware)`, `44/44` Chrome E2E xanh & `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` `13/13` mục `6A.8`)*
