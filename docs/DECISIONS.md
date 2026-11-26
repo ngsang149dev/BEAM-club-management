@@ -192,4 +192,25 @@ Bối cảnh: Chủ dự án yêu cầu rà soát toàn bộ dự án và loại
 - Gỡ `@vitejs/plugin-react` và `tsx` khỏi `devDependencies` (`package.json`, `package-lock.json`) vì kiểm tra toàn repo (`vitest.config.ts`, `scripts/`, `src/`, `tests/`) cho thấy `0` nơi sử dụng (`tsx` và `@vitejs/plugin-react` không còn cần thiết; toàn bộ `scripts/*.mjs` chạy trực tiếp bằng Node và `tests/` chạy qua Vitest/esbuild).
 - Gỡ `.DS_Store` khỏi git index (`git rm -f .DS_Store`), giữ nguyên `wireframes/` & `docs/WIREFRAME-BRIEF.md` đến khi chủ dự án xác nhận có muốn xóa tài liệu thiết kế 0A hay không.
 Ảnh hưởng (`openapi`, `schema`, tài liệu): `package.json`, `package-lock.json`, xóa `.DS_Store` (0 đổi schema CSDL, 0 đổi `openapi.yaml`).
-Trạng thái: Đang mở trên nhánh `chore/repo-cleanup`, chờ chủ dự án Sang duyệt merge vào `main`.
+Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026-11-26`).
+
+---
+
+## Quyết định `E9` (`[RỦI RO CAO]`) — Gỡ wireframe 0A, giữ `/forbidden` dự phòng, đồng bộ `GET` cron & tinh gọn `S12` Nhắc deadline — 2026-11-26
+
+- **Ngữ cảnh:** Trước khi đóng gói phát hành `v1.0` (`Epic E9`), chủ dự án Sang chốt 4 chỉ đạo sau khi rà soát dự án và kết quả kiểm định `E8`: (1) gộp nhánh dọn repo và triển khai `E9`; (2) xóa bỏ bộ wireframe 0A nhưng **giữ `/forbidden` làm trang dự phòng** cho Giai đoạn 2; (3) sửa dứt điểm `MINOR-1` (`GET` cron trong OpenAPI) và `MINOR-2` (logic mô tả nhắc quá hạn); (4) tinh gọn frontend trang nhắc deadline `/admin/reminders` vì nhiều thông tin thừa gây rối.
+- **Quyết định kỹ thuật:**
+  1. **Gỡ `wireframes/` & `docs/WIREFRAME-BRIEF.md`, giữ `/forbidden` (`S14`) làm dự phòng:**
+     - Xóa khỏi git toàn bộ thư mục `wireframes/` và `docs/WIREFRAME-BRIEF.md`, đồng thời gỡ `'wireframes/**'` khỏi `eslint.config.mjs`.
+     - Giữ nguyên [`src/app/forbidden/page.tsx`](../src/app/forbidden/page.tsx) (`/forbidden`, `S14`) làm route dự phòng trong repo và ghi nhận rõ trong `docs/OPERATIONS.md` (mục 7) & `docs/TRACEABILITY.md` (mục 3) để tái sử dụng nếu Giai đoạn 2 cần middleware redirect lỗi tập trung.
+  2. **Đồng bộ OpenAPI cho Vercel Cron (`MINOR-1`):**
+     - Bổ sung operation `get:` bên cạnh `post:` trên `/internal/cron/reminders` và `/internal/cron/archive-purge` trong `docs/openapi.yaml` (dùng chung schema response `200`/`401` và `cronSecret`), tái sinh `src/features/shared/api/schema.d.ts` để phản ánh đúng handler thực tế (`GET` + `POST`).
+  3. **Sửa logic mô tả & tinh gọn trang `/admin/reminders` (`E9-02`, `MINOR-2`):**
+     - Sửa `reminders.milestoneOverdueDesc` trong `messages/{vi,en}.json` thành `"Nhắc 1 lần khi công việc vừa quá hạn."` / `"Sent once when a task becomes overdue."` khớp hành vi unique `(task_id, user_id, 'overdue')`.
+     - Loại bỏ các thẻ/banner trùng lặp thông tin kỹ thuật ở `S12` (`ReminderScheduleCard`, `ReminderRecipientsCard`, `.page-subtitle`, `.rem-preview-note`, `.rem-email-kicker`), thay lịch gửi thành badge `07:00 · GMT+7`, chỉ hiện chip gỡ cho ngày tùy chỉnh khác `2` & `1`, thay `.rem-sample-banner` thành chip `.rem-sample-chip`, và thêm `src/app/icon.svg` triệt tiêu `404 /favicon.ico`.
+  4. **Sao lưu & kiểm chứng khôi phục `NFR-06` (`scripts/db-backup.mjs`, `scripts/db-restore-verify.mjs`):**
+     - Cung cấp `npm run db:backup` và `npm run db:restore:verify` (rào chắn từ chối `NODE_ENV=production` và URL ngoài máy nếu thiếu `--allow-remote-dev`, tự fallback sang `docker exec -i beam-postgres` khi máy không cài `pg_dump`/`psql` trực tiếp; đồng bộ MVCC qua `REPEATABLE READ` + `pg_export_snapshot()` + `pg_dump --snapshot` để đối chiếu số dòng 100% ở cả 23 bảng `public`, kiểm đủ 18 quyền, >=3 preset, 7 catalog trigger & probe runtime `SAVEPOINT` cho `APPEND_ONLY_TABLE`, `STUDENT_ID_IMMUTABLE`, `LAST_ACTIVE_ADMIN`, `ALREADY_PURGED` trên DB tạm rồi tự dọn sạch).
+  5. **Chuẩn hóa thứ tự quyền trả về (`src/server/modules/auth/repository.ts`):**
+     - Bọc kết quả `findUserPermissions(userId)` qua `dedupeCanonicalPermissions` từ `src/lib/permissions.ts` để danh sách quyền ở `/api/v1/auth/session` & `/api/v1/me` luôn giữ thứ tự chuẩn danh mục `PERMISSIONS`, loại bỏ triệt để phụ thuộc vào thứ tự index-scan PostgreSQL.
+- **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Xóa `wireframes/` & `docs/WIREFRAME-BRIEF.md`; cập nhật `docs/openapi.yaml`, `src/features/shared/api/schema.d.ts`, `eslint.config.mjs`, `tsconfig.json`, `.gitignore`, `package.json`, `scripts/db-*.mjs`, `src/server/modules/auth/repository.ts`, `tests/integration/db/backup-restore.test.ts`, `tests/integration/auth/auth-repository.test.ts`, `docs/OPERATIONS.md`, `docs/UAT-CHECKLIST.md`, `docs/TRACEABILITY.md`, `docs/BACKLOG.md`, `docs/STATUS.md`, `README.md`; `0` migration CSDL.
+- **Trạng thái:** Đã triển khai & kiểm định độc lập PASS trên nhánh `feat/E9-v1-release-and-reminders-ux` (`2026-11-26`); chờ chủ dự án duyệt merge vào `main`.

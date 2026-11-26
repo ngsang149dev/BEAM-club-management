@@ -2859,7 +2859,34 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Run daily deadline reminder dispatch job (Vercel Cron GET)
+         * @description Invoked daily by Vercel Cron (`0 0 * * *`, 07:00 UTC+7). Protected by `cronSecret` (`Authorization: Bearer <CRON_SECRET>`).
+         *     Aggregates upcoming/overdue active tasks (excluding Done columns, soft-deleted tasks, and inactive members) into at most 1 email per active assignee per day in their `profiles.locale`.
+         *     Idempotent via unique `(task_id, user_id, kind)` in `reminders`.
+         *     Hidden tasks (`is_hidden=true`) only notify authorized viewers and **omit the task title** in the email body (`WQ-27`) and never include `studentId`.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reminder dispatch summary */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CronRemindersResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
         put?: never;
         /**
          * Run daily deadline reminder dispatch job
@@ -3212,7 +3239,32 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Run daily automatic Archive retention purge job (Vercel Cron GET)
+         * @description Invoked daily by Vercel Cron (`5 0 * * *`, 07:05 UTC+7). Protected by `cronSecret` (`Authorization: Bearer <CRON_SECRET>`).
+         *     Reads `app_settings('archive_retention')`; when `retentionDays` is `7`, `30`, or `90`, permanently purges expired soft-deleted tasks, archived boards, and deactivated members using the exact same safe PII-anonymization/history-preservation rules.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Archive auto-purge execution summary */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CronArchivePurgeResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
         put?: never;
         /**
          * Run daily automatic Archive retention purge job

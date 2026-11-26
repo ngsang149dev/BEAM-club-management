@@ -69,6 +69,13 @@ npm run test:unit         # Vitest unit tests
 npm run test:integration  # PostgreSQL integration tests (requires TEST_DATABASE_URL)
 npm run build             # Next.js production build
 npm run test:e2e          # Playwright end-to-end suite (requires build + TEST_DATABASE_URL)
+npm run db:backup         # Safe pg_dump SQL backup (dev/test only; blocks NODE_ENV=production)
+npm run db:restore:verify # Isolated temp-DB restore, schema, row-count & trigger verification
 ```
 
-For full project governance, architecture rules, and agent workflow, see `AGENTS.md` and `docs/STATUS.md`.
+## Release, Operations & Governance Docs
+
+- Governance & layered architecture rules: `AGENTS.md` and `docs/STATUS.md`
+- Deployment, Vercel Cron schedule, weekly `pg_dump` backup & club handover (`NFR-06`, `NFR-08`): `docs/OPERATIONS.md`
+- 1-week club UAT checklist (`HANDOFF §9`, `AC-01`..`AC-22`): `docs/UAT-CHECKLIST.md`
+- API & schema contracts: `docs/openapi.yaml`, `docs/ERD.md`, `docs/TRACEABILITY.md`, `docs/DECISIONS.md`

@@ -75,6 +75,12 @@ describe('DrizzleAuthRepository integration', () => {
           description: 'Create board',
           scopable: false,
         },
+        {
+          code: 'audit.view',
+          groupName: 'system',
+          description: 'View audit logs',
+          scopable: false,
+        },
       ])
       .onConflictDoNothing();
 
@@ -102,8 +108,9 @@ describe('DrizzleAuthRepository integration', () => {
     });
 
     await db.insert(userPermissions).values([
-      { userId, permissionCode: 'member.view', grantedBy: null },
+      { userId, permissionCode: 'audit.view', grantedBy: null },
       { userId, permissionCode: 'board.create', grantedBy: null },
+      { userId, permissionCode: 'member.view', grantedBy: null },
     ]);
   });
 
@@ -137,7 +144,7 @@ describe('DrizzleAuthRepository integration', () => {
     expect(byId?.mustChangePassword).toBe(true);
 
     const perms = await repo.findUserPermissions(userId);
-    expect(perms.sort()).toEqual(['board.create', 'member.view']);
+    expect(perms).toEqual(['member.view', 'board.create', 'audit.view']);
 
     const now = new Date('2026-11-24T01:00:00.000Z');
     const expires = new Date('2026-11-25T01:00:00.000Z');

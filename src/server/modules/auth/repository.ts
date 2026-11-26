@@ -7,7 +7,7 @@ import {
   sessions,
   userPermissions,
 } from '@db/schema';
-import { isPermissionCode, type PermissionCode } from '@/lib/permissions';
+import { dedupeCanonicalPermissions, isPermissionCode, type PermissionCode } from '@/lib/permissions';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import type {
@@ -124,9 +124,9 @@ export class DrizzleAuthRepository implements AuthRepository {
       .select({ permissionCode: userPermissions.permissionCode })
       .from(userPermissions)
       .where(eq(userPermissions.userId, userId));
-    return rows
-      .map((row) => row.permissionCode)
-      .filter((code): code is PermissionCode => isPermissionCode(code));
+    return dedupeCanonicalPermissions(
+      rows.map((row) => row.permissionCode).filter((code): code is PermissionCode => isPermissionCode(code)),
+    );
   }
 
   async createSession(input: {

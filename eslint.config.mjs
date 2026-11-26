@@ -9,7 +9,6 @@ const eslintConfig = [
       '.next/**',
       '.tmp/**',
       'node_modules/**',
-      'wireframes/**',
       'src/features/shared/api/schema.d.ts',
       'out/**',
       'coverage/**',

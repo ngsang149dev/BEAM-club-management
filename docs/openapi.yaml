@@ -1959,6 +1959,26 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /internal/cron/reminders:
+    get:
+      tags: [Internal Cron]
+      summary: Run daily deadline reminder dispatch job (Vercel Cron GET)
+      description: |
+        Invoked daily by Vercel Cron (`0 0 * * *`, 07:00 UTC+7). Protected by `cronSecret` (`Authorization: Bearer <CRON_SECRET>`).
+        Aggregates upcoming/overdue active tasks (excluding Done columns, soft-deleted tasks, and inactive members) into at most 1 email per active assignee per day in their `profiles.locale`.
+        Idempotent via unique `(task_id, user_id, kind)` in `reminders`.
+        Hidden tasks (`is_hidden=true`) only notify authorized viewers and **omit the task title** in the email body (`WQ-27`) and never include `studentId`.
+      security:
+        - cronSecret: []
+      responses:
+        "200":
+          description: Reminder dispatch summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronRemindersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
     post:
       tags: [Internal Cron]
       summary: Run daily deadline reminder dispatch job
@@ -2171,6 +2191,24 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /internal/cron/archive-purge:
+    get:
+      tags: [Internal Cron, Archive]
+      summary: Run daily automatic Archive retention purge job (Vercel Cron GET)
+      description: |
+        Invoked daily by Vercel Cron (`5 0 * * *`, 07:05 UTC+7). Protected by `cronSecret` (`Authorization: Bearer <CRON_SECRET>`).
+        Reads `app_settings('archive_retention')`; when `retentionDays` is `7`, `30`, or `90`, permanently purges expired soft-deleted tasks, archived boards, and deactivated members using the exact same safe PII-anonymization/history-preservation rules.
+      security:
+        - cronSecret: []
+      responses:
+        "200":
+          description: Archive auto-purge execution summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronArchivePurgeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
     post:
       tags: [Internal Cron, Archive]
       summary: Run daily automatic Archive retention purge job

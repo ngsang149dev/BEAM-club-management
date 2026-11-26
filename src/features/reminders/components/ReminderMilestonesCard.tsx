@@ -3,9 +3,11 @@
 import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
+  DEFAULT_SEND_HOUR_VN,
   MAX_MILESTONE_COUNT,
   MAX_MILESTONE_DAY,
   MIN_MILESTONE_DAY,
+  formatVnSendHour,
   isAllMilestonesOff,
   normalizeDaysBefore,
   parseCustomMilestoneDay,
@@ -15,6 +17,8 @@ export interface ReminderMilestonesCardProps {
   readonly daysBefore: readonly number[];
   readonly remindOverdue: boolean;
   readonly disabled: boolean;
+  readonly sendHourVn?: number;
+  readonly updatedNote?: string | null;
   readonly onToggleDay: (day: number) => void;
   readonly onAddDay: (day: number) => void;
   readonly onRemoveDay: (day: number) => void;
@@ -27,18 +31,21 @@ function MilestoneToggleRow({
   description,
   checked,
   disabled,
+  testId,
   onChange,
 }: {
   readonly title: string;
   readonly description: string;
   readonly checked: boolean;
   readonly disabled: boolean;
+  readonly testId: string;
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
     <label className={checked ? 'rem-option is-on' : 'rem-option'}>
       <input
         type="checkbox"
+        data-testid={testId}
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
@@ -68,18 +75,18 @@ function CustomMilestoneChips({
   readonly onRemoveDay: (day: number) => void;
 }) {
   const t = useTranslations('reminders');
-  const sortedDays = normalizeDaysBefore(daysBefore);
+  const customDays = normalizeDaysBefore(daysBefore).filter((day) => day !== 2 && day !== 1);
 
-  if (sortedDays.length === 0) {
-    return <p className="admin-empty-inline">{t('noDaysBeforeHint')}</p>;
+  if (customDays.length === 0) {
+    return null;
   }
 
   return (
-    <div className="rem-chip-list" role="list" aria-label={t('daysBeforeSectionTitle')}>
-      {sortedDays.map((day) => {
+    <div className="rem-chip-list" role="list" aria-label={t('customMilestonesAria')}>
+      {customDays.map((day) => {
         const label = formatDayBadgeLabel(day, t);
         return (
-          <span key={day} className="ui-chip rem-day-chip" role="listitem">
+          <span key={day} className="ui-chip rem-day-chip" role="listitem" data-testid={`reminders-custom-chip-${day}`}>
             <span className="mono">{label}</span>
             <button
               type="button"
@@ -148,13 +155,14 @@ function CustomMilestoneInputRow({
           step={1}
           value={rawValue}
           disabled={disabled}
+          data-testid="reminders-custom-day-input"
           placeholder={t('customDayPlaceholder')}
           aria-invalid={errorKind ? 'true' : undefined}
           className={`ui-input mono rem-day-input${errorKind ? ' has-error' : ''}`}
           onChange={(event) => { setRawValue(event.target.value); if (errorKind) setErrorKind(null); }}
           onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); handleAdd(); } }}
         />
-        <button type="button" className="ui-btn secondary is-sm" disabled={disabled} onClick={handleAdd}>
+        <button type="button" className="ui-btn secondary is-sm" data-testid="reminders-custom-day-add" disabled={disabled} onClick={handleAdd}>
           {t('customDayAdd')}
         </button>
       </div>
@@ -211,6 +219,8 @@ export function ReminderMilestonesCard({
   daysBefore,
   remindOverdue,
   disabled,
+  sendHourVn = DEFAULT_SEND_HOUR_VN,
+  updatedNote,
   onToggleDay,
   onAddDay,
   onRemoveDay,
@@ -226,14 +236,18 @@ export function ReminderMilestonesCard({
     <section className="admin-card rem-card" aria-label={t('milestonesCardTitle')}>
       <div className="rem-card-head">
         <h2>{t('milestonesCardTitle')}</h2>
-        <span className="rem-card-hint">{t('milestonesCardHint')}</span>
+        <span className="ui-chip rem-schedule-chip mono" data-testid="reminders-schedule-chip">
+          {t('scheduleChip', { time: formatVnSendHour(sendHourVn) })}
+        </span>
       </div>
+      <p className="rem-card-lead">{t('milestonesCardLead')}</p>
       <div className="rem-options">
         <MilestoneToggleRow
           title={t('milestone2Days')}
           description={t('milestone2DaysDesc')}
           checked={normalizedDays.includes(2)}
           disabled={disabled || (!normalizedDays.includes(2) && isAtMax)}
+          testId="reminders-toggle-2"
           onChange={() => onToggleDay(2)}
         />
         <MilestoneToggleRow
@@ -241,6 +255,7 @@ export function ReminderMilestonesCard({
           description={t('milestone1DayDesc')}
           checked={normalizedDays.includes(1)}
           disabled={disabled || (!normalizedDays.includes(1) && isAtMax)}
+          testId="reminders-toggle-1"
           onChange={() => onToggleDay(1)}
         />
         <MilestoneToggleRow
@@ -248,18 +263,16 @@ export function ReminderMilestonesCard({
           description={t('milestoneOverdueDesc')}
           checked={remindOverdue}
           disabled={disabled}
+          testId="reminders-toggle-overdue"
           onChange={onToggleOverdue}
         />
       </div>
       <div className="rem-custom">
-        <div className="rem-custom-head">
-          <h3>{t('daysBeforeSectionTitle')}</h3>
-          <span>{t('daysBeforeHint')}</span>
-        </div>
         <CustomMilestoneChips daysBefore={normalizedDays} disabled={disabled} onRemoveDay={onRemoveDay} />
         <CustomMilestoneInputRow disabled={disabled} existingDays={normalizedDays} isAtMax={isAtMax} onAddDay={onAddDay} />
       </div>
       {allOff ? <AllMilestonesOffBanner disabled={disabled} onRestoreDefaults={onRestoreDefaults} /> : null}
+      {updatedNote ? <p className="rem-meta-note">{updatedNote}</p> : null}
     </section>
   );
 }

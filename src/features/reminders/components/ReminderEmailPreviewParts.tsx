@@ -104,7 +104,14 @@ export function PreviewHeader({
   const t = useTranslations('reminders');
   return (
     <div className="rem-preview-head">
-      <h2>{t('previewHeading')}</h2>
+      <div className="rem-preview-title">
+        <h2>{t('previewHeading')}</h2>
+        {showSample ? (
+          <span className="ui-chip rem-sample-chip" data-testid="reminders-sample-chip">
+            {t('previewSampleChip')}
+          </span>
+        ) : null}
+      </div>
       <div className="rem-preview-controls">
         <button type="button" className="ui-btn ghost is-sm" aria-pressed={showSample} onClick={onToggleSample}>
           {showSample ? t('previewSampleToggleOff') : t('previewSampleToggleOn')}
@@ -186,14 +193,12 @@ export function PreviewEmailTasksContent({
 }
 
 export function PreviewEmailCard({
-  showSample,
   sendHourVn,
   referenceMs,
   previewLocale,
   tEmail,
   body,
 }: {
-  readonly showSample: boolean;
   readonly sendHourVn: number;
   readonly referenceMs: number;
   readonly previewLocale: 'vi' | 'en';
@@ -205,13 +210,9 @@ export function PreviewEmailCard({
       <article className="rem-email" data-component="ReminderEmail">
         <div className="rem-email-top">
           <span className="rem-email-brand"><b>BEAM</b><span>{tEmail('workspace')}</span></span>
-          <span className="rem-email-badges">
-            {showSample ? <span className="ui-chip rem-sample-chip">{tEmail('sampleBadge')}</span> : null}
-            <span className="rem-email-lang">{tEmail('langCode')}</span>
-          </span>
+          <span className="rem-email-lang">{tEmail('langCode')}</span>
         </div>
         <div className="rem-email-subject">
-          <span className="rem-email-kicker">{tEmail('kicker')}</span>
           <h3>{tEmail('subject')}</h3>
           <p>{tEmail('sentAt', { time: formatVnSendHour(sendHourVn), date: formatPreviewDate(referenceMs, previewLocale) })}</p>
         </div>
