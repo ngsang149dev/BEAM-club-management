@@ -5,7 +5,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { describeTaskError } from '../error-mapping';
 import type { TaskDto } from '../hooks/useTasks';
 
-export type DrawerTab = 'details' | 'comments';
+export type DrawerTab = 'details' | 'comments' | 'history';
 
 export function TaskDrawerReadOnlyBody({ task }: { task: TaskDto }) {
   const tTasks = useTranslations('tasks');
@@ -35,50 +35,84 @@ export function TaskDrawerHiddenBanner({ isHidden }: { isHidden: boolean }) {
   );
 }
 
+function DrawerTabButton({
+  id,
+  panelId,
+  active,
+  label,
+  count,
+  onSelect,
+}: {
+  readonly id: string;
+  readonly panelId: string;
+  readonly active: boolean;
+  readonly label: string;
+  readonly count?: number;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="tab"
+      aria-selected={active}
+      aria-controls={panelId}
+      className={active ? 'task-drawer-tab is-active' : 'task-drawer-tab'}
+      onClick={onSelect}
+    >
+      <span>{label}</span>
+      {count !== undefined ? <span className="task-drawer-tab-count">{count}</span> : null}
+    </button>
+  );
+}
+
 export function TaskDrawerTabBar({
   activeTab,
   commentCount,
   detailsTabId,
   commentsTabId,
+  historyTabId,
   detailsPanelId,
   commentsPanelId,
+  historyPanelId,
   onSelect,
 }: {
   activeTab: DrawerTab;
   commentCount: number;
   detailsTabId: string;
   commentsTabId: string;
+  historyTabId: string;
   detailsPanelId: string;
   commentsPanelId: string;
+  historyPanelId: string;
   onSelect: (tab: DrawerTab) => void;
 }) {
   const tTasks = useTranslations('tasks');
 
   return (
     <div className="task-drawer-tabs" role="tablist" aria-label={tTasks('tabsAriaLabel')}>
-      <button
+      <DrawerTabButton
         id={detailsTabId}
-        type="button"
-        role="tab"
-        aria-selected={activeTab === 'details'}
-        aria-controls={detailsPanelId}
-        className={activeTab === 'details' ? 'task-drawer-tab is-active' : 'task-drawer-tab'}
-        onClick={() => onSelect('details')}
-      >
-        <span>{tTasks('tabDetails')}</span>
-      </button>
-      <button
+        panelId={detailsPanelId}
+        active={activeTab === 'details'}
+        label={tTasks('tabDetails')}
+        onSelect={() => onSelect('details')}
+      />
+      <DrawerTabButton
         id={commentsTabId}
-        type="button"
-        role="tab"
-        aria-selected={activeTab === 'comments'}
-        aria-controls={commentsPanelId}
-        className={activeTab === 'comments' ? 'task-drawer-tab is-active' : 'task-drawer-tab'}
-        onClick={() => onSelect('comments')}
-      >
-        <span>{tTasks('tabComments')}</span>
-        <span className="task-drawer-tab-count">{commentCount}</span>
-      </button>
+        panelId={commentsPanelId}
+        active={activeTab === 'comments'}
+        label={tTasks('tabComments')}
+        count={commentCount}
+        onSelect={() => onSelect('comments')}
+      />
+      <DrawerTabButton
+        id={historyTabId}
+        panelId={historyPanelId}
+        active={activeTab === 'history'}
+        label={tTasks('tabHistory')}
+        onSelect={() => onSelect('history')}
+      />
     </div>
   );
 }

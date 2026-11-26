@@ -19,6 +19,10 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { describeTaskError } from '@/features/tasks/error-mapping';
+import {
+  useUndoTaskActionToast,
+  type TaskMutationResponse,
+} from '@/features/tasks/hooks/useTaskEvents';
 import type { TaskDto, useMoveTaskMutation } from '@/features/tasks/hooks/useTasks';
 import {
   computeTaskMovePayload,
@@ -106,14 +110,14 @@ function submitTaskMove({
   activeTaskId,
   overId,
   moveTaskMutation,
-  onSuccessMessage,
+  onTaskMoved,
   onErrorToast,
 }: {
   readonly board: BoardDetailDto;
   readonly activeTaskId: string;
   readonly overId: UniqueIdentifier;
   readonly moveTaskMutation: ReturnType<typeof useMoveTaskMutation>;
-  readonly onSuccessMessage: string;
+  readonly onTaskMoved: (data: TaskMutationResponse) => void;
   readonly onErrorToast: (error: unknown) => void;
 }) {
   const dest = resolveTaskDestination(board, overId);
@@ -128,7 +132,7 @@ function submitTaskMove({
   moveTaskMutation.reset();
   moveTaskMutation.mutate(
     { id: activeTaskId, payload },
-    { onSuccess: () => toast.success(onSuccessMessage), onError: onErrorToast }
+    { onSuccess: onTaskMoved, onError: onErrorToast }
   );
 }
 
@@ -138,7 +142,7 @@ interface BoardDragEndContext {
   readonly reorderMutation: ReturnType<typeof useReorderColumnsMutation>;
   readonly moveTaskMutation: ReturnType<typeof useMoveTaskMutation>;
   readonly colMovedMsg: string;
-  readonly taskMovedMsg: string;
+  readonly onTaskMoved: (data: TaskMutationResponse) => void;
   readonly onBoardErr: (err: unknown) => void;
   readonly onTaskErr: (err: unknown) => void;
 }
@@ -167,7 +171,7 @@ function handleBoardDragEnd(event: DragEndEvent, ctx: BoardDragEndContext): void
       activeTaskId: activeParsed.id,
       overId,
       moveTaskMutation: ctx.moveTaskMutation,
-      onSuccessMessage: ctx.taskMovedMsg,
+      onTaskMoved: ctx.onTaskMoved,
       onErrorToast: ctx.onTaskErr,
     });
   }
@@ -196,6 +200,7 @@ export function useBoardDnd({ board, sortedColumns, reorderMutation, moveTaskMut
   const tBoards = useTranslations('boards');
   const tTasks = useTranslations('tasks');
   const tErr = useTranslations('errors');
+  const showUndoToast = useUndoTaskActionToast();
   const [activeDrag, setActiveDrag] = useState<ActiveBoardDrag>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
 
@@ -229,7 +234,13 @@ export function useBoardDnd({ board, sortedColumns, reorderMutation, moveTaskMut
       reorderMutation,
       moveTaskMutation,
       colMovedMsg: tBoards('columnReorderedToast'),
-      taskMovedMsg: tTasks('movedToast'),
+      onTaskMoved: (data) =>
+        showUndoToast({
+          message: tTasks('movedToast'),
+          taskId: data.task.id,
+          boardId: data.task.boardId,
+          eventId: data.eventId,
+        }),
       onBoardErr: (err) => toast.error(tErr(describeBoardError(err)?.key ?? 'unknown')),
       onTaskErr: (err) => toast.error(tErr(describeTaskError(err)?.key ?? 'unknown')),
     });

@@ -34,6 +34,14 @@ const commentsHooksMock = vi.hoisted(() => ({
   useDeleteCommentMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
 }));
 
+const taskEventsHooksMock = vi.hoisted(() => ({
+  useTaskEventsInfiniteQuery: vi.fn(),
+  useRevertTaskEventMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null, variables: undefined })),
+  useBoardTrashInfiniteQuery: vi.fn(),
+  useRestoreBoardTaskMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null, variables: undefined })),
+  useUndoTaskActionToast: vi.fn(() => vi.fn()),
+}));
+
 const authHooksMock = vi.hoisted(() => ({
   useMeQuery: vi.fn(),
 }));
@@ -71,6 +79,13 @@ vi.mock('@/features/comments/hooks/useComments', async () => {
     '@/features/comments/hooks/useComments'
   );
   return { ...actual, ...commentsHooksMock };
+});
+
+vi.mock('@/features/tasks/hooks/useTaskEvents', async () => {
+  const actual = await vi.importActual<typeof import('@/features/tasks/hooks/useTaskEvents')>(
+    '@/features/tasks/hooks/useTaskEvents'
+  );
+  return { ...actual, ...taskEventsHooksMock };
 });
 
 vi.mock('@/features/auth/hooks/useAuth', () => authHooksMock);
@@ -164,6 +179,27 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       refetch: vi.fn(),
       data: { pages: [{ items: [], meta: { nextCursor: null, limit: 20 } }], pageParams: [undefined] },
     });
+    taskEventsHooksMock.useTaskEventsInfiniteQuery.mockReturnValue({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [], meta: { nextCursor: null, limit: 15 } }], pageParams: [undefined] },
+    });
+    taskEventsHooksMock.useBoardTrashInfiniteQuery.mockReturnValue({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [], meta: { nextCursor: null, limit: 10 } }], pageParams: [undefined] },
+    });
+    taskEventsHooksMock.useUndoTaskActionToast.mockReturnValue(vi.fn());
   });
 
   it('orders columns by orderIndex, shows priority 1..4, hidden/overdue/left badges, and gates column/task buttons & DnD handles', () => {
@@ -178,13 +214,15 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     expect(viewerHtml).toContain('Quá hạn');
     expect(viewerHtml).toContain('Vu Quoc F (đã rời)');
     expect(viewerHtml).not.toContain('Thêm cột');
+    expect(viewerHtml).not.toContain('Thùng rác');
     expect(viewerHtml).not.toContain('Thêm task');
     expect(viewerHtml).not.toContain('Kéo để sắp xếp cột');
     expect(viewerHtml).not.toContain('Kéo task để di chuyển');
     expect(viewerHtml).not.toContain('Tùy chọn cột');
 
-    const editorHtml = renderWithIntl(<BoardDetailView boardId="b-1" />, { permissions: ['board.update', 'task.create'], locale: 'en' });
+    const editorHtml = renderWithIntl(<BoardDetailView boardId="b-1" />, { permissions: ['board.update', 'task.create', 'task.delete'], locale: 'en' });
     expect(editorHtml).toContain('Add column');
+    expect(editorHtml).toContain('Trash');
     expect(editorHtml).toContain('Add task');
     expect(editorHtml).toContain('Urgent');
     expect(editorHtml).toContain('Vu Quoc F (left)');
@@ -249,13 +287,16 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     expect(assignedEditHtml).toContain('role="tablist"');
     expect(assignedEditHtml).toContain('Chi tiết');
     expect(assignedEditHtml).toContain('Bình luận');
+    expect(assignedEditHtml).toContain('Lịch sử');
     expect(assignedEditHtml).toContain('task-comments-jump-chip');
     expect(assignedEditHtml).not.toContain('task-comments-section');
+    expect(assignedEditHtml).not.toContain('task-history-section');
     expect(assignedEditHtml).not.toContain('task-hidden-section');
 
-    const creatorDrawerHtml = renderWithIntl(<TaskDetailDrawer taskId="t-1" onClose={vi.fn()} />, { isAdmin: true });
+    const creatorDrawerHtml = renderWithIntl(<TaskDetailDrawer taskId="t-1" onClose={vi.fn()} />, { isAdmin: true, locale: 'en' });
     expect(creatorDrawerHtml).toContain('task-hidden-section');
     expect(creatorDrawerHtml).toContain('task-drawer-tabs');
+    expect(creatorDrawerHtml).toContain('History');
     expect(creatorDrawerHtml).not.toContain('task-comments-section');
 
     tasksHooksMock.useTaskAssigneeMembersQuery.mockReturnValueOnce({

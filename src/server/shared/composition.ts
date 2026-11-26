@@ -8,6 +8,7 @@ import type { DepartmentsService } from '@/server/modules/departments';
 import type { MembersService } from '@/server/modules/members';
 import type { NotificationsService } from '@/server/modules/notifications';
 import type { PermissionsService } from '@/server/modules/permissions';
+import type { TaskEventsService } from '@/server/modules/task-events';
 import type { TasksService } from '@/server/modules/tasks';
 import { type Clock, SystemClock } from './clock';
 import {
@@ -39,6 +40,7 @@ export interface ServerContainer {
   readonly auditService: AuditService;
   readonly brandingService: BrandingService;
   readonly tasksService: TasksService;
+  readonly taskEventsService: TaskEventsService;
   readonly commentsService: CommentsService;
   readonly notificationsService: NotificationsService;
   readonly boardsService: BoardsService;

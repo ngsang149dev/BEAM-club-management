@@ -12,6 +12,7 @@ import type { useBoardDnd } from '../hooks/useBoardDnd';
 import type { BoardDetailDto, ColumnDto } from '../hooks/useBoards';
 import { BoardColumnOverlayPreview } from './BoardColumnLane';
 import { BoardTaskCardView } from './BoardTaskCard';
+import { BoardTrashModal } from './BoardTrashModal';
 import { ColumnDeleteModal, ColumnUpsertModal } from './ColumnModals';
 
 export type BoardDetailModalState =
@@ -19,10 +20,13 @@ export type BoardDetailModalState =
   | { kind: 'createColumn' }
   | { kind: 'renameColumn'; column: ColumnDto }
   | { kind: 'deleteColumn'; column: ColumnDto; visibleTaskCount: number }
-  | { kind: 'createTask'; column: ColumnDto };
+  | { kind: 'createTask'; column: ColumnDto }
+  | { kind: 'boardTrash' };
 
 export interface BoardDetailModalsProps {
   readonly boardId: string;
+  readonly boardName?: string;
+  readonly columns?: readonly ColumnDto[];
   readonly modal: BoardDetailModalState;
   readonly isUpserting: boolean;
   readonly upsertError: unknown;
@@ -70,6 +74,16 @@ export function BoardDetailModals(props: BoardDetailModalsProps) {
       />
     );
   }
+  if (modal.kind === 'boardTrash') {
+    return (
+      <BoardTrashModal
+        boardId={props.boardId}
+        boardName={props.boardName ?? ''}
+        columns={props.columns}
+        onClose={props.onClose}
+      />
+    );
+  }
   return null;
 }
 
@@ -99,6 +113,7 @@ export function BoardDetailHeader({
   visibleTaskCount,
   overdueTaskCount,
   onAddColumn,
+  onOpenTrash,
 }: {
   readonly name: string;
   readonly departmentName: string | null;
@@ -106,6 +121,7 @@ export function BoardDetailHeader({
   readonly visibleTaskCount: number;
   readonly overdueTaskCount: number;
   readonly onAddColumn: () => void;
+  readonly onOpenTrash: () => void;
 }) {
   const t = useTranslations('boards');
 
@@ -121,11 +137,18 @@ export function BoardDetailHeader({
         ) : null}
         {archived ? <span className="status-pill is-inactive">{t('archivedBadge')}</span> : null}
       </div>
-      <Can permission="board.update">
-        <button type="button" className="ui-btn primary is-sm" onClick={onAddColumn}>
-          + {t('addColumn')}
-        </button>
-      </Can>
+      <div className="board-detail-header-actions">
+        <Can permission="task.delete">
+          <button type="button" className="ui-btn ghost is-sm" onClick={onOpenTrash}>
+            {t('openTrash')}
+          </button>
+        </Can>
+        <Can permission="board.update">
+          <button type="button" className="ui-btn primary is-sm" onClick={onAddColumn}>
+            + {t('addColumn')}
+          </button>
+        </Can>
+      </div>
     </div>
   );
 }
