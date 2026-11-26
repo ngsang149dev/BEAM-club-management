@@ -220,17 +220,22 @@ function formatRemindersPreview(detail: Record<string, unknown>): string | null 
   return parts.join(' · ');
 }
 
+function formatDepartmentOrNamedPreview(detail: Record<string, unknown>): string | null {
+  const namePreview = readNonEmptyString(detail.name);
+  if (!('leadUserId' in detail)) return namePreview;
+  const leadPreview = readNonEmptyString(detail.leadUserId) ? 'lead=assigned' : 'lead=cleared';
+  return namePreview ? `${namePreview} · ${leadPreview}` : leadPreview;
+}
+
 function formatEntityPreview(detail: Record<string, unknown>): string {
   const textPreview =
-    readNonEmptyString(detail.name) ??
+    formatDepartmentOrNamedPreview(detail) ??
     readNonEmptyString(detail.fullName) ??
     readNonEmptyString(detail.mimeType) ??
     readNonEmptyString(detail.assetKey);
   if (textPreview) return textPreview;
-  const galleryPreview = formatGalleryPreview(detail);
-  if (galleryPreview) return galleryPreview;
-  const remindersPreview = formatRemindersPreview(detail);
-  if (remindersPreview) return remindersPreview;
+  const subPreview = formatGalleryPreview(detail) ?? formatRemindersPreview(detail);
+  if (subPreview) return subPreview;
   if (typeof detail.isAdmin === 'boolean') return detail.isAdmin ? 'isAdmin=true' : 'isAdmin=false';
   return formatArchivePreview(detail) ?? '—';
 }

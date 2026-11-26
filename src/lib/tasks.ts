@@ -6,6 +6,42 @@ export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 export const TASK_DUE_STATUSES = ['overdue', 'upcoming', 'no_due'] as const;
 export type TaskDueStatus = (typeof TASK_DUE_STATUSES)[number];
 
+export const TASK_DEADLINE_STATUSES = [
+  'overdue',
+  'urgent',
+  'soon',
+  'safe',
+  'done',
+] as const;
+export type TaskDeadlineStatus = (typeof TASK_DEADLINE_STATUSES)[number];
+
+export const DELIVERABLE_TITLE_MAX = 160;
+export const DELIVERABLE_URL_MIN = 8;
+export const DELIVERABLE_URL_MAX = 2048;
+export const MAX_DELIVERABLES_PER_TASK = 30;
+const CONTROL_OR_WHITESPACE_RE = /[\u0000-\u0020\u007F]/;
+
+function isValidHttpDeliverableUrl(value: string): boolean {
+  if (CONTROL_OR_WHITESPACE_RE.test(value)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export const deliverableUrlSchema = z
+  .string()
+  .trim()
+  .min(DELIVERABLE_URL_MIN, 'errors.invalidDeliverableUrl')
+  .max(DELIVERABLE_URL_MAX, 'errors.invalidDeliverableUrl')
+  .refine(isValidHttpDeliverableUrl, {
+    message: 'errors.invalidDeliverableUrl',
+  });
+
 export const TASK_SORT_BY_VALUES = [
   'position',
   'priority',
@@ -32,10 +68,11 @@ export const nullableIsoDateSchema = z.iso
 
 export const createTaskRequestSchema = z
   .object({
-    boardId: z.uuid(),
-    columnId: z.uuid(),
+    boardId: z.uuid().optional(),
+    columnId: z.uuid().optional(),
     title: taskTitleSchema,
     description: taskDescriptionSchema.optional(),
+    startAt: nullableIsoDateSchema.optional(),
     dueAt: nullableIsoDateSchema.optional(),
     priority: taskPrioritySchema.default(2),
     assigneeIds: z.array(z.uuid()).default([]),
@@ -45,7 +82,20 @@ export const createTaskRequestSchema = z
     notifyEmail: z.boolean().optional(),
     isHidden: z.boolean().default(false),
   })
-  .strict();
+  .strict()
+  .refine(
+    (d) =>
+      (d.boardId === undefined && d.columnId === undefined) ||
+      (d.boardId !== undefined && d.columnId !== undefined),
+    {
+      message: 'boardId and columnId must both be provided or both omitted',
+      path: ['boardId'],
+    },
+  )
+  .refine((d) => !(d.startAt && d.dueAt && d.startAt > d.dueAt), {
+    message: 'errors.invalidDateRange',
+    path: ['dueAt'],
+  });
 
 export type CreateTaskRequestInput = z.infer<typeof createTaskRequestSchema>;
 
@@ -53,13 +103,36 @@ export const updateTaskRequestSchema = z
   .object({
     title: taskTitleSchema.optional(),
     description: taskDescriptionSchema.optional(),
+    startAt: nullableIsoDateSchema.optional(),
     dueAt: nullableIsoDateSchema.optional(),
+    isCompleted: z.boolean().optional(),
     priority: taskPrioritySchema.optional(),
     version: z.number().int().min(1),
   })
   .strict();
 
 export type UpdateTaskRequestInput = z.infer<typeof updateTaskRequestSchema>;
+
+export const updateTaskAcceptanceRequestSchema = z
+  .object({
+    accepted: z.boolean(),
+  })
+  .strict();
+
+export type UpdateTaskAcceptanceRequestInput = z.infer<
+  typeof updateTaskAcceptanceRequestSchema
+>;
+
+export const createTaskDeliverableRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(DELIVERABLE_TITLE_MAX),
+    url: deliverableUrlSchema,
+  })
+  .strict();
+
+export type CreateTaskDeliverableRequestInput = z.infer<
+  typeof createTaskDeliverableRequestSchema
+>;
 
 export const moveTaskRequestSchema = z
   .object({
@@ -171,30 +244,54 @@ export const optionalCursorQuerySchema = z.preprocess(
   z.string().trim().min(1).max(512).optional(),
 );
 
+const optionalIsoDateQuerySchema = z.preprocess(
+  emptyToUndefined,
+  z.iso
+    .datetime({ offset: true })
+    .transform((iso) => new Date(iso))
+    .optional(),
+);
+
 const queryLimitSchema = z.preprocess(
   parseIntegerInput,
   z.number().int().min(1).max(100).default(20),
 );
 
-export const listTasksQuerySchema = z.object({
-  boardId: optionalUuidQuerySchema,
-  columnId: optionalUuidQuerySchema,
-  assigneeId: optionalUuidQuerySchema,
-  departmentId: optionalUuidQuerySchema,
-  priority: optionalPriorityQuerySchema,
-  dueStatus: z.preprocess(emptyToUndefined, z.enum(TASK_DUE_STATUSES).optional()),
-  q: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(200).optional()),
-  sortBy: z.preprocess(
-    emptyToUndefined,
-    z.enum(TASK_SORT_BY_VALUES).default('position'),
-  ),
-  sortOrder: z.preprocess(
-    emptyToUndefined,
-    z.enum(TASK_SORT_ORDER_VALUES).default('asc'),
-  ),
-  cursor: optionalCursorQuerySchema,
-  limit: queryLimitSchema,
-});
+const calendarTasksLimitSchema = z.preprocess(
+  parseIntegerInput,
+  z.number().int().min(1).max(200).default(20),
+);
+
+export const listTasksQuerySchema = z
+  .object({
+    boardId: optionalUuidQuerySchema,
+    columnId: optionalUuidQuerySchema,
+    assigneeId: optionalUuidQuerySchema,
+    departmentId: optionalUuidQuerySchema,
+    priority: optionalPriorityQuerySchema,
+    dueStatus: z.preprocess(emptyToUndefined, z.enum(TASK_DUE_STATUSES).optional()),
+    deadlineStatus: z.preprocess(
+      emptyToUndefined,
+      z.enum(TASK_DEADLINE_STATUSES).optional(),
+    ),
+    from: optionalIsoDateQuerySchema,
+    to: optionalIsoDateQuerySchema,
+    q: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(200).optional()),
+    sortBy: z.preprocess(
+      emptyToUndefined,
+      z.enum(TASK_SORT_BY_VALUES).default('position'),
+    ),
+    sortOrder: z.preprocess(
+      emptyToUndefined,
+      z.enum(TASK_SORT_ORDER_VALUES).default('asc'),
+    ),
+    cursor: optionalCursorQuerySchema,
+    limit: calendarTasksLimitSchema,
+  })
+  .refine(
+    (data) => !data.from || !data.to || data.from.getTime() <= data.to.getTime(),
+    { message: 'errors.invalidDateRange', path: ['from'] },
+  );
 
 export type ListTasksQueryInput = z.infer<typeof listTasksQuerySchema>;
 

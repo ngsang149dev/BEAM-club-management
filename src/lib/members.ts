@@ -15,6 +15,7 @@ export const departmentNameSchema = z.string().trim().min(1).max(120);
 
 export const departmentUpsertRequestSchema = z.object({
   name: departmentNameSchema,
+  leadUserId: uuidSchema.nullable().optional(),
 });
 
 export type DepartmentUpsertRequestInput = z.infer<

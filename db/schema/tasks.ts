@@ -31,7 +31,10 @@ export const tasks = pgTable(
     }),
     title: text('title').notNull(),
     description: text('description'),
+    startAt: timestamp('start_at', { withTimezone: true, mode: 'date' }),
     dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }),
+    isCompleted: boolean('is_completed').notNull().default(false),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
     priority: smallint('priority').notNull().default(2),
     position: numeric('position').notNull(),
     isHidden: boolean('is_hidden').notNull().default(false),
@@ -50,6 +53,10 @@ export const tasks = pgTable(
   },
   (table) => [
     check('tasks_priority_chk', sql`${table.priority} BETWEEN 1 AND 4`),
+    check(
+      'tasks_start_before_due_chk',
+      sql`${table.startAt} IS NULL OR ${table.dueAt} IS NULL OR ${table.startAt} <= ${table.dueAt}`,
+    ),
     check('tasks_version_chk', sql`${table.version} >= 1`),
     check(
       'tasks_active_column_not_null_chk',
@@ -62,6 +69,9 @@ export const tasks = pgTable(
     index('tasks_board_column_position_active_idx')
       .on(table.boardId, table.columnId, table.position)
       .where(isNull(table.deletedAt)),
+    index('tasks_start_due_active_idx')
+      .on(table.startAt, table.dueAt)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.purgedAt} IS NULL`),
     index('tasks_due_at_active_idx')
       .on(table.dueAt)
       .where(sql`${table.deletedAt} IS NULL AND ${table.dueAt} IS NOT NULL`),
@@ -84,6 +94,7 @@ export const taskAssignees = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => profiles.id, { onDelete: 'restrict' }),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -94,6 +105,40 @@ export const taskAssignees = pgTable(
       columns: [table.taskId, table.userId],
     }),
     index('task_assignees_user_id_idx').on(table.userId),
+  ],
+);
+
+export const taskDeliverables = pgTable(
+  'task_deliverables',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    url: text('url').notNull(),
+    submittedBy: uuid('submitted_by')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      'task_deliverables_title_chk',
+      sql`char_length(btrim(${table.title})) BETWEEN 1 AND 160`,
+    ),
+    check(
+      'task_deliverables_url_chk',
+      sql`char_length(${table.url}) BETWEEN 8 AND 2048 AND ${table.url} ~* '^https?://'`,
+    ),
+    index('task_deliverables_task_created_idx').on(
+      table.taskId,
+      table.createdAt.desc(),
+      table.id.desc(),
+    ),
+    index('task_deliverables_submitted_by_idx').on(table.submittedBy),
   ],
 );
 

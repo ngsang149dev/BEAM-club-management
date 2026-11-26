@@ -1,6 +1,6 @@
 # Entity-Relationship Diagram & Data Dictionary (`docs/ERD.md`)
 
-- **Tài liệu `docs/ERD.md` (CR-07):** Đã cập nhật lên 22 bảng miền.
+- **Tài liệu `docs/ERD.md` (`CR-09`):** Đã cập nhật lên **23 bảng miền** (**24 bảng `public`** tính cả `schema_migrations`).
 
 Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống quản lý thành viên & giao task CLB BEAM, chốt ở giai đoạn **0B (`E0-02`)** dựa trên:
 - `docs/HANDOFF-club-management-website.md` v1.4 (mục 8.1, 8.2, 8.6, 8.8, 11.4)
@@ -29,7 +29,7 @@ Tài liệu thiết kế cơ sở dữ liệu PostgreSQL 16 cho hệ thống qu�
 
 ---
 
-## 2. Sơ đồ ERD (22 bảng miền)
+## 2. Sơ đồ ERD (23 bảng miền)
 
 ```mermaid
 erDiagram
@@ -104,6 +104,7 @@ erDiagram
     DEPARTMENTS {
         uuid id PK
         text name UK
+        uuid lead_user_id FK "NULL"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -181,7 +182,10 @@ erDiagram
         uuid column_id FK
         text title
         text description
+        timestamptz start_at "NULL"
         timestamptz due_at
+        boolean is_completed
+        timestamptz completed_at "NULL"
         smallint priority
         numeric position
         boolean is_hidden
@@ -196,6 +200,16 @@ erDiagram
     TASK_ASSIGNEES {
         uuid task_id PK,FK
         uuid user_id PK,FK
+        timestamptz accepted_at "NULL"
+        timestamptz created_at
+    }
+
+    TASK_DELIVERABLES {
+        uuid id PK
+        uuid task_id FK
+        text title "1..160"
+        text url "http/https 8..2048"
+        uuid submitted_by FK
         timestamptz created_at
     }
 
@@ -252,6 +266,7 @@ erDiagram
     PROFILES ||--o{ APP_SETTINGS : "updates"
     PROFILES ||--o{ MEMBER_DEPARTMENTS : "belongs_to"
     DEPARTMENTS ||--o{ MEMBER_DEPARTMENTS : "contains"
+    PROFILES ||--o{ DEPARTMENTS : "leads"
     PROFILES ||--o{ USER_PERMISSIONS : "receives"
     PROFILES ||--o{ USER_PERMISSIONS : "grants"
     PERMISSIONS ||--o{ USER_PERMISSIONS : "defines"
@@ -267,6 +282,8 @@ erDiagram
     PROFILES ||--o{ TASKS : "creates"
     TASKS ||--o{ TASK_ASSIGNEES : "assigned_to"
     PROFILES ||--o{ TASK_ASSIGNEES : "assigned_user"
+    TASKS ||--o{ TASK_DELIVERABLES : "collects"
+    PROFILES ||--o{ TASK_DELIVERABLES : "submits"
     TASKS ||--o{ TASK_DEPARTMENTS : "assigned_to_dept"
     DEPARTMENTS ||--o{ TASK_DEPARTMENTS : "assigned_task"
     PROFILES ||--o{ NOTIFICATIONS : "receives_notification"
@@ -286,7 +303,7 @@ erDiagram
     PROFILES ||--o{ LOGIN_GALLERY_ITEMS : "updates_gallery"
 ```
 
-> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong 22 bảng miền nghiệp vụ. `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
+> **Ghi chú:** Bảng kỹ thuật `schema_migrations (version PK, applied_at)` quản lý trạng thái chạy lại migration và không nằm trong **23 bảng miền nghiệp vụ** (`24` bảng `public`). `login_attempts` cố ý không gắn FK tới `profiles` vì phải ghi cả các lần thử với MSSV không tồn tại.
 
 ---
 
@@ -379,12 +396,13 @@ Lưu các khung ảnh Polaroid hiển thị trên Desktop trang `/login` (`CR-07
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
 
 ### 3.5 `departments` (Mutable)
-Danh sách ban trong CLB (chỉ dùng tổ chức thành viên và nhóm board, không giới hạn quyền).
+Danh sách ban trong CLB kèm tùy chọn **Trưởng ban** (`lead_user_id`, `CR-09`; chỉ dùng tổ chức thành viên, nhóm board và nhận thông báo nhận việc/sản phẩm, không tự động cấp quyền hệ thống).
 
 | Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
 |---|---|---|---|---|
 | `id` | `uuid` | NO | `gen_random_uuid()` | `PRIMARY KEY` |
 | `name` | `text` | NO | — | `UNIQUE` (`departments_name_uq`) |
+| `lead_user_id` | `uuid` | YES | `NULL` | `FK -> profiles(id) ON DELETE SET NULL` (`CR-09`) |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
 
@@ -489,8 +507,11 @@ Thẻ công việc trong board; hỗ trợ priority 1..4, vị trí `numeric`, t
 | `column_id` | `uuid` | YES | — | `FK -> columns(id) ON DELETE RESTRICT`; `CHECK (deleted_at IS NOT NULL OR column_id IS NOT NULL)` |
 | `title` | `text` | NO | — | Tiêu đề task (không đưa vào email nhắc nếu `is_hidden = true`) |
 | `description` | `text` | YES | `NULL` | Mô tả chi tiết |
+| `start_at` | `timestamptz` | YES | `NULL` | Ngày bắt đầu trên Lịch công việc (`CR-09`, `CHECK (start_at IS NULL OR due_at IS NULL OR start_at <= due_at)`) |
 | `due_at` | `timestamptz` | YES | `NULL` | Mốc `00:00 UTC+7` của ngày hạn (`WQ-12`) |
-| `priority` | `smallint` | NO | `2` | `CHECK (priority BETWEEN 1 AND 4)` (1 Thấp .. 4 Khẩn) |
+| `is_completed` | `boolean` | NO | `false` | Đánh dấu hoàn thành độc lập với cột Kanban (`CR-09`) |
+| `completed_at` | `timestamptz` | YES | `NULL` | Thời điểm đánh dấu hoàn thành (`CR-09`) |
+| `priority` | `smallint` | NO | `2` | `CHECK (priority BETWEEN 1 AND 4)` (giữ tương thích ngược) |
 | `position` | `numeric` | NO | — | Vị trí sắp xếp liên tục trong cột |
 | `is_hidden` | `boolean` | NO | `false` | Chỉ người tạo, người được giao và admin được xem |
 | `version` | `integer` | NO | `1` | `CHECK (version >= 1)`, chống ghi đè đồng thời |
@@ -501,12 +522,13 @@ Thẻ công việc trong board; hỗ trợ priority 1..4, vị trí `numeric`, t
 | `updated_at` | `timestamptz` | NO | `now()` | Tự cập nhật bởi `set_updated_at` |
 
 ### 3.15 `task_assignees` (Junction)
-Danh sách thành viên được giao cho một task.
+Danh sách thành viên được giao cho một task và trạng thái xác nhận **Đã nhận task** (`accepted_at`, `CR-09`).
 
 | Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
 |---|---|---|---|---|
 | `task_id` | `uuid` | NO | — | `PK`, `FK -> tasks(id) ON DELETE CASCADE` |
 | `user_id` | `uuid` | NO | — | `PK`, `FK -> profiles(id) ON DELETE RESTRICT` |
+| `accepted_at` | `timestamptz` | YES | `NULL` | Thời điểm thành viên tick "Đã nhận task" (`CR-09`) |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 
 ### 3.15a `task_departments` (Junction, `CR-03`)
@@ -518,21 +540,33 @@ Danh sách ban được giao cho một task. Thành viên đang hoạt động t
 | `department_id` | `uuid` | NO | — | `PK`, `FK -> departments(id) ON DELETE RESTRICT` |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 
-### 3.15b `notifications` (Mutable read tracking, `CR-03`)
-Thông báo in-app cho thành viên khi được giao việc theo Ban (`task.department_assigned`) hoặc trực tiếp (`task.assigned`). Tuân thủ `WQ-27`: khi `is_hidden_task = true`, `payload.taskTitle` luôn là `null` và chỉ trả về cho người còn quyền xem `taskVisibilityPolicy`.
+### 3.15b `notifications` (Mutable read tracking, `CR-03`, `CR-09`)
+Thông báo in-app cho thành viên khi được giao việc theo Ban (`task.department_assigned`) hoặc trực tiếp (`task.assigned`), và cho Trưởng ban + người tạo khi thành viên nhận việc (`task.accepted`) hoặc nộp link sản phẩm (`task.deliverable_submitted`). Tuân thủ `WQ-27`: khi `is_hidden_task = true`, `payload.taskTitle` luôn là `null`, không bao giờ kèm URL/tên sản phẩm ẩn, và chỉ trả về cho người còn quyền xem `taskVisibilityPolicy`.
 
 | Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
 |---|---|---|---|---|
 | `id` | `uuid` | NO | `gen_random_uuid()` | `PRIMARY KEY` |
 | `user_id` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` (người nhận) |
-| `type` | `text` | NO | — | `CHECK (type IN ('task.department_assigned', 'task.assigned'))` |
+| `type` | `text` | NO | — | `CHECK (type IN ('task.department_assigned', 'task.assigned', 'task.accepted', 'task.deliverable_submitted'))` |
 | `task_id` | `uuid` | NO | — | `FK -> tasks(id) ON DELETE CASCADE` |
 | `board_id` | `uuid` | NO | — | `FK -> boards(id) ON DELETE CASCADE` |
 | `department_id` | `uuid` | YES | `NULL` | `FK -> departments(id) ON DELETE SET NULL` |
-| `actor_id` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` (người giao) |
+| `actor_id` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` (người thực hiện) |
 | `is_hidden_task` | `boolean` | NO | `false` | Cờ task ẩn phục vụ che tiêu đề theo `WQ-27` |
 | `payload` | `jsonb` | NO | `'{}'::jsonb` | `{ taskTitle: string \| null, boardName: string, departmentName: string \| null }` (`taskTitle = null` khi ẩn, không PII) |
 | `read_at` | `timestamptz` | YES | `NULL` | Mốc đánh dấu đã đọc (`NULL` = chưa đọc) |
+| `created_at` | `timestamptz` | NO | `now()` | UTC |
+
+### 3.15c `task_deliverables` (Create/Delete, `CR-09`)
+Danh sách đường link sản phẩm bàn giao gắn với công việc (tối đa `30` link/task ở tầng ứng dụng).
+
+| Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
+|---|---|---|---|---|
+| `id` | `uuid` | NO | `gen_random_uuid()` | `PRIMARY KEY` |
+| `task_id` | `uuid` | NO | — | `FK -> tasks(id) ON DELETE CASCADE` |
+| `title` | `text` | NO | — | `CHECK (char_length(btrim(title)) BETWEEN 1 AND 160)` |
+| `url` | `text` | NO | — | `CHECK (char_length(url) BETWEEN 8 AND 2048 AND url ~* '^https?://')` |
+| `submitted_by` | `uuid` | NO | — | `FK -> profiles(id) ON DELETE RESTRICT` |
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 
 ### 3.16 `comments` (Create/Delete)
@@ -547,7 +581,7 @@ Bình luận trong task (không chỉnh sửa, không hoàn tác trong MVP).
 | `created_at` | `timestamptz` | NO | `now()` | UTC |
 
 ### 3.17 `task_events` (Append-only)
-Nhật ký sự kiện cấp task (`task.created`, `task.updated`, `task.moved`, `task.assignees_changed`, `task.hidden_changed`, `task.deleted`, `task.restored`, `comment.added`, `comment.deleted`). Bị khóa `UPDATE`/`DELETE` bởi trigger.
+Nhật ký sự kiện cấp task (`task.created`, `task.updated`, `task.moved`, `task.assignees_changed`, `task.hidden_changed`, `task.deleted`, `task.restored`, `task.accepted`, `task.deliverable_added`, `task.deliverable_removed`, `comment.added`, `comment.deleted`). Bị khóa `UPDATE`/`DELETE` bởi trigger.
 
 | Cột | Kiểu | Null | Mặc định | Ràng buộc / Ghi chú |
 |---|---|---|---|---|
@@ -586,19 +620,23 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `departments_name_lower_uq`: `UNIQUE INDEX (lower(btrim(name)))` trên `departments` (chống trùng tên khác hoa/thường hoặc khoảng trắng đầu/cuối).
 - `permission_presets_code_uq`: `UNIQUE (code)` trên `permission_presets`.
 - `tasks_priority_chk`: `CHECK (priority BETWEEN 1 AND 4)` trên `tasks`.
+- `tasks_start_before_due_chk`: `CHECK (start_at IS NULL OR due_at IS NULL OR start_at <= due_at)` trên `tasks` (`CR-09`).
 - `tasks_version_chk`: `CHECK (version >= 1)` trên `tasks`.
 - `tasks_active_column_not_null_chk`: `CHECK (deleted_at IS NOT NULL OR column_id IS NOT NULL)` trên `tasks`.
+- `task_deliverables_title_chk`: `CHECK (char_length(btrim(title)) BETWEEN 1 AND 160)` trên `task_deliverables`.
+- `task_deliverables_url_chk`: `CHECK (char_length(url) BETWEEN 8 AND 2048 AND url ~* '^https?://')` trên `task_deliverables`.
 - `profiles_purged_requires_inactive_chk`: `CHECK (purged_at IS NULL OR is_active = false)` trên `profiles`.
 - `boards_purged_requires_archived_chk`: `CHECK (purged_at IS NULL OR archived_at IS NOT NULL)` trên `boards`.
 - `tasks_purged_requires_deleted_chk`: `CHECK (purged_at IS NULL OR deleted_at IS NOT NULL)` trên `tasks`.
 - `reminders_task_user_kind_uq`: `UNIQUE (task_id, user_id, kind)` trên `reminders`.
-- `notifications_type_chk`: `CHECK (type IN ('task.department_assigned', 'task.assigned'))` trên `notifications`.
+- `notifications_type_chk`: `CHECK (type IN ('task.department_assigned', 'task.assigned', 'task.accepted', 'task.deliverable_submitted'))` trên `notifications`.
 - Khóa chính kép: `member_departments (user_id, department_id)`, `user_permissions (user_id, permission_code)`, `preset_permissions (preset_id, permission_code)`, `task_assignees (task_id, user_id)`, `task_departments (task_id, department_id)`.
 
 ### 4.2 Hành vi xóa khóa ngoại (`ON DELETE`)
 | Cha -> Con | Cột FK | Hành vi | Lý do |
 |---|---|---|---|
 | `profiles -> *` | Mọi bảng | `RESTRICT` | Bảo toàn lịch sử thành viên cũ, không xóa cascade |
+| `profiles -> departments` | `lead_user_id` | `SET NULL` | Cho phép gỡ/xóa vật lý hồ sơ chưa có lịch sử mà không chặn quản trị ban |
 | `profiles -> login_gallery_items` | `updated_by` | `SET NULL` | Cho phép xóa vật lý tài khoản chưa phát sinh lịch sử mà không giữ khóa ngoại ở gallery |
 | `departments -> member_departments, boards, task_departments` | `department_id` | `RESTRICT` | Hỗ trợ kiểm tra xung đột `409` khi xóa ban còn dữ liệu (`WQ-10`) |
 | `departments -> notifications` | `department_id` | `SET NULL` | Giữ thông báo khi ban không còn tham chiếu và bị xóa |
@@ -607,13 +645,17 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 | `boards -> columns, notifications` | `board_id` | `CASCADE` | Cột và thông báo phụ thuộc vòng đời bản ghi board |
 | `boards -> tasks, task_events` | `board_id` | `RESTRICT` | Bảo toàn lịch sử task |
 | `columns -> tasks` | `column_id` | `RESTRICT` | Hỗ trợ chặn xóa cột còn task (`409`, `WQ-05`) |
-| `tasks -> task_assignees, task_departments, comments, reminders, notifications` | `task_id` | `CASCADE` | Dữ liệu phụ thuộc trực tiếp vào vòng đời bản ghi task |
+| `tasks -> task_assignees, task_departments, task_deliverables, comments, reminders, notifications` | `task_id` | `CASCADE` | Dữ liệu phụ thuộc trực tiếp vào vòng đời bản ghi task |
 | `tasks -> task_events` | `task_id` | `RESTRICT` | Giữ nguyên dấu vết lịch sử task |
 | `task_events -> task_events` | `reverts_event_id` | `RESTRICT` | Bảo toàn chuỗi sự kiện hoàn tác |
 
 ### 4.3 Chỉ mục hiệu năng
+- `departments_lead_user_id_idx`: `ON departments (lead_user_id) WHERE lead_user_id IS NOT NULL`
 - `tasks_board_column_position_active_idx`: `ON tasks (board_id, column_id, position) WHERE deleted_at IS NULL`
+- `tasks_start_due_active_idx`: `ON tasks (start_at, due_at) WHERE deleted_at IS NULL AND purged_at IS NULL`
 - `tasks_due_at_active_idx`: `ON tasks (due_at) WHERE deleted_at IS NULL AND due_at IS NOT NULL`
+- `task_deliverables_task_created_idx`: `ON task_deliverables (task_id, created_at DESC, id DESC)`
+- `task_deliverables_submitted_by_idx`: `ON task_deliverables (submitted_by)`
 - `tasks_board_deleted_at_idx`: `ON tasks (board_id, deleted_at DESC) WHERE deleted_at IS NOT NULL`
 - `tasks_archive_deleted_at_idx`: `ON tasks (deleted_at DESC, id DESC) WHERE deleted_at IS NOT NULL AND purged_at IS NULL`
 - `boards_archive_archived_at_idx`: `ON boards (archived_at DESC, id DESC) WHERE archived_at IS NOT NULL AND purged_at IS NULL`

@@ -4,10 +4,15 @@ import { assertActorActive } from '@/server/modules/tasks';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
-import { type Logger, scrubPiiText } from '@/server/shared/logger';
+import type { Logger } from '@/server/shared/logger';
 import type { Mailer } from '@/server/shared/mailer';
 import type { TransactionRunner } from '@/server/shared/transaction';
 import { buildDepartmentAssignedEmail } from './email-template';
+import {
+  executeNotifyDeliverableSubmitted,
+  executeNotifyTaskAccepted,
+  extractSafeMailErrorMessage,
+} from './lead-notifications';
 import {
   type NotificationPageResponseDto,
   type NotificationReadAllResponseDto,
@@ -28,7 +33,9 @@ import type {
   DepartmentAssignmentContextRecord,
   NotificationsDispatcher,
   NotificationsRepository,
+  NotifyDeliverableSubmittedInput,
   NotifyDepartmentAssignmentInput,
+  NotifyTaskAcceptedInput,
 } from './types';
 
 export interface NotificationsServiceDeps {
@@ -75,26 +82,6 @@ function resolveDispatchInput(input: NotifyDepartmentAssignmentInput) {
   return { notifyInApp, notifyEmail, assigneeIds, shouldRun };
 }
 
-function formatSubError(item: unknown): string {
-  return item instanceof Error ? item.message : String(item);
-}
-
-function extractAggregateMessages(error: Error): string {
-  if (!('errors' in error) || !Array.isArray(error.errors)) return '';
-  return error.errors
-    .map(formatSubError)
-    .filter((msg) => msg.trim().length > 0)
-    .join('; ');
-}
-
-function extractSafeMailErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return 'Mail delivery error';
-  if (error.message.trim().length > 0) return scrubPiiText(error.message);
-  const aggregateMessage = extractAggregateMessages(error);
-  if (aggregateMessage.length > 0) return scrubPiiText(aggregateMessage);
-  return scrubPiiText(error.name || 'Mail delivery error');
-}
-
 export class NotificationsService implements NotificationsDispatcher {
   constructor(private readonly deps: NotificationsServiceDeps) {}
 
@@ -130,6 +117,14 @@ export class NotificationsService implements NotificationsDispatcher {
       notifyEmail: resolved.notifyEmail,
       isHiddenTask,
     });
+  }
+
+  async notifyTaskAccepted(input: NotifyTaskAcceptedInput): Promise<void> {
+    await executeNotifyTaskAccepted(this.deps, input);
+  }
+
+  async notifyDeliverableSubmitted(input: NotifyDeliverableSubmittedInput): Promise<void> {
+    await executeNotifyDeliverableSubmitted(this.deps, input);
   }
 
   async listForUser(

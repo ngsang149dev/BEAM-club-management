@@ -68,15 +68,20 @@ function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
     columnId: COL_A,
     title: 'Initial Title',
     description: 'Initial Desc',
+    startAt: null,
     dueAt: new Date('2026-12-01T10:00:00.000Z'),
+    isCompleted: false,
+    completedAt: null,
     priority: 2,
     position: '1000',
     isHidden: false,
     version: 1,
     deletedAt: null,
     createdBy: CREATOR_ID,
-    assignees: [makeMember(ASSIGNEE_ID, 'Assignee')],
+    assignees: [{ ...makeMember(ASSIGNEE_ID, 'Assignee'), acceptedAt: null }],
     assignedDepartments: [{ id: DEPT_ID, name: 'Media' }],
+    deliverables: [],
+    deliverableCount: 0,
     creator: makeMember(CREATOR_ID, 'Creator'),
     commentCount: 0,
     createdAt: now,
@@ -164,7 +169,7 @@ class InMemoryTaskEventsRepository implements TaskEventsRepository {
       ...params.plan.taskPatch,
       assignees:
         params.plan.replaceAssigneeIds !== undefined
-          ? params.plan.replaceAssigneeIds.map((id) => makeMember(id, `User ${id.slice(-2)}`))
+          ? params.plan.replaceAssigneeIds.map((id) => ({ ...makeMember(id, `User ${id.slice(-2)}`), acceptedAt: null }))
           : prev.assignees,
       assignedDepartments:
         params.plan.replaceDepartmentIds !== undefined
@@ -259,7 +264,7 @@ const HIDDEN_SUPER_OUTSIDER: AuthActor = {
 describe('task-events schemas, policy, commands & TaskEventsService', () => {
   it('validates schemas, optional JSON body, canonical cursors, and command registry', async () => {
     expect(REVERTABLE_TASK_EVENT_TYPES).toHaveLength(6);
-    expect(NON_REVERTABLE_TASK_EVENT_TYPES).toHaveLength(3);
+    expect(NON_REVERTABLE_TASK_EVENT_TYPES).toHaveLength(6);
     for (const t of REVERTABLE_TASK_EVENT_TYPES) {
       expect(isRevertableTaskEventType(t)).toBe(true);
       expect(TASK_EVENT_COMMAND_REGISTRY[t]).toBeDefined();
@@ -617,5 +622,77 @@ describe('task-events schemas, policy, commands & TaskEventsService', () => {
 
     const adminTrash = await service.listBoardTrash(ADMIN, BOARD_ID, { limit: 20 });
     expect(adminTrash.items.map((t) => t.id)).toEqual([T3_HIDDEN, T2, T1]);
+  });
+
+  it('reverts start_at and is_completed diffs in task.updated and enforces date range + conflicts', async () => {
+    const { clock, repo, service } = createHarness();
+    const startFrom = '2026-11-28T00:00:00.000Z';
+    const startTo = '2026-11-29T00:00:00.000Z';
+    repo.tasks.set(TASK_ID, {
+      task: makeTask({
+        startAt: new Date(startTo),
+        dueAt: new Date('2026-12-01T10:00:00.000Z'),
+        isCompleted: true,
+        completedAt: clock.now(),
+        version: 2,
+      }),
+      boardArchivedAt: null,
+    });
+    const updEvt = repo.seedEvent({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ASSIGNEE_ID,
+      type: 'task.updated',
+      changes: {
+        start_at: { from: startFrom, to: startTo },
+        is_completed: { from: false, to: true },
+      },
+      revertsEventId: null,
+      forced: false,
+      createdAt: clock.now(),
+    });
+
+    const reverted = await service.revertTaskEvent(ASSIGNEE_UPDATE, TASK_ID, updEvt.id, { force: false });
+    expect(reverted.task.startAt).toBe(startFrom);
+    expect(reverted.task.isCompleted).toBe(false);
+    expect(reverted.task.completedAt).toBeNull();
+    expect(repo.events.get(reverted.eventId)?.changes).toMatchObject({
+      start_at: { from: startTo, to: startFrom },
+      is_completed: { from: true, to: false },
+    });
+
+    // Reverting again detects start_at & is_completed conflicts when state moved away
+    await expect(
+      service.revertTaskEvent(ASSIGNEE_UPDATE, TASK_ID, updEvt.id, { force: false }),
+    ).rejects.toMatchObject({
+      httpStatus: 409,
+      code: 'REVERT_CONFLICT',
+      details: { conflictingFields: ['start_at', 'is_completed'] },
+    });
+
+    // Reverting start_at after a shortened dueAt fails cleanly with 400 INVALID_DATE_RANGE
+    repo.tasks.set(TASK_ID, {
+      task: makeTask({
+        startAt: new Date('2026-11-25T00:00:00.000Z'),
+        dueAt: new Date('2026-11-27T00:00:00.000Z'),
+        version: 4,
+      }),
+      boardArchivedAt: null,
+    });
+    const rangeConflictEvt = repo.seedEvent({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ASSIGNEE_ID,
+      type: 'task.updated',
+      changes: {
+        start_at: { from: '2026-11-29T00:00:00.000Z', to: '2026-11-25T00:00:00.000Z' },
+      },
+      revertsEventId: null,
+      forced: false,
+      createdAt: clock.now(),
+    });
+    await expect(
+      service.revertTaskEvent(ASSIGNEE_UPDATE, TASK_ID, rangeConflictEvt.id, { force: false }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_DATE_RANGE' });
   });
 });

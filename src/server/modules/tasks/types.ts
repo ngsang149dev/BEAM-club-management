@@ -1,4 +1,10 @@
-import type { TaskDueStatus, TaskPriority, TaskSortBy, TaskSortOrder } from '@/lib/tasks';
+import type {
+  TaskDeadlineStatus,
+  TaskDueStatus,
+  TaskPriority,
+  TaskSortBy,
+  TaskSortOrder,
+} from '@/lib/tasks';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { TransactionContext } from '@/server/shared/transaction';
 import type { MyTasksCursor, TaskListCursor, TaskUpdateChanges } from './policy';
@@ -17,21 +23,39 @@ export interface TaskMemberSummaryRecord {
   readonly departments: readonly TaskDepartmentSummaryRecord[];
 }
 
+export interface TaskAssigneeRecord extends TaskMemberSummaryRecord {
+  readonly acceptedAt: Date | null;
+}
+
+export interface TaskDeliverableRecord {
+  readonly id: string;
+  readonly taskId: string;
+  readonly title: string;
+  readonly url: string;
+  readonly submittedBy: TaskMemberSummaryRecord;
+  readonly createdAt: Date;
+}
+
 export interface TaskRecord {
   readonly id: string;
   readonly boardId: string;
   readonly columnId: string | null;
   readonly title: string;
   readonly description: string | null;
+  readonly startAt: Date | null;
   readonly dueAt: Date | null;
+  readonly isCompleted: boolean;
+  readonly completedAt: Date | null;
   readonly priority: TaskPriority;
   readonly position: string;
   readonly isHidden: boolean;
   readonly version: number;
   readonly deletedAt: Date | null;
   readonly createdBy: string;
-  readonly assignees: readonly TaskMemberSummaryRecord[];
+  readonly assignees: readonly TaskAssigneeRecord[];
   readonly assignedDepartments: readonly TaskDepartmentSummaryRecord[];
+  readonly deliverables: readonly TaskDeliverableRecord[];
+  readonly deliverableCount: number;
   readonly creator: TaskMemberSummaryRecord;
   readonly commentCount: number;
   readonly createdAt: Date;
@@ -45,6 +69,9 @@ export interface ListVisibleTasksParams {
   readonly departmentId?: string;
   readonly priority?: TaskPriority;
   readonly dueStatus?: TaskDueStatus;
+  readonly deadlineStatus?: TaskDeadlineStatus;
+  readonly from?: Date;
+  readonly to?: Date;
   readonly q?: string;
   readonly sortBy: TaskSortBy;
   readonly sortOrder: TaskSortOrder;
@@ -64,10 +91,11 @@ export interface ListMyTasksParams {
 }
 
 export interface CreateTaskRepoParams {
-  readonly boardId: string;
-  readonly columnId: string;
+  readonly boardId?: string;
+  readonly columnId?: string;
   readonly title: string;
   readonly description?: string | null;
+  readonly startAt?: Date | null;
   readonly dueAt?: Date | null;
   readonly priority: TaskPriority;
   readonly assigneeIds: readonly string[];
@@ -84,7 +112,9 @@ export interface UpdateTaskRepoParams {
   readonly version: number;
   readonly title?: string;
   readonly description?: string | null;
+  readonly startAt?: Date | null;
   readonly dueAt?: Date | null;
+  readonly isCompleted?: boolean;
   readonly priority?: TaskPriority;
   readonly changes: TaskUpdateChanges;
   readonly now: Date;
@@ -102,6 +132,44 @@ export interface ReplaceAssigneesRepoParams {
   readonly now: Date;
 }
 
+export interface SetTaskAcceptanceRepoParams {
+  readonly id: string;
+  readonly boardId: string;
+  readonly actorId: string;
+  readonly currentAccepted: boolean;
+  readonly nextAccepted: boolean;
+  readonly now: Date;
+}
+
+export interface AddTaskDeliverableRepoParams {
+  readonly taskId: string;
+  readonly boardId: string;
+  readonly actorId: string;
+  readonly title: string;
+  readonly url: string;
+  readonly now: Date;
+}
+
+export interface RemoveTaskDeliverableRepoParams {
+  readonly taskId: string;
+  readonly boardId: string;
+  readonly actorId: string;
+  readonly deliverableId: string;
+  readonly now: Date;
+}
+
+export interface AddTaskDeliverableResult {
+  readonly deliverable: TaskDeliverableRecord;
+  readonly task: TaskRecord;
+  readonly eventId: string;
+}
+
+export interface RemoveTaskDeliverableResult {
+  readonly id: string;
+  readonly task: TaskRecord;
+  readonly eventId: string;
+}
+
 export interface TaskAssignmentNotifier {
   notifyDepartmentAssignment(input: {
     readonly taskId: string;
@@ -111,6 +179,21 @@ export interface TaskAssignmentNotifier {
     readonly assigneeIds?: readonly string[];
     readonly notifyInApp?: boolean;
     readonly notifyEmail?: boolean;
+    readonly isHiddenTask: boolean;
+    readonly now: Date;
+  }): Promise<void>;
+  notifyTaskAccepted(input: {
+    readonly taskId: string;
+    readonly boardId: string;
+    readonly actorId: string;
+    readonly isHiddenTask: boolean;
+    readonly now: Date;
+  }): Promise<void>;
+  notifyDeliverableSubmitted(input: {
+    readonly taskId: string;
+    readonly boardId: string;
+    readonly actorId: string;
+    readonly deliverableId: string;
     readonly isHiddenTask: boolean;
     readonly now: Date;
   }): Promise<void>;
@@ -195,4 +278,16 @@ export interface TasksRepository {
     input: UpdateTaskHiddenRepoParams,
     tx: TransactionContext,
   ): Promise<TaskMutationResult>;
+  setAcceptanceWithEvent(
+    input: SetTaskAcceptanceRepoParams,
+    tx: TransactionContext,
+  ): Promise<TaskMutationResult>;
+  addDeliverableWithEvent(
+    input: AddTaskDeliverableRepoParams,
+    tx: TransactionContext,
+  ): Promise<AddTaskDeliverableResult>;
+  removeDeliverableWithEvent(
+    input: RemoveTaskDeliverableRepoParams,
+    tx: TransactionContext,
+  ): Promise<RemoveTaskDeliverableResult>;
 }

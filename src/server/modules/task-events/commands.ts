@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { badRequest, conflict, forbidden } from '@/lib/errors';
 import { uuidSchema } from '@/lib/members';
 import { isRevertableTaskEventType, type RevertableTaskEventType } from '@/lib/task-events';
-import { dedupeSortedUuids, taskPrioritySchema } from '@/lib/tasks';
+import { dedupeSortedUuids } from '@/lib/tasks';
 import {
   assertCanEditTask,
   canToggleTaskHidden,
@@ -15,10 +15,13 @@ import type {
   RevertPersistencePlan,
   RevertResolvedTargets,
   RevertTargetIntent,
-  RevertTaskPatch,
   TaskEventContext,
-  TaskUpdatedChangesPayload,
 } from './types';
+import {
+  buildUpdatedPlan,
+  detectUpdatedConflicts,
+  updatedEventChangesSchema,
+} from './updated-command';
 
 const isoSchema = z.iso.datetime({ offset: true });
 const numSchema = z.union([
@@ -26,12 +29,6 @@ const numSchema = z.union([
   z.string().regex(/^-?\d+(\.\d+)?$/).transform(Number),
 ]);
 const uuidListDiff = z.object({ from: z.array(uuidSchema), to: z.array(uuidSchema) });
-const updatedSchema = z.object({
-  title: z.object({ from: z.string(), to: z.string() }).optional(),
-  description: z.object({ from: z.string().nullable(), to: z.string().nullable() }).optional(),
-  due_at: z.object({ from: isoSchema.nullable(), to: isoSchema.nullable() }).optional(),
-  priority: z.object({ from: taskPrioritySchema, to: taskPrioritySchema }).optional(),
-});
 const movedSchema = z.object({
   column_id: z.object({ from: uuidSchema.nullable(), to: uuidSchema }),
   position: z.object({ from: numSchema, to: numSchema }),
@@ -74,48 +71,10 @@ function sameTimestampMs(actual: Date, expectedIso: string): boolean {
   return Math.abs(actual.getTime() - new Date(expectedIso).getTime()) <= 1;
 }
 
-function sameNullableTimestamp(actual: Date | null, expectedIso: string | null): boolean {
-  if (actual === null && expectedIso === null) return true;
-  if (actual === null || expectedIso === null) return false;
-  return sameTimestampMs(actual, expectedIso);
-}
-
 function assertNotSoftDeleted(context: TaskEventContext): void {
   if (context.task.deletedAt !== null) {
     throw conflict('errors.taskDeletedConflict', {}, 'TASK_DELETED');
   }
-}
-
-function detectUpdatedConflicts(task: TaskRecord, parsed: TaskUpdatedChangesPayload): string[] {
-  const conflicts: string[] = [];
-  if (parsed.title && task.title !== parsed.title.to) conflicts.push('title');
-  if (parsed.description && task.description !== parsed.description.to) conflicts.push('description');
-  if (parsed.due_at && !sameNullableTimestamp(task.dueAt, parsed.due_at.to)) conflicts.push('due_at');
-  if (parsed.priority && task.priority !== parsed.priority.to) conflicts.push('priority');
-  return conflicts;
-}
-
-function buildUpdatedPlan(task: TaskRecord, parsed: TaskUpdatedChangesPayload): RevertPersistencePlan {
-  const patch: { title?: string; description?: string | null; dueAt?: Date | null; priority?: 1 | 2 | 3 | 4 } = {};
-  const changes: Record<string, unknown> = {};
-  if (parsed.title) {
-    patch.title = parsed.title.from;
-    changes.title = { from: task.title, to: parsed.title.from };
-  }
-  if (parsed.description) {
-    patch.description = parsed.description.from;
-    changes.description = { from: task.description, to: parsed.description.from };
-  }
-  if (parsed.due_at) {
-    const nextDue = parsed.due_at.from === null ? null : new Date(parsed.due_at.from);
-    patch.dueAt = nextDue;
-    changes.due_at = { from: task.dueAt ? task.dueAt.toISOString() : null, to: nextDue ? nextDue.toISOString() : null };
-  }
-  if (parsed.priority) {
-    patch.priority = parsed.priority.from;
-    changes.priority = { from: task.priority, to: parsed.priority.from };
-  }
-  return { taskPatch: patch as RevertTaskPatch, compensatingType: 'task.updated', compensatingChanges: changes };
 }
 
 function detectAssigneesConflicts(task: TaskRecord, parsed: z.infer<typeof assigneesSchema>): string[] {
@@ -156,9 +115,10 @@ const taskUpdatedCommand: TaskEventCommand = {
   type: 'task.updated',
   authorize: (actor, task) => assertCanEditTask(actor, toTaskVisibilitySubject(task)),
   checkState: assertNotSoftDeleted,
-  detectConflicts: (task, changes) => detectUpdatedConflicts(task, parseChanges(updatedSchema, changes)),
-  invert: (_task, changes) => ({ updatedChanges: parseChanges(updatedSchema, changes) }),
-  apply: ({ task, intent }) => buildUpdatedPlan(task, intent.updatedChanges ?? {}),
+  detectConflicts: (task, changes) =>
+    detectUpdatedConflicts(task, parseChanges(updatedEventChangesSchema, changes)),
+  invert: (_task, changes) => ({ updatedChanges: parseChanges(updatedEventChangesSchema, changes) }),
+  apply: ({ task, intent, now }) => buildUpdatedPlan(task, intent.updatedChanges ?? {}, now),
 };
 
 const taskMovedCommand: TaskEventCommand = {

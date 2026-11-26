@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
 import { usePermissions } from '@/features/shared/permissions/can';
+import { hasTaskVersionChanged } from '../drawer-helpers';
 import { useUndoTaskActionToast } from '../hooks/useTaskEvents';
 import { useUpdateTaskHiddenMutation, type TaskDto } from '../hooks/useTasks';
 import { TaskErrorBanner } from './TaskFormFields';
@@ -64,24 +66,27 @@ function HiddenToggleButton({
   );
 }
 
-export function TaskHiddenSection({
-  task,
-  onReload,
-}: {
-  readonly task: TaskDto;
-  readonly onReload: () => void;
-}) {
+function useTaskHiddenToggleController(task: TaskDto) {
   const tTasks = useTranslations('tasks');
   const { isAdmin } = usePermissions();
   const meQuery = useMeQuery(true);
   const hiddenMutation = useUpdateTaskHiddenMutation(task.boardId);
+  const { isError: isHiddenError, reset: resetHiddenMutation } = hiddenMutation;
+  const syncedRef = useRef({ id: task.id, version: task.version });
   const showUndoToast = useUndoTaskActionToast();
 
-  if (!canToggleTaskHidden({ isAdmin, creatorId: task.creator.id, currentUserId: meQuery.data?.profile.id })) {
-    return null;
-  }
+  useEffect(() => {
+    if (!hasTaskVersionChanged(syncedRef.current, task.id, task.version)) return;
+    syncedRef.current = { id: task.id, version: task.version };
+    if (isHiddenError) resetHiddenMutation();
+  }, [task.id, task.version, isHiddenError, resetHiddenMutation]);
 
-  const isUnassigned = task.assignees.length === 0 && task.assignedDepartments.length === 0;
+  const canToggle = canToggleTaskHidden({
+    isAdmin,
+    creatorId: task.creator.id,
+    currentUserId: meQuery.data?.profile.id,
+  });
+
   const handleToggle = () => {
     const nextHidden = !task.isHidden;
     hiddenMutation.mutate(
@@ -98,6 +103,25 @@ export function TaskHiddenSection({
     );
   };
 
+  return { canToggle, hiddenMutation, handleToggle };
+}
+
+export function TaskHiddenSection({
+  task,
+  onReload,
+}: {
+  readonly task: TaskDto;
+  readonly onReload: () => void;
+}) {
+  const tTasks = useTranslations('tasks');
+  const { canToggle, hiddenMutation, handleToggle } = useTaskHiddenToggleController(task);
+
+  if (!canToggle) {
+    return null;
+  }
+
+  const isUnassigned = task.assignees.length === 0 && task.assignedDepartments.length === 0;
+
   return (
     <section className="task-drawer-section task-hidden-section">
       <div className="task-hidden-head">
@@ -106,7 +130,13 @@ export function TaskHiddenSection({
           {task.isHidden ? tTasks('hiddenStatusHidden') : tTasks('hiddenStatusPublic')}
         </span>
       </div>
-      <TaskErrorBanner error={hiddenMutation.error} onReloadConflict={onReload} />
+      <TaskErrorBanner
+        error={hiddenMutation.error}
+        onReloadConflict={() => {
+          hiddenMutation.reset();
+          onReload();
+        }}
+      />
       <p className="ui-field-hint">
         {task.isHidden ? tTasks('hiddenStatusHiddenDesc') : tTasks('hiddenStatusPublicDesc')}
       </p>

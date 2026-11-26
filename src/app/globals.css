@@ -2361,6 +2361,20 @@ svg {
   gap: 6px;
 }
 
+.dept-lead-chip {
+  background: var(--paper-2);
+}
+
+.dept-lead-chip.is-unassigned {
+  background: var(--surface);
+  color: var(--ink-3);
+  border-style: dashed;
+}
+
+.dept-lead-chip.is-inactive {
+  background: var(--warn-bg);
+}
+
 .ui-modal-backdrop,
 .ui-drawer-backdrop {
   position: fixed;

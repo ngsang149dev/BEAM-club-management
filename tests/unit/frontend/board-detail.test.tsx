@@ -112,18 +112,22 @@ const COL_DONE = { id: 'c-2', boardId: 'b-1', name: 'Done', orderIndex: 1, taskC
 
 const TASK_URGENT_HIDDEN: TaskDto = {
   id: 't-1', boardId: 'b-1', columnId: 'c-1', title: 'Chuẩn bị slide giới thiệu',
-  description: 'Chi tiết slide', dueAt: '2025-01-10T05:00:00Z', priority: 4, position: 1,
+  description: 'Chi tiết slide', startAt: null, dueAt: '2025-01-10T05:00:00Z', isCompleted: false, completedAt: null,
+  priority: 4, position: 1,
   isHidden: true, version: 3, deletedAt: null,
-  assignees: [{ id: 'u-inactive', fullName: 'Vu Quoc F', isActive: false, leftAt: '2026-10-01T00:00:00Z', departments: [] }],
+  assignees: [{ id: 'u-inactive', fullName: 'Vu Quoc F', isActive: false, leftAt: '2026-10-01T00:00:00Z', departments: [], acceptedAt: null }],
   assignedDepartments: [],
+  deliverables: [],
+  deliverableCount: 0,
   creator: { id: 'u-creator', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
   commentCount: 2, createdAt: '2026-11-20T02:00:00Z', updatedAt: '2026-11-20T02:00:00Z',
 };
 
 const TASK_LOW: TaskDto = {
   id: 't-2', boardId: 'b-1', columnId: 'c-1', title: 'Mượn micro', description: null,
-  dueAt: null, priority: 1, position: 2, isHidden: false, version: 1, deletedAt: null,
-  assignees: [], assignedDepartments: [], creator: { id: 'u-creator', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
+  startAt: null, dueAt: null, isCompleted: false, completedAt: null, priority: 1, position: 2, isHidden: false, version: 1, deletedAt: null,
+  assignees: [], assignedDepartments: [], deliverables: [], deliverableCount: 0,
+  creator: { id: 'u-creator', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
   commentCount: 0, createdAt: '2026-11-20T03:00:00Z', updatedAt: '2026-11-20T03:00:00Z',
 };
 
@@ -163,8 +167,8 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       isError: false,
       data: {
         items: [
-          { id: 'd-1', name: 'Sự kiện', memberCount: 4, boardCount: 1, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
-          { id: 'd-2', name: 'Truyền thông', memberCount: 3, boardCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+          { id: 'd-1', name: 'Sự kiện', lead: null, memberCount: 4, boardCount: 1, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+          { id: 'd-2', name: 'Truyền thông', lead: null, memberCount: 3, boardCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
         ],
       },
     });

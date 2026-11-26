@@ -48,7 +48,10 @@ const BASE_TASK: TaskDto = {
   columnId: 'c-1',
   title: 'Chuẩn bị tài liệu nội bộ',
   description: null,
+  startAt: null,
   dueAt: null,
+  isCompleted: false,
+  completedAt: null,
   priority: 2,
   position: 1,
   isHidden: false,
@@ -56,6 +59,8 @@ const BASE_TASK: TaskDto = {
   deletedAt: null,
   assignees: [],
   assignedDepartments: [],
+  deliverables: [],
+  deliverableCount: 0,
   creator: { id: 'u-creator', fullName: 'Lê Văn C', isActive: true, leftAt: null, avatarUrl: null, departments: [] },
   commentCount: 0,
   createdAt: '2026-11-20T02:00:00Z',
@@ -100,7 +105,7 @@ describe('TaskHiddenSection (E7-02)', () => {
 
     const assignedTask: TaskDto = {
       ...BASE_TASK,
-      assignees: [{ id: 'u-assignee', fullName: 'Nguyễn Văn A', isActive: true, leftAt: null, avatarUrl: null, departments: [] }],
+      assignees: [{ id: 'u-assignee', fullName: 'Nguyễn Văn A', isActive: true, leftAt: null, avatarUrl: null, departments: [], acceptedAt: null }],
     };
 
     authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-assignee', departments: [] } } });

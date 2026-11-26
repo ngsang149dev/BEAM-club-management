@@ -4,6 +4,7 @@ export interface DepartmentErrorDescriptor {
   key:
     | 'departmentInUse'
     | 'departmentNameExists'
+    | 'invalidDepartmentLead'
     | 'validation'
     | 'unauthorized'
     | 'forbidden'
@@ -24,6 +25,7 @@ function readCountDetail(details: Record<string, unknown>, field: string): numbe
 
 const CODE_MAP: Record<string, Exclude<DepartmentErrorDescriptor['key'], 'departmentInUse'>> = {
   DEPARTMENT_NAME_EXISTS: 'departmentNameExists',
+  INVALID_DEPARTMENT_LEAD: 'invalidDepartmentLead',
   VALIDATION_ERROR: 'validation',
   UNAUTHORIZED: 'unauthorized',
   SESSION_EXPIRED: 'unauthorized',

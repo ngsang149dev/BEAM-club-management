@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '@/lib/errors';
 import {
+  type AddTaskDeliverableResult,
   computeTaskMovePlan,
   MIN_POSITION_GAP,
   type MoveTaskRepoParams,
   type OrderedMoveSibling,
   POSITION_STEP,
+  type RemoveTaskDeliverableResult,
   type TaskMutationResult,
   type TaskOptionalEventMutationResult,
   type TaskRecord,
@@ -63,6 +65,15 @@ class MoveFakeTasksRepository implements TasksRepository {
     throw new Error('unused');
   }
   async updateTaskHiddenWithEvent(): Promise<TaskMutationResult> {
+    throw new Error('unused');
+  }
+  async setAcceptanceWithEvent(): Promise<TaskMutationResult> {
+    throw new Error('unused');
+  }
+  async addDeliverableWithEvent(): Promise<AddTaskDeliverableResult> {
+    throw new Error('unused');
+  }
+  async removeDeliverableWithEvent(): Promise<RemoveTaskDeliverableResult> {
     throw new Error('unused');
   }
 
@@ -280,14 +291,18 @@ describe('TasksService.moveTask authorization, optimistic lock & noop', () => {
     const now = clock.now();
     repo.records.set(TASK_TARGET, {
       id: TASK_TARGET, boardId: BOARD_ID, columnId: COL_A, title: 'Visible', description: null,
-      dueAt: null, priority: 2, position: '1000', isHidden: false, version: 1, deletedAt: null,
-      createdBy: CREATOR_ID, assignees: [makeUser(ASSIGNEE_ID, 'Assignee')], assignedDepartments: [], creator: makeUser(CREATOR_ID, 'Creator'),
+      startAt: null, dueAt: null, isCompleted: false, completedAt: null,
+      priority: 2, position: '1000', isHidden: false, version: 1, deletedAt: null,
+      createdBy: CREATOR_ID, assignees: [{ ...makeUser(ASSIGNEE_ID, 'Assignee'), acceptedAt: null }], assignedDepartments: [],
+      deliverables: [], deliverableCount: 0, creator: makeUser(CREATOR_ID, 'Creator'),
       commentCount: 0, createdAt: now, updatedAt: now,
     });
     repo.records.set(TASK_HIDDEN, {
       id: TASK_HIDDEN, boardId: BOARD_ID, columnId: COL_A, title: 'Hidden', description: null,
-      dueAt: null, priority: 2, position: '2000', isHidden: true, version: 1, deletedAt: null,
-      createdBy: CREATOR_ID, assignees: [makeUser(ASSIGNEE_ID, 'Assignee')], assignedDepartments: [], creator: makeUser(CREATOR_ID, 'Creator'),
+      startAt: null, dueAt: null, isCompleted: false, completedAt: null,
+      priority: 2, position: '2000', isHidden: true, version: 1, deletedAt: null,
+      createdBy: CREATOR_ID, assignees: [{ ...makeUser(ASSIGNEE_ID, 'Assignee'), acceptedAt: null }], assignedDepartments: [],
+      deliverables: [], deliverableCount: 0, creator: makeUser(CREATOR_ID, 'Creator'),
       commentCount: 0, createdAt: now, updatedAt: now,
     });
     return { service: new TasksService({ tasksRepo: repo, transactionRunner: MOCK_TX_RUNNER, clock, logger }) };

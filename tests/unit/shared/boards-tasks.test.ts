@@ -13,14 +13,18 @@ import {
   NOTIFICATION_TYPES,
 } from '@/lib/notifications';
 import {
+  createTaskDeliverableRequestSchema,
   createTaskRequestSchema,
   dedupeSortedUuids,
+  deliverableUrlSchema,
   listMyTasksQuerySchema,
   listTasksQuerySchema,
   moveTaskRequestSchema,
   replaceTaskAssigneesRequestSchema,
   resolveTaskNotificationChannels,
+  TASK_DEADLINE_STATUSES,
   TASK_PRIORITIES,
+  updateTaskAcceptanceRequestSchema,
   updateTaskRequestSchema,
 } from '@/lib/tasks';
 
@@ -219,7 +223,13 @@ describe('boards & tasks shared contracts', () => {
       notifyEmail: true,
     });
 
-    expect(NOTIFICATION_TYPES).toEqual(['task.department_assigned', 'task.assigned']);
+    expect(NOTIFICATION_TYPES).toEqual([
+      'task.department_assigned',
+      'task.assigned',
+      'task.accepted',
+      'task.deliverable_submitted',
+    ]);
+    expect(TASK_DEADLINE_STATUSES).toEqual(['overdue', 'urgent', 'soon', 'safe', 'done']);
     expect(
       listNotificationsQuerySchema.parse({ unreadOnly: 'true', limit: '10' }),
     ).toEqual({ unreadOnly: true, limit: 10 });
@@ -233,20 +243,57 @@ describe('boards & tasks shared contracts', () => {
     const tasksQuery = listTasksQuerySchema.parse({
       priority: '4',
       dueStatus: 'overdue',
+      deadlineStatus: 'urgent',
+      from: '2026-11-01T00:00:00.000Z',
+      to: '2026-11-30T23:59:59.000Z',
       q: '  poster  ',
-      limit: '15',
+      limit: '200',
     });
     expect(tasksQuery).toEqual({
       priority: 4,
       dueStatus: 'overdue',
+      deadlineStatus: 'urgent',
+      from: new Date('2026-11-01T00:00:00.000Z'),
+      to: new Date('2026-11-30T23:59:59.000Z'),
       q: 'poster',
       sortBy: 'position',
       sortOrder: 'asc',
-      limit: 15,
+      limit: 200,
     });
+    expect(listTasksQuerySchema.safeParse({ limit: '201' }).success).toBe(false);
+    expect(
+      listTasksQuerySchema.safeParse({
+        from: '2026-12-02T00:00:00.000Z',
+        to: '2026-12-01T00:00:00.000Z',
+      }).success,
+    ).toBe(false);
     expect(
       listTasksQuerySchema.safeParse({ priority: '0' }).success,
     ).toBe(false);
+
+    // CR-09 task create/update/acceptance/deliverable contracts
+    expect(createTaskRequestSchema.safeParse({ title: 'Boardless Task' }).success).toBe(true);
+    expect(
+      createTaskRequestSchema.safeParse({ title: 'Bad Pair', boardId: UUID_1 }).success,
+    ).toBe(false);
+    expect(
+      createTaskRequestSchema.safeParse({
+        title: 'Bad Dates',
+        startAt: '2026-12-05T00:00:00.000Z',
+        dueAt: '2026-12-01T00:00:00.000Z',
+      }).success,
+    ).toBe(false);
+    expect(updateTaskAcceptanceRequestSchema.parse({ accepted: true })).toEqual({ accepted: true });
+    expect(deliverableUrlSchema.safeParse('https://drive.google.com/file/1').success).toBe(true);
+    expect(deliverableUrlSchema.safeParse('javascript:alert(1)').success).toBe(false);
+    expect(deliverableUrlSchema.safeParse('ftp://files.local/a.zip').success).toBe(false);
+    expect(deliverableUrlSchema.safeParse('https://bad url.com').success).toBe(false);
+    expect(
+      createTaskDeliverableRequestSchema.parse({
+        title: '  Slide deck  ',
+        url: ' https://docs.google.com/presentation/d/1 ',
+      }),
+    ).toEqual({ title: 'Slide deck', url: 'https://docs.google.com/presentation/d/1' });
 
     const myTasksQuery = listMyTasksQuerySchema.parse({
       includeDone: 'true',

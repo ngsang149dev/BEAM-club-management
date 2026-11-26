@@ -562,4 +562,49 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(enHtml).toContain('value="member.bootstrap_admin"');
     expect(enHtml).toContain('Bootstrapped system admin');
   });
+
+  it('formats department leadUserId metadata in preview and detail pane without leaking raw UUID or PII', () => {
+    const leadUuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    expect(formatAuditDetailPreview({ departmentId: 'd-1', name: 'Truyền thông', leadUserId: leadUuid })).toBe(
+      'Truyền thông · lead=assigned'
+    );
+    expect(formatAuditDetailPreview({ departmentId: 'd-1', name: 'Truyền thông', leadUserId: null })).toBe(
+      'Truyền thông · lead=cleared'
+    );
+    expect(formatAuditDetailPreview({ leadUserId: leadUuid })).toBe('lead=assigned');
+
+    const deptLeadAssigned: AuditLogDto = {
+      ...ENTRY_PERM,
+      targetUser: null,
+      action: 'department.updated',
+      detail: { departmentId: 'd-1', name: 'Truyền thông', leadUserId: leadUuid },
+    };
+    const deptLeadCleared: AuditLogDto = {
+      ...ENTRY_PERM,
+      id: '90000000-0000-4000-8000-000000000088',
+      targetUser: null,
+      action: 'department.updated',
+      detail: { departmentId: 'd-1', name: 'Truyền thông', leadUserId: null },
+    };
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [deptLeadAssigned, deptLeadCleared], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const viHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(viHtml).toContain('Cập nhật ban');
+    expect(viHtml).toContain('Đã gán Trưởng ban');
+    expect(viHtml).not.toContain(leadUuid);
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
+      fetchNextPage: vi.fn(), refetch: vi.fn(),
+      data: { pages: [{ items: [deptLeadCleared], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const enHtml = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(enHtml).toContain('Updated department');
+    expect(enHtml).toContain('Unassigned');
+    expect(enHtml).not.toContain(leadUuid);
+  });
 });

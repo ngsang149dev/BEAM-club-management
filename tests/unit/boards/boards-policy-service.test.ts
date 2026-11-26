@@ -244,7 +244,10 @@ describe('boards policy & BoardsService', () => {
       columnId: COL_1,
       title: 'Secret',
       description: null,
+      startAt: null,
       dueAt: null,
+      isCompleted: false,
+      completedAt: null,
       priority: 3,
       position: '1000',
       isHidden: true,
@@ -253,6 +256,8 @@ describe('boards policy & BoardsService', () => {
       createdBy: ADMIN_ID,
       assignees: [],
       assignedDepartments: [],
+      deliverables: [],
+      deliverableCount: 0,
       creator: creatorSummary,
       commentCount: 0,
       createdAt: now,
@@ -318,7 +323,10 @@ describe('boards policy & BoardsService', () => {
       columnId: COL_1,
       title: 'Task',
       description: null,
+      startAt: null,
       dueAt: new Date('2026-11-23T00:00:00.000Z'),
+      isCompleted: false,
+      completedAt: null,
       priority: 2,
       position: '1000',
       isHidden: false,
@@ -327,6 +335,8 @@ describe('boards policy & BoardsService', () => {
       createdBy: ADMIN_ID,
       assignees: [],
       assignedDepartments: [],
+      deliverables: [],
+      deliverableCount: 0,
       creator: creatorSummary,
       commentCount: 0,
       createdAt: now,
@@ -341,6 +351,7 @@ describe('boards policy & BoardsService', () => {
       makeTask({ id: '60000000-0000-4000-8000-000000000014', columnId: COL_1, dueAt: null }), // no due
       makeTask({ id: '60000000-0000-4000-8000-000000000015', columnId: colDoneByName }), // overdue but in ' done ' col
       makeTask({ id: '60000000-0000-4000-8000-000000000016', columnId: colFinalCustom }), // overdue but in final orderIndex col
+      makeTask({ id: '60000000-0000-4000-8000-000000000017', columnId: COL_1, isCompleted: true }), // overdue dueAt but isCompleted=true
     ];
 
     const { boardsRepo, service } = createHarness(tasks);
@@ -357,11 +368,11 @@ describe('boards policy & BoardsService', () => {
     expect(listRes.items[0]).toMatchObject({ visibleTaskCount: 0, overdueTaskCount: 0 });
 
     const detailMember = await service.getBoardDetail(BASIC_MEMBER, BOARD_1);
-    expect(detailMember.board.visibleTaskCount).toBe(5);
+    expect(detailMember.board.visibleTaskCount).toBe(6);
     expect(detailMember.board.overdueTaskCount).toBe(1);
 
     const detailAdmin = await service.getBoardDetail(ADMIN, BOARD_1);
-    expect(detailAdmin.board.visibleTaskCount).toBe(6);
+    expect(detailAdmin.board.visibleTaskCount).toBe(7);
     expect(detailAdmin.board.overdueTaskCount).toBe(2);
 
     boardsRepo.statsByBoardId.set(BOARD_1, { visibleTaskCount: 5, overdueTaskCount: 1 });

@@ -17,6 +17,7 @@ import type {
 
 class InMemoryDepartmentsRepository implements DepartmentsRepository {
   readonly rows = new Map<string, DepartmentRecord>();
+  readonly leadCandidates = new Map<string, NonNullable<DepartmentRecord['lead']>>();
   private seq = 0;
 
   async listWithCounts(): Promise<DepartmentRecord[]> {
@@ -33,8 +34,13 @@ class InMemoryDepartmentsRepository implements DepartmentsRepository {
     return this.rows.get(id) ?? null;
   }
 
+  async isActiveLeadCandidate(leadUserId: string): Promise<boolean> {
+    return this.leadCandidates.has(leadUserId);
+  }
+
   async create(input: {
     readonly name: string;
+    readonly leadUserId?: string | null;
     readonly now: Date;
   }): Promise<DepartmentRecord> {
     for (const existing of this.rows.values()) {
@@ -47,9 +53,11 @@ class InMemoryDepartmentsRepository implements DepartmentsRepository {
       }
     }
     this.seq += 1;
+    const lead = input.leadUserId ? (this.leadCandidates.get(input.leadUserId) ?? null) : null;
     const created: DepartmentRecord = {
       id: `dept-${this.seq}`,
       name: input.name,
+      lead,
       memberCount: 0,
       boardCount: 0,
       createdAt: input.now,
@@ -62,6 +70,7 @@ class InMemoryDepartmentsRepository implements DepartmentsRepository {
   async rename(input: {
     readonly id: string;
     readonly name: string;
+    readonly leadUserId?: string | null;
     readonly now: Date;
   }): Promise<DepartmentRecord | null> {
     const existing = this.rows.get(input.id);
@@ -78,9 +87,16 @@ class InMemoryDepartmentsRepository implements DepartmentsRepository {
         );
       }
     }
+    const lead =
+      input.leadUserId === undefined
+        ? existing.lead
+        : input.leadUserId === null
+          ? null
+          : (this.leadCandidates.get(input.leadUserId) ?? null);
     const updated: DepartmentRecord = {
       ...existing,
       name: input.name,
+      lead,
       updatedAt: input.now,
     };
     this.rows.set(input.id, updated);
@@ -167,6 +183,7 @@ describe('DepartmentsService', () => {
     repo.rows.set('d1', {
       id: 'd1',
       name: 'Media',
+      lead: null,
       memberCount: 2,
       boardCount: 1,
       createdAt: new Date('2026-11-24T00:00:00.000Z'),
@@ -178,6 +195,7 @@ describe('DepartmentsService', () => {
     expect(list.items[0]).toMatchObject({
       id: 'd1',
       name: 'Media',
+      lead: null,
       memberCount: 2,
       boardCount: 1,
     });
@@ -232,6 +250,7 @@ describe('DepartmentsService', () => {
     repo.rows.set('d-busy', {
       id: 'd-busy',
       name: 'Events',
+      lead: null,
       memberCount: 1,
       boardCount: 0,
       createdAt: new Date('2026-11-24T00:00:00.000Z'),
@@ -249,5 +268,71 @@ describe('DepartmentsService', () => {
     await expect(
       service.deleteDepartment(MANAGER_ACTOR, 'd-busy'),
     ).rejects.toMatchObject({ httpStatus: 409, code: 'DEPARTMENT_IN_USE' });
+  });
+
+  it('validates leadUserId against active profiles, preserves on omitted PATCH, clears on null, and omits PII', async () => {
+    const { repo, auditWriter, service } = createHarness();
+    const LEAD_ID = '10000000-0000-4000-8000-000000000099';
+    repo.leadCandidates.set(LEAD_ID, {
+      id: LEAD_ID,
+      fullName: 'Lead User',
+      avatarUpdatedAt: null,
+      isActive: true,
+      leftAt: null,
+      departments: [],
+    });
+
+    await expect(
+      service.createDepartment(MANAGER_ACTOR, {
+        name: 'Media',
+        leadUserId: '10000000-0000-4000-8000-000000000888',
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_DEPARTMENT_LEAD' });
+
+    const created = await service.createDepartment(MANAGER_ACTOR, {
+      name: 'Media',
+      leadUserId: LEAD_ID,
+    });
+    expect(created.department.lead).toEqual({
+      id: LEAD_ID,
+      fullName: 'Lead User',
+      avatarUrl: null,
+      isActive: true,
+      leftAt: null,
+      departments: [],
+    });
+    expect(created.department.lead).not.toHaveProperty('studentId');
+    expect(created.department.lead).not.toHaveProperty('email');
+    expect(auditWriter.entries[0]?.detail).toEqual({
+      departmentId: created.department.id,
+      name: 'Media',
+      leadUserId: LEAD_ID,
+    });
+
+    // Omitting leadUserId preserves existing lead
+    const renamed = await service.renameDepartment(MANAGER_ACTOR, created.department.id, {
+      name: 'Media & PR',
+    });
+    expect(renamed.department.lead?.id).toBe(LEAD_ID);
+
+    // Passing invalid leadUserId on update rejects cleanly
+    await expect(
+      service.renameDepartment(MANAGER_ACTOR, created.department.id, {
+        name: 'Media & PR',
+        leadUserId: '10000000-0000-4000-8000-000000000888',
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_DEPARTMENT_LEAD' });
+
+    // Passing leadUserId: null clears the lead
+    const cleared = await service.renameDepartment(MANAGER_ACTOR, created.department.id, {
+      name: 'Media & PR',
+      leadUserId: null,
+    });
+    expect(cleared.department.lead).toBeNull();
+    expect(auditWriter.entries.at(-1)?.detail).toEqual({
+      departmentId: created.department.id,
+      name: 'Media & PR',
+      leadUserId: null,
+    });
   });
 });

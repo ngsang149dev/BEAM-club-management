@@ -1,9 +1,8 @@
 import type { ArchivePurgeMode } from '@/lib/archive';
 import { conflict, notFound } from '@/lib/errors';
-import type { TaskPriority } from '@/lib/tasks';
 import type { BoardSummaryRecord } from '@/server/modules/boards';
 import type { MemberProfileRecord } from '@/server/modules/members';
-import type { TaskDepartmentSummaryRecord, TaskRecord } from '@/server/modules/tasks';
+import type { RawTaskRow, TaskDepartmentSummaryRecord, TaskRecord } from '@/server/modules/tasks';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { type AnonymizedProfilePatch, buildAnonymizedProfilePatch } from './policy';
 import type {
@@ -52,24 +51,7 @@ export interface RawArchiveDepartmentRow {
   readonly name: string;
 }
 
-export interface RawTaskRowBase {
-  readonly id: string;
-  readonly boardId: string;
-  readonly columnId: string | null;
-  readonly title: string;
-  readonly description: string | null;
-  readonly dueAt: Date | null;
-  readonly priority: number;
-  readonly position: string;
-  readonly isHidden: boolean;
-  readonly version: number;
-  readonly deletedAt: Date | null;
-  readonly createdBy: string;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
-}
-
-export interface RawArchiveTaskRow extends RawTaskRowBase {
+export interface RawArchiveTaskRow extends RawTaskRow {
   readonly boardName: string;
   readonly boardArchivedAt: Date | null;
   readonly columnName: string | null;
@@ -99,9 +81,6 @@ export interface RawArchiveMemberRow {
   readonly mustChangePassword: boolean;
 }
 
-const toPriority = (raw: number): TaskPriority =>
-  raw === 1 || raw === 2 || raw === 3 || raw === 4 ? raw : 2;
-
 export function groupArchiveDepartments(
   rows: readonly RawArchiveDepartmentRow[],
 ): Map<string, TaskDepartmentSummaryRecord[]> {
@@ -125,38 +104,6 @@ export function buildArchiveUserSummaryMap(
     map.set(row.id, { ...row, departments: deptMap.get(row.id) ?? [] });
   }
   return map;
-}
-
-export function assembleTaskRecords(params: {
-  readonly taskRows: readonly RawTaskRowBase[];
-  readonly assigneeRows: ReadonlyArray<{ readonly taskId: string; readonly userId: string }>;
-  readonly departmentRows: ReadonlyArray<{ readonly taskId: string; readonly id: string; readonly name: string }>;
-  readonly commentCountRows: ReadonlyArray<{ readonly taskId: string; readonly total: number }>;
-  readonly userMap: ReadonlyMap<string, ArchiveUserSummaryRecord>;
-}): TaskRecord[] {
-  const countMap = new Map(params.commentCountRows.map((r) => [r.taskId, Number(r.total)]));
-  const assigneeMap = new Map<string, ArchiveUserSummaryRecord[]>();
-  for (const row of params.assigneeRows) {
-    const user = params.userMap.get(row.userId);
-    if (!user) continue;
-    const list = assigneeMap.get(row.taskId);
-    if (list) list.push(user);
-    else assigneeMap.set(row.taskId, [user]);
-  }
-  const deptMap = new Map<string, TaskDepartmentSummaryRecord[]>();
-  for (const row of params.departmentRows) {
-    const list = deptMap.get(row.taskId);
-    const dept = { id: row.id, name: row.name };
-    if (list) list.push(dept);
-    else deptMap.set(row.taskId, [dept]);
-  }
-  return params.taskRows.map((row) => {
-    const creator = params.userMap.get(row.createdBy);
-    if (!creator) throw new Error('Missing creator profile');
-    const assignees = (assigneeMap.get(row.id) ?? []).sort((a, b) => a.fullName.localeCompare(b.fullName) || a.id.localeCompare(b.id));
-    const assignedDepartments = (deptMap.get(row.id) ?? []).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-    return { ...row, priority: toPriority(row.priority), assignees, assignedDepartments, creator, commentCount: countMap.get(row.id) ?? 0 };
-  });
 }
 
 export function assembleArchiveTaskItems(

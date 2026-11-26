@@ -18,6 +18,9 @@ export const departments = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    leadUserId: uuid('lead_user_id').references(() => profiles.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
@@ -28,6 +31,9 @@ export const departments = pgTable(
   (table) => [
     unique('departments_name_uq').on(table.name),
     uniqueIndex('departments_name_lower_uq').on(sql`lower(btrim(${table.name}))`),
+    index('departments_lead_user_id_idx')
+      .on(table.leadUserId)
+      .where(isNotNull(table.leadUserId)),
   ],
 );
 

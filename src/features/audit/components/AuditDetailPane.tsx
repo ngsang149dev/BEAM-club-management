@@ -45,6 +45,19 @@ function appendPermissionMetadata(
   }
 }
 
+function appendDepartmentLeadMetadata(
+  detail: Record<string, unknown>,
+  rows: MetadataEntry[],
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): void {
+  if (!('leadUserId' in detail)) return;
+  const hasLead = typeof detail.leadUserId === 'string' && detail.leadUserId.length > 0;
+  rows.push({
+    label: t('detailLabels.departmentLead'),
+    value: hasLead ? t('detailValues.leadAssigned') : t('detailValues.leadCleared'),
+  });
+}
+
 function appendEntityMetadata(
   detail: Record<string, unknown>,
   rows: MetadataEntry[],
@@ -210,6 +223,7 @@ function buildMetadataRows(
   const rows: MetadataEntry[] = [];
   appendPermissionMetadata(detail, rows, t, tPerm);
   appendEntityMetadata(detail, rows, t);
+  appendDepartmentLeadMetadata(detail, rows, t);
   appendReminderMetadata(detail, rows, t);
   appendMediaMetadata(detail, rows, t);
   appendSecurityMetadata(detail, rows, t);
