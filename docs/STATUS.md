@@ -76,6 +76,7 @@ Epic hiện tại: **`E9`** (`Done` trên nhánh `feat/E9-v1-release-and-reminde
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
 - Nhánh **`feat/E9-v1-release-and-reminders-ux`** (`[RỦI RO CAO]`) đã hoàn thành, vượt toàn bộ kiểm thử tự động & audit độc lập **`VERDICT: PASS`**, đang **chờ chủ dự án Sang duyệt PR để merge vào `main`**.
+- Đã bổ sung **`Epic E10` (`E10-01`, `E10-02`)** vào [BACKLOG.md](BACKLOG.md) để chuẩn bị Go-Live Production `0đ/tháng` (migration danh mục quyền `0007`, nâng cấp `db:migrate`, CLI `db:bootstrap-admin` & `smtp:verify`, ghim vùng Vercel `sin1`, GitHub Cron dự phòng/bấm tay & Runbook Go-Live chi tiết) — **đang chờ chủ dự án duyệt danh sách item**.
 
 ## Việc tiếp theo
-- Sau khi Sang duyệt và đồng ý merge **`feat/E9-v1-release-and-reminders-ux`** vào `main`, chuyển sang **UAT thực tế (`U1`–`U10` trong [UAT-CHECKLIST.md](UAT-CHECKLIST.md))** với 5–10 thành viên CLB BEAM và triển khai phát hành **`v1.0`**.
+- Sau khi Sang duyệt và đồng ý merge **`feat/E9-v1-release-and-reminders-ux`** vào `main`, triển khai **`E10-01`..`E10-02`** (nếu Sang duyệt), sau đó chạy **UAT thực tế (`U1`–`U10` trong [UAT-CHECKLIST.md](UAT-CHECKLIST.md))** với 5–10 thành viên CLB BEAM và Go-Live phát hành **`v1.0`**.

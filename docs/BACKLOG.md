@@ -23,6 +23,7 @@
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done (chờ duyệt merge PR) |
+| **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Chờ duyệt danh sách item |
 
 ---
 
@@ -641,3 +642,42 @@
 - **Ngoài phạm vi:** Sửa `src/app/forbidden/page.tsx` hoặc chạm production.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
 - **Trạng thái:** `Done — chờ chủ dự án duyệt merge` (`feat/E9-v1-release-and-reminders-ux`)
+
+---
+
+## Epic E10 — Triển khai Production Miễn phí & Tự động hóa Email Nhắc hạn (`HANDOFF §7, §9, §10`) *(Chờ chủ dự án duyệt danh sách item)*
+
+### E10-01
+- **ID:** `E10-01`
+- **Tiêu đề:** Migration danh mục quyền nền tảng (`0007`), nâng cấp `db:migrate`, CLI khởi tạo Admin đầu tiên (`db:bootstrap-admin`) & CLI kiểm tra gửi mail thật (`smtp:verify`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-04`, `FR-10`, `FR-17`–`FR-19`, `FR-30`, `NFR-08`, `HANDOFF` (§7.1, §8.1, §9, §10)
+- **Phụ thuộc:** `E9` (`Done`, sau khi duyệt merge `main`)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§0 #4, §6A, §7, §8), `HANDOFF` (mục 7, 8.1, 9, 10), `db/seed.sql`, `scripts/db-migrate.mjs`, `src/server/shared/password.ts`, `src/server/shared/mailer.ts`
+- **Phạm vi file được sửa:** `db/migrations/0007_system_catalog_defaults.sql`, `scripts/db-migrate.mjs`, `scripts/db-bootstrap-admin.mjs`, `scripts/smtp-verify.mjs`, `package.json`, `tests/integration/db/schema-invariants.test.ts`, `tests/integration/db/backup-restore.test.ts`
+- **Tiêu chí chấp nhận:**
+  1. Tạo migration cộng thêm, idempotent `db/migrations/0007_system_catalog_defaults.sql` nạp sẵn `18` mã `permissions`, `3` `permission_presets` + `preset_permissions`, và `app_settings('reminders')` mặc định (`ON CONFLICT DO UPDATE / DO NOTHING`) — **tuyệt đối 0 tài khoản/board/task giả lập dev**, để CSDL Neon Production mới tạo chạy `db:migrate` là có đủ danh mục phân quyền.
+  2. Nâng cấp `scripts/db-migrate.mjs` đối chiếu bảng `schema_migrations` để bỏ qua bản đã áp, ẩn thông tin nhạy cảm của URL trong log, và an toàn khi chủ dự án tự chạy với Direct URL của Neon.
+  3. Thêm `npm run db:bootstrap-admin` (`scripts/db-bootstrap-admin.mjs` — chỉ dành cho chủ dự án tự chạy trên máy cá nhân): nhận thông tin Admin CLB đầu tiên qua biến môi trường/prompt ẩn, kiểm tra domain email hợp lệ, băm mật khẩu chuẩn `scrypt` khớp `src/server/shared/password.ts`, insert idempotent (`is_admin = true`, `is_active = true`, `must_change_password = true`) + cấp bộ quyền mặc định mà không ghi lộ mật khẩu/MSSV/email ra log.
+  4. Thêm `npm run smtp:verify -- --to <email>` (`scripts/smtp-verify.mjs`) dùng `SmtpMailer` gửi 1 email kiểm tra song ngữ từ cấu hình `.env.local` để chủ dự án xác nhận thư vào thẳng hộp thư chính Gmail thật (`HANDOFF §9`) trước khi đưa biến môi trường lên Vercel.
+- **Kiểm thử bắt buộc:** Integration test kiểm chứng migration `0007` trên DB sạch, unit/integration test cho logic `db-bootstrap-admin` & `smtp-verify` trên mock SMTP / `beam_test` (cấm chạm production).
+- **Ngoài phạm vi:** Agent tự kết nối hoặc chạy lệnh lên Neon Production / Gmail thật của CLB (`AGENTS.md §0 #4`).
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Chờ chủ dự án duyệt`
+
+### E10-02
+- **ID:** `E10-02`
+- **Tiêu đề:** Ghim vùng Vercel Function `sin1` (Singapore), GitHub Actions Cron dự phòng/bấm tay (`0đ`) & Runbook Go-Live cầm tay chỉ việc (`docs/OPERATIONS.md`)
+- **Sub-agent phụ trách:** `Coordinator` + `backend-db`
+- **Liên quan:** `FR-02`, `FR-30`, `FR-31`, `AC-03`, `NFR-06`, `NFR-08`, `HANDOFF` (§7.1, §10)
+- **Phụ thuộc:** `E10-01`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§0 #4, §7), `HANDOFF` (mục 7.1, 7.3, 10), `vercel.json`, `.github/workflows/ci.yml`, `docs/OPERATIONS.md`
+- **Phạm vi file được sửa:** `vercel.json`, `.github/workflows/daily-cron.yml`, `docs/OPERATIONS.md`, `README.md`
+- **Tiêu chí chấp nhận:**
+  1. Cập nhật `vercel.json` ghim `"regions": ["sin1"]` cùng khu vực Singapore với Neon `ap-southeast-1` để giảm độ trễ truy vấn trên gói Vercel Hobby miễn phí.
+  2. Thêm `.github/workflows/daily-cron.yml` miễn phí trên GitHub Actions: hỗ trợ cả lịch tự động hằng ngày (`0 0 * * *` & `5 0 * * *` UTC, bỏ qua an toàn nếu chưa khai báo GitHub Secrets `PROD_APP_URL` / `CRON_SECRET`) lẫn nút bấm thủ công `workflow_dispatch` để Admin kích hoạt thử cron nhắc hạn & dọn Archive ngay trên giao diện GitHub (an toàn không gửi trùng nhờ `AC-03`).
+  3. Bổ sung vào `docs/OPERATIONS.md` checklist triển khai thực tế từ A–Z với chi phí `0đ/tháng`: tạo Neon Free (Pooled vs Direct URL), cấu hình Gmail CLB + App Password 16 ký tự (và phương án thay thế Brevo SMTP Free khi có domain riêng), bảng biến môi trường Vercel, thứ tự migrate -> bootstrap Admin -> kiểm tra hộp thư chính.
+- **Kiểm thử bắt buộc:** `lint`, `typecheck`, kiểm tra cú pháp JSON/YAML của `vercel.json` & `.github/workflows/daily-cron.yml`, `build`.
+- **Ngoài phạm vi:** Thao tác trực tiếp trên dashboard Vercel/Neon/GitHub của CLB.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Chờ chủ dự án duyệt`
