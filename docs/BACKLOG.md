@@ -26,7 +26,7 @@
 | **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Done |
 | **E11** | Gia cố Bảo mật Production: OWASP Headers, CSRF Origin Guard, Rate limit 2 lớp, CDN Cache branding & Runbook WAF `[RỦI RO CAO]` | NFR-01–NFR-05 | Done |
 | **CR-08** | Đăng nhập 1 thiết bị (tự đăng xuất phiên cũ) & Session trượt 30 phút (bỏ "Ghi nhớ đăng nhập") (`A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-04`, `AC-05`, `AC-13` | Done |
-| **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | Ready for PR |
+| **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | Done |
 | **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Ready |
 
 ---
@@ -802,7 +802,7 @@
 
 ---
 
-## Epic CR-09 — Trưởng ban, Tick "Đã nhận task", Nhiều Link sản phẩm & Migration/OpenAPI Lịch Task (`A2`, `A4`, `[RỦI RO CAO]`) *(Ready for PR)*
+## Epic CR-09 — Trưởng ban, Tick "Đã nhận task", Nhiều Link sản phẩm & Migration/OpenAPI Lịch Task (`A2`, `A4`, `[RỦI RO CAO]`) *(Done)*
 
 ### CR-09-01
 - **ID:** `CR-09-01`
@@ -821,7 +821,7 @@
 - **Kiểm thử bắt buộc:** `schema-invariants.test.ts` cho `0008`, unit & integration PostgreSQL cho Department Lead, Acceptance (`403`/`404`/thông báo), Deliverables (`400`/`403`/`404`/`409`/thông báo/`WQ-27`), `startAt`/`isCompleted` + revert, `deadlineStatus` + `[from, to]`, boardless `POST /tasks`, Archive purge, và `npm run db:restore:verify -- --test`.
 - **Ngoài phạm vi:** UI Lịch công việc toàn màn (`CR-10`) và sửa UI ngoài phạm vi `CR-09-02`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR`
+- **Trạng thái:** `Done`
 
 ### CR-09-02
 - **ID:** `CR-09-02`
@@ -839,7 +839,7 @@
 - **Kiểm thử bắt buộc:** Unit/component test `departments-admin`, `notifications-bell`, `task-history-undo`, `i18n-parity`, `0` lỗi TypeScript trên frontend.
 - **Ngoài phạm vi:** API backend, Lịch công việc toàn màn (`CR-10`).
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready for PR`
+- **Trạng thái:** `Done`
 
 ### CR-09-03
 - **ID:** `CR-09-03`
@@ -855,7 +855,7 @@
 - **Kiểm thử bắt buộc:** Full Vitest + Restore Verify + Next Build + Full Playwright Chrome E2E.
 - **Ngoài phạm vi:** Sửa code nghiệp vụ trực tiếp hoặc merge `main`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR`
+- **Trạng thái:** `Done`
 
 ---
 
