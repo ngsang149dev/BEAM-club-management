@@ -117,7 +117,6 @@ describe('i18n message dictionaries (vi/en)', () => {
       'auth.showPassword',
       'auth.hidePassword',
       'auth.devSeedHint',
-      'auth.rememberLabel',
       'auth.signInButton',
       'auth.signingIn',
       'auth.invalidCredentials',
@@ -133,9 +132,8 @@ describe('i18n message dictionaries (vi/en)', () => {
       'profile.permissionsTitle',
       'profile.adminAllPermissions',
       'profile.sessionTitle',
-      'profile.rememberLabel',
-      'profile.rememberOn',
-      'profile.rememberOff',
+      'profile.sessionModeLabel',
+      'profile.sessionModeSingleDevice',
       'profile.expiresAtLabel',
       'profile.signOutButton',
       'profile.signingOut',
@@ -160,6 +158,26 @@ describe('i18n message dictionaries (vi/en)', () => {
       expect(viEntries.has(key), `Missing vi key: ${key}`).toBe(true);
       expect(enEntries.has(key), `Missing en key: ${key}`).toBe(true);
     }
+
+    const removedRememberKeys = [
+      'auth.rememberLabel',
+      'profile.rememberLabel',
+      'profile.rememberOn',
+      'profile.rememberOff',
+    ];
+    for (const key of removedRememberKeys) {
+      expect(viEntries.has(key), `Obsolete vi key remains: ${key}`).toBe(false);
+      expect(enEntries.has(key), `Obsolete en key remains: ${key}`).toBe(false);
+    }
+
+    expect(viEntries.get('profile.sessionModeSingleDevice')).toBe('1 thiết bị · 30 phút');
+    expect(enEntries.get('profile.sessionModeSingleDevice')).toBe('Single device · 30 min');
+    expect(viEntries.get('auth.sessionExpiredBody')).toBe(
+      'Phiên đã hết hạn hoặc tài khoản vừa đăng nhập ở nơi khác.'
+    );
+    expect(enEntries.get('auth.sessionExpiredBody')).toBe(
+      'Your session expired or was signed in elsewhere.'
+    );
 
     expect(PERMISSIONS).toHaveLength(18);
     for (const perm of PERMISSIONS) {

@@ -33,6 +33,19 @@ export interface SessionRecord {
   readonly revokedAt: Date | null;
 }
 
+export interface CreateSessionInput {
+  readonly userId: string;
+  readonly tokenHash: string;
+  readonly rememberMe: boolean;
+  readonly expiresAt: Date;
+  readonly now: Date;
+}
+
+export interface RevokeAllActiveSessionsInput {
+  readonly userId: string;
+  readonly revokedAt: Date;
+}
+
 export interface AuthRepository {
   countRecentFailedLoginAttempts(ip: string, since: Date): Promise<number>;
   countRecentFailedLoginAttemptsForPair(
@@ -54,13 +67,10 @@ export interface AuthRepository {
     userId: string,
   ): Promise<ProfileWithDepartmentsRecord | null>;
   findUserPermissions(userId: string): Promise<PermissionCode[]>;
-  createSession(input: {
-    readonly userId: string;
-    readonly tokenHash: string;
-    readonly rememberMe: boolean;
-    readonly expiresAt: Date;
-    readonly now: Date;
-  }): Promise<SessionRecord>;
+  createSession(
+    input: CreateSessionInput,
+    tx?: TransactionContext,
+  ): Promise<SessionRecord>;
   findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | null>;
   touchSession(input: {
     readonly sessionId: string;
@@ -71,6 +81,10 @@ export interface AuthRepository {
     readonly sessionId: string;
     readonly revokedAt: Date;
   }): Promise<void>;
+  revokeAllActiveSessions(
+    input: RevokeAllActiveSessionsInput,
+    tx?: TransactionContext,
+  ): Promise<void>;
   updateProfileLocale(input: {
     readonly userId: string;
     readonly locale: 'vi' | 'en';

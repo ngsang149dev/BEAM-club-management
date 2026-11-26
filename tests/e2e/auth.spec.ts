@@ -344,14 +344,15 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     expect(wrongAdminText).toBe(unknownText);
   });
 
-  test('blocks open-redirect returnTo, issues session cookie when remember=false, and leaks zero password fields in /auth/login (AC-13, WQ-09, WQ-15)', async ({
+  test('blocks open-redirect returnTo, renders zero Remember Me checkboxes, ignores legacy remember=true, and issues 30m browser session cookie (AC-13, CR-08, WQ-09, WQ-15)', async ({
     page,
     context,
+    browser,
   }) => {
     await page.goto('/login?returnTo=https%3A%2F%2Fevil.example%2Fphish');
 
-    const rememberCheckbox = page.getByRole('checkbox');
-    await expect(rememberCheckbox).not.toBeChecked();
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
 
     const loginRespPromise = page.waitForResponse(
       (res) => res.url().endsWith('/api/v1/auth/login') && res.request().method() === 'POST',
@@ -363,9 +364,11 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     expect(loginResp.status()).toBe(200);
     const loginText = await loginResp.text();
     assertNoSecretsInText(loginText, [DEV_SEED_PASSWORD]);
-    expect((JSON.parse(loginText) as { user: { mustChangePassword: boolean } }).user.mustChangePassword).toBe(
-      false,
-    );
+    const loginJson = JSON.parse(loginText) as {
+      user: { mustChangePassword: boolean };
+      expiresAt: string;
+    };
+    expect(loginJson.user.mustChangePassword).toBe(false);
 
     await page.waitForURL(`${BASE_ORIGIN}/boards`);
     expect(new URL(page.url()).origin).toBe(BASE_ORIGIN);
@@ -376,17 +379,72 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     expect(sessionCookie?.httpOnly).toBe(true);
     expect(sessionCookie?.sameSite).toBe('Lax');
     expect(sessionCookie?.expires).toBe(-1);
+
+    const sessionRes = await page.request.get('/api/v1/auth/session');
+    expect(sessionRes.status()).toBe(200);
+    const sessionData = (await sessionRes.json()) as {
+      authenticated: boolean;
+      rememberMe: boolean;
+      expiresAt: string;
+    };
+    expect(sessionData.authenticated).toBe(true);
+    expect(sessionData.rememberMe).toBe(false);
+    const minutesRemaining = (new Date(sessionData.expiresAt).getTime() - Date.now()) / 60_000;
+    expect(minutesRemaining).toBeGreaterThanOrEqual(25);
+    expect(minutesRemaining).toBeLessThanOrEqual(35);
+
+    // Even if a legacy client explicitly sends remember: true, server enforces rememberMe: false & 30m browser session cookie
+    const legacyContext = await browser.newContext();
+    try {
+      const legacyLoginRes = await legacyContext.request.post(`${BASE_ORIGIN}/api/v1/auth/login`, {
+        headers: { origin: BASE_ORIGIN },
+        data: {
+          studentId: activeStudentId,
+          password: DEV_SEED_PASSWORD,
+          remember: true,
+        },
+      });
+      expect(legacyLoginRes.status()).toBe(200);
+      const setCookieHeaders = legacyLoginRes
+        .headersArray()
+        .filter((h) => h.name.toLowerCase() === 'set-cookie')
+        .map((h) => h.value);
+      const sessionSetCookie = setCookieHeaders.find((v) => v.startsWith('beam_session='));
+      expect(sessionSetCookie).toBeDefined();
+      expect(sessionSetCookie).not.toMatch(/Max-Age=/i);
+      expect(sessionSetCookie).not.toMatch(/Expires=/i);
+
+      const legacyCookies = await legacyContext.cookies(BASE_ORIGIN);
+      const legacySessionCookie = legacyCookies.find((c) => c.name === 'beam_session');
+      expect(legacySessionCookie).toBeDefined();
+      expect(legacySessionCookie?.httpOnly).toBe(true);
+      expect(legacySessionCookie?.sameSite).toBe('Lax');
+      expect(legacySessionCookie?.expires).toBe(-1);
+
+      const legacySessionRes = await legacyContext.request.get(`${BASE_ORIGIN}/api/v1/auth/session`);
+      expect(legacySessionRes.status()).toBe(200);
+      const legacySessionData = (await legacySessionRes.json()) as {
+        authenticated: boolean;
+        rememberMe: boolean;
+        expiresAt: string;
+      };
+      expect(legacySessionData.authenticated).toBe(true);
+      expect(legacySessionData.rememberMe).toBe(false);
+      const legacyMins = (new Date(legacySessionData.expiresAt).getTime() - Date.now()) / 60_000;
+      expect(legacyMins).toBeGreaterThanOrEqual(25);
+      expect(legacyMins).toBeLessThanOrEqual(35);
+    } finally {
+      await legacyContext.close();
+    }
   });
 
-  test('supports remember=true persistent cookie, renders S08 profile details without secrets, persists locale, and signs out (AC-13, FR-50, WQ-19)', async ({
+  test('renders S08 single-device 30m session details without secrets, persists locale, and signs out (AC-13, CR-08, FR-50, WQ-19)', async ({
     page,
     context,
   }) => {
     await page.goto('/login?returnTo=%2Fprofile');
 
-    const rememberCheckbox = page.getByRole('checkbox');
-    await rememberCheckbox.check();
-    await expect(rememberCheckbox).toBeChecked();
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
 
     const meResponsePromise = page.waitForResponse(
       (res) => res.url().endsWith('/api/v1/me') && res.request().method() === 'GET' && res.status() === 200,
@@ -407,6 +465,11 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     await expect(page.locator('.profile-perms')).toContainText('task.update_assigned');
     await expect(page.locator('.profile-perms')).toContainText('comment.create');
 
+    const profileSide = page.locator('.profile-side');
+    await expect(profileSide).toContainText(viMessages.profile.sessionModeLabel);
+    await expect(profileSide).toContainText(viMessages.profile.sessionModeSingleDevice);
+    await expect(profileSide).toContainText(viMessages.profile.expiresAtLabel);
+
     await expectColorfulInitialsAvatar(page.locator('.profile-hero .ui-avatar'), activeUserId, activeFullName);
     await expectColorfulInitialsAvatar(page.locator('.app-side .app-user .ui-avatar'), activeUserId, activeFullName);
 
@@ -422,10 +485,9 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     expect(sessionCookie).toBeDefined();
     expect(sessionCookie?.httpOnly).toBe(true);
     expect(sessionCookie?.sameSite).toBe('Lax');
-    expect(sessionCookie?.expires).toBeGreaterThan(Date.now() / 1000 + 20 * 86_400);
+    expect(sessionCookie?.expires).toBe(-1);
 
     // CR-05: /profile no longer renders a standalone language switch card; language switching lives in AppShell
-    const profileSide = page.locator('.profile-side');
     await expect(profileSide.locator('.lang-switch')).toHaveCount(0);
     await expect(profileSide.getByRole('button', { name: 'EN', exact: true })).toHaveCount(0);
     await expect(profileSide.getByRole('button', { name: 'VI', exact: true })).toHaveCount(0);
@@ -444,6 +506,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     expect(patchResponse.status()).toBe(200);
     expect(patchResponse.request().postDataJSON()).toEqual({ locale: 'en' });
     await expect(page.getByRole('heading', { level: 1, name: enMessages.profile.title })).toBeVisible();
+    await expect(profileSide).toContainText(enMessages.profile.sessionModeSingleDevice);
 
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: enMessages.profile.title })).toBeVisible();
@@ -456,5 +519,90 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
 
     await page.goto('/profile');
     await page.waitForURL(`${BASE_ORIGIN}/login?expired=1&returnTo=%2Fprofile`);
+  });
+
+  test('enforces single active session across 2 browser contexts and auto-logs out superseded session with expired alert (CR-08)', async ({
+    browser,
+  }) => {
+    const context1 = await browser.newContext();
+    const context2 = await browser.newContext();
+    try {
+      const page1 = await context1.newPage();
+      const page2 = await context2.newPage();
+
+      // 1. Context 1 signs in as activeStudentId and opens /profile
+      await page1.goto('/login?returnTo=%2Fprofile');
+      await page1.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
+      await page1.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
+      await page1.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
+      await page1.waitForURL(`${BASE_ORIGIN}/profile`);
+      await expect(page1.locator('.profile-main')).toContainText(activeFullName);
+      expect((await page1.request.get('/api/v1/auth/session')).status()).toBe(200);
+
+      // 2. Context 2 signs in with the SAME activeStudentId and navigates to /boards
+      await page2.goto('/login');
+      await page2.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
+      await page2.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
+      await page2.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
+      await page2.waitForURL(`${BASE_ORIGIN}/boards`);
+
+      const ctx2SessionRes = await page2.request.get('/api/v1/auth/session');
+      expect(ctx2SessionRes.status()).toBe(200);
+      const ctx2Session = (await ctx2SessionRes.json()) as {
+        authenticated: boolean;
+        rememberMe: boolean;
+        expiresAt: string;
+      };
+      expect(ctx2Session.authenticated).toBe(true);
+      expect(ctx2Session.rememberMe).toBe(false);
+
+      // 3. Context 1's old session is revoked (401 on background poll & reload) -> redirects to /login?expired=1 with alert
+      const bgPollRes = await page1.request.get('/api/v1/notifications?limit=20', {
+        headers: { 'x-beam-background': '1' },
+      });
+      expect(bgPollRes.status()).toBe(401);
+
+      const session401Promise = page1.waitForResponse(
+        (res) => res.url().endsWith('/api/v1/auth/session') && res.status() === 401,
+      );
+      await page1.reload();
+      await session401Promise;
+      await page1.waitForURL(`${BASE_ORIGIN}/login?expired=1&returnTo=%2Fprofile`);
+
+      const alert1 = page1.locator('.login-form').getByRole('alert');
+      await expect(alert1).toBeVisible();
+      await expect(alert1).toContainText(viMessages.auth.sessionExpiredTitle);
+      await expect(alert1).toContainText(viMessages.auth.sessionExpiredBody);
+      await expect(alert1).toContainText('Phiên đã hết hạn hoặc tài khoản vừa đăng nhập ở nơi khác.');
+
+      // Context 2 stays logged in after reload
+      await page2.reload();
+      await expect(page2).toHaveURL(`${BASE_ORIGIN}/boards`);
+      expect((await page2.request.get('/api/v1/auth/session')).status()).toBe(200);
+
+      // 4. Context 1 signs back in -> supersedes Context 2 -> Context 2 opens uncached authenticated view without reload -> QueryProvider 401 auto-logout
+      await page1.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
+      await page1.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
+      await page1.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
+      await page1.waitForURL(`${BASE_ORIGIN}/profile`);
+
+      const ctx2UnauthorizedPromise = page2.waitForResponse(
+        (res) => res.url().includes('/api/v1/members') && res.status() === 401,
+      );
+      await page2.locator('.app-side a[href="/members"]').click();
+      await ctx2UnauthorizedPromise;
+      await page2.waitForURL(`${BASE_ORIGIN}/login?expired=1&returnTo=%2Fmembers`);
+
+      const alert2 = page2.locator('.login-form').getByRole('alert');
+      await expect(alert2).toBeVisible();
+      await expect(alert2).toContainText(viMessages.auth.sessionExpiredTitle);
+      await expect(alert2).toContainText(viMessages.auth.sessionExpiredBody);
+
+      // Context 1 remains active
+      expect((await page1.request.get('/api/v1/auth/session')).status()).toBe(200);
+    } finally {
+      await context1.close();
+      await context2.close();
+    }
   });
 });

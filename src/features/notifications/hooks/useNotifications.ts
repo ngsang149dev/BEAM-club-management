@@ -40,7 +40,12 @@ export function useNotificationsQuery(enabled = true) {
   return useQuery(
     {
       queryKey: NOTIFICATIONS_QUERY_KEYS.list(),
-      queryFn: ({ signal }) => apiFetch('/notifications', { query: { limit: 20 }, signal }),
+      queryFn: ({ signal }) =>
+        apiFetch('/notifications', {
+          query: { limit: 20 },
+          headers: { 'x-beam-background': '1' },
+          signal,
+        }),
       enabled: queryEnabled,
       refetchInterval: queryEnabled ? 30_000 : false,
       retry: shouldRetryNotificationQuery,

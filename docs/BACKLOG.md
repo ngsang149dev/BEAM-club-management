@@ -24,6 +24,10 @@
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done |
 | **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Done |
+| **E11** | Gia cố Bảo mật Production: OWASP Headers, CSRF Origin Guard, Rate limit 2 lớp, CDN Cache branding & Runbook WAF `[RỦI RO CAO]` | NFR-01–NFR-05 | Done |
+| **CR-08** | Đăng nhập 1 thiết bị (tự đăng xuất phiên cũ) & Session trượt 30 phút (bỏ "Ghi nhớ đăng nhập") (`A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-04`, `AC-05`, `AC-13` | Ready for PR (chờ duyệt) |
+| **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | Ready |
+| **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Ready |
 
 ---
 
@@ -739,3 +743,73 @@
 - **Ngoài phạm vi:** Mua gói WAF trả phí hoặc cài Redis bên ngoài trong MVP.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
 - **Trạng thái:** `Done` *(đã duyệt & merge vào `main` — vượt đủ cổng CI, `60/60` unit / `330` test, `20/20` integration / `38` test, `next build` `42/42` route + `ƒ Proxy (Middleware)`, `44/44` Chrome E2E xanh & `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` `13/13` mục `6A.8`)*
+
+---
+
+## Epic CR-08 — Đăng nhập 1 thiết bị & Session trượt `30` phút (`A3`, `[RỦI RO CAO]`) *(Chờ duyệt merge PR trên `feat/CR08-single-session-30m`)*
+
+### CR-08-01
+- **ID:** `CR-08-01`
+- **Tiêu đề:** Backend Single Active Session (thu hồi phiên cũ trong transaction), TTL trượt `30` phút (`SESSION_TTL_MINUTES`) & bỏ gia hạn bằng background polling `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `A3`, `FR-04`, `FR-11`, `AC-05`, `AC-13`, `docs/DECISIONS.md` (`CR-08`), `docs/openapi.yaml`
+- **Phụ thuộc:** `E11` (`Done`), `docs/openapi.yaml` `CR-08` đã khóa
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A, §7, §8), `.agents/skills/beam-backend-db/SKILL.md`, `src/server/modules/auth/*`, `src/server/shared/{config,auth-http}.ts`, `src/lib/auth.ts`
+- **Phạm vi file được sửa:** `.env.example`, `src/lib/auth.ts`, `src/server/shared/config.ts`, `src/server/shared/auth-http.ts`, `src/server/modules/auth/*`, `src/app/api/v1/notifications/route.ts`, `tests/unit/shared/*`, `tests/unit/auth/*`, `tests/unit/members/members-service.test.ts`, `tests/integration/**/*`
+- **Tiêu chí chấp nhận:**
+  1. `Config` bổ sung `sessionTtlMinutes` đọc `SESSION_TTL_MINUTES` (`1..1440`, mặc định `30`); giữ `sessionTtlDefaultHours` & `sessionTtlRememberDays` để không gãy env cũ.
+  2. `AuthService.login` luôn ép `rememberMe = false`, tính `expiresAt = now + sessionTtlMinutes`, mở PostgreSQL transaction khóa dòng `profiles` (`FOR UPDATE`), thu hồi mọi phiên đang hoạt động của chính user (`revokeAllActiveSessions`) rồi tạo phiên mới.
+  3. `authenticateSession(rawToken, { touch })`: mọi thao tác chủ động (`touch !== false`) trượt `expiresAt` thêm `sessionTtlMinutes`; request polling (`GET /api/v1/notifications` có header `x-beam-background: 1`) gọi `{ touch: false }` để kiểm tra hiệu lực (`401 SESSION_EXPIRED` nếu bị thu hồi/hết hạn) nhưng không gia hạn phiên nhàn rỗi.
+  4. `attachSessionCookie` luôn phát browser session cookie (`HttpOnly`/`SameSite=Lax`/`Secure`, không `Max-Age`).
+- **Kiểm thử bắt buộc:** Unit & integration PostgreSQL kiểm chứng thu hồi phiên cũ khi đăng nhập nơi khác (gồm đăng nhập đồng thời, không ảnh hưởng tài khoản khác), TTL `30` phút trượt theo thao tác, hết hạn sau `30` phút nhàn rỗi kể cả có background polling `x-beam-background: 1`, bỏ qua `remember: true`, và cookie không có `Max-Age`.
+- **Ngoài phạm vi:** Đổi schema CSDL hoặc sửa UI.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(hoàn tất trên `feat/CR08-single-session-30m` — `lint`, `typecheck`, `arch:check`, `62` unit tệp / `341` test & `21` integration tệp / `42` test xanh)*
+
+### CR-08-02
+- **ID:** `CR-08-02`
+- **Tiêu đề:** Bỏ "Ghi nhớ đăng nhập" trên `/login`, cập nhật thông tin phiên 1 thiết bị / 30 phút & tự động phát hiện đăng xuất khi mất phiên
+- **Sub-agent phụ trách:** `frontend` (chạy song song với `CR-08-01` sau khi khóa `docs/openapi.yaml` & `schema.d.ts`)
+- **Liên quan:** `A3`, `S01`, `S08`, `FR-50`, `docs/DECISIONS.md` (`CR-08`)
+- **Phụ thuộc:** `docs/openapi.yaml` & `schema.d.ts` `CR-08` đã khóa
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.2, §6A.4, §7), `.agents/skills/beam-frontend/SKILL.md`, `src/features/auth/*`, `src/features/shared/providers/QueryProvider.tsx`, `src/features/notifications/hooks/useNotifications.ts`
+- **Phạm vi file được sửa:** `src/features/auth/components/{LoginForm,ProfileSideCards}.tsx`, `src/features/auth/hooks/useAuth.ts`, `src/features/notifications/hooks/useNotifications.ts`, `src/features/shared/providers/QueryProvider.tsx`, `src/app/globals.css`, `messages/{vi,en}.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:**
+  1. `LoginForm` gỡ bỏ hoàn toàn checkbox "Ghi nhớ đăng nhập" và CSS thừa `.login-remember*`.
+  2. `ProfileSessionCard` hiển thị chế độ phiên `"1 thiết bị · 30 phút"` (`sessionModeSingleDevice`) cùng thời điểm hết hạn dự kiến.
+  3. `useSessionQuery` bật `refetchOnWindowFocus: true`; `useNotificationsQuery` gửi header `x-beam-background: 1`; `QueryProvider` cấu hình `QueryCache`/`MutationCache` khi gặp `401` (trừ `INVALID_CREDENTIALS` ở `/auth/login` và chính query `['auth', 'session']`) lập tức invalidate `['auth', 'session']` để `AuthGuard` đẩy về `/login?expired=1` mà không vi phạm hướng phụ thuộc `6A.2`.
+  4. `auth.sessionExpiredBody` nêu rõ phiên hết hạn hoặc tài khoản vừa đăng nhập ở nơi khác; `vi.json` và `en.json` khớp 100% khóa.
+- **Kiểm thử bắt buộc:** Unit test `LoginForm`, `ProfileSessionCard`, `QueryProvider` (invalidate khi gặp `401`), `useNotificationsQuery` (gửi `x-beam-background: 1`), parity `vi`/`en`.
+- **Ngoài phạm vi:** API backend, E2E Playwright.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Ready for PR` *(hoàn tất trên `feat/CR08-single-session-30m` — `33/33` unit frontend tệp / `184` test xanh)*
+
+### CR-08-03
+- **ID:** `CR-08-03`
+- **Tiêu đề:** Kiểm thử E2E 2 trình duyệt (Single Active Session + 30p) & Audit độc lập ngữ cảnh sạch `CR-08` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `A3`, `AC-05`, `AC-13`, `AGENTS.md` (§6A.8, §7, §8)
+- **Phụ thuộc:** `CR-08-01`, `CR-08-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `.agents/skills/beam-qa-reviewer/SKILL.md`, `tests/e2e/auth.spec.ts`
+- **Phạm vi file được sửa:** `tests/e2e/auth.spec.ts` (và các tệp E2E nếu phát hiện xung đột đăng nhập đè), báo cáo audit
+- **Tiêu chí chấp nhận:**
+  1. `tests/e2e/auth.spec.ts` kiểm chứng `/login` không có ô Remember Me, cookie không có `Max-Age` với `expiresAt ~30 phút`, và test 2 context trình duyệt cùng tài khoản: context 2 đăng nhập khiến context 1 tự động bị đăng xuất về `/login?expired=1` kèm banner thông báo.
+  2. Vượt đủ 8/8 cổng (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `build`, `playwright test` toàn bộ E2E) và audit `6A.8` (`13/13`) đạt `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Full Playwright Chrome E2E + toàn bộ bộ test Vitest unit/integration + `next build`.
+- **Ngoài phạm vi:** Sửa code nghiệp vụ trực tiếp hoặc merge `main`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(đạt **`VERDICT: PASS`** trên `feat/CR08-single-session-30m` — vượt 8/8 cổng, `62` unit / `341` test, `21` integration / `42` test, `next build` `42/42` route + Proxy, `45/45` Chrome E2E `2.7m`, `0` Blocker / `0` Major / `2` Minor không chặn, `13/13` mục `6A.8`)*
+
+---
+
+## Epic CR-09 — Trưởng ban, Tick "Đã nhận task", Nhiều Link sản phẩm & Migration/OpenAPI Lịch Task (`A2`, `A4`, `[RỦI RO CAO]`) *(Ready — sau khi merge CR-08)*
+- Giao ban & gán **Trưởng ban** tại `/admin/departments` (`departments.lead_user_id`).
+- Schema & OpenAPI cho Lịch Task + Giao nhận + Sản phẩm (`tasks.start_at`, `tasks.is_completed`, bỏ `priority` mới, `task_assignees.accepted_at`, bảng `task_deliverables` nhiều link mở tab mới `target="_blank"`).
+- Luồng thông báo 3 bước: Giao task → Người được giao tick switch `Đã nhận task` → Tự báo Chuông + Email Trưởng ban & người tạo; Nộp sản phẩm → Tự báo Trưởng ban & người tạo.
+
+---
+
+## Epic CR-10 — Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Cảnh báo/Lọc Deadline & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) *(Ready — sau khi merge CR-09)*
+- Thay thế giao diện Board bằng **Lịch công việc trượt ngang** (`100dvh`, `◀ Tháng 1..12 ▶` + `Hôm nay`, slider phóng to/thu nhỏ `Năm ⇄ Tháng ⇄ Tuần`, xếp làn chống đè).
+- Viền & bộ lọc theo Deadline (Xanh lá `> 3 ngày`, Vàng `2–3 ngày`, Đỏ nhấp nháy `<= 1 ngày`, Đỏ đậm nhấp nháy `Quá hạn`, dịu khi `Hoàn thành`), bỏ độ ưu tiên.
+- Cửa sổ Chi tiết Task gần full màn hình (toggle switch `Đã nhận task`, nộp/mở tab mới link sản phẩm, bình luận, lịch sử).

@@ -141,7 +141,7 @@ export function ProfileSessionCard({
   isSigningOut,
   onSignOut,
 }: {
-  session?: Pick<SessionInfoResponse, 'rememberMe' | 'expiresAt'> | null;
+  session?: Pick<SessionInfoResponse, 'expiresAt'> | null;
   isSigningOut: boolean;
   onSignOut: () => void;
 }) {
@@ -161,8 +161,8 @@ export function ProfileSessionCard({
       {session ? (
         <>
           <div className="profile-kv">
-            <span>{tProfile('rememberLabel')}</span>
-            <b>{session.rememberMe ? tProfile('rememberOn') : tProfile('rememberOff')}</b>
+            <span>{tProfile('sessionModeLabel')}</span>
+            <b>{tProfile('sessionModeSingleDevice')}</b>
           </div>
           <div className="profile-kv">
             <span>{tProfile('expiresAtLabel')}</span>

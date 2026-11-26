@@ -93,13 +93,17 @@ class InMemoryAuthRepository implements AuthRepository {
     return [...(this.permissions.get(userId) ?? [])];
   }
 
-  async createSession(input: {
-    userId: string;
-    tokenHash: string;
-    rememberMe: boolean;
-    expiresAt: Date;
-    now: Date;
-  }): Promise<SessionRecord> {
+  async createSession(
+    input: {
+      userId: string;
+      tokenHash: string;
+      rememberMe: boolean;
+      expiresAt: Date;
+      now: Date;
+    },
+    tx?: TransactionContext,
+  ): Promise<SessionRecord> {
+    void tx;
     this.seq += 1;
     const record: SessionRecord = {
       id: `session-${this.seq}`,
@@ -147,6 +151,18 @@ class InMemoryAuthRepository implements AuthRepository {
       ...existing,
       revokedAt: input.revokedAt,
     });
+  }
+
+  async revokeAllActiveSessions(
+    input: { userId: string; revokedAt: Date },
+    tx?: TransactionContext,
+  ): Promise<void> {
+    void tx;
+    for (const [id, session] of this.sessions.entries()) {
+      if (session.userId === input.userId && session.revokedAt === null) {
+        this.sessions.set(id, { ...session, revokedAt: input.revokedAt });
+      }
+    }
   }
 
   async updateProfileLocale(input: {
@@ -243,6 +259,7 @@ const TEST_CONFIG: Config = {
   nodeEnv: 'test',
   databaseUrl: 'postgresql://unused:unused@localhost:5432/unused',
   sessionSecret: 'unit-test-session-secret-0123456789',
+  sessionTtlMinutes: 30,
   sessionTtlDefaultHours: 24,
   sessionTtlRememberDays: 30,
   allowedEmailDomain: 'eiu.edu.vn',
@@ -630,54 +647,106 @@ describe('AuthService', () => {
     expect(globalBlocked.code).toBe('RATE_LIMITED');
   });
 
-  it('handles 24h fixed TTL vs 30d sliding TTL and session expiry (AC-05, AC-13)', async () => {
+  it('enforces 30-minute sliding TTL, ignores legacy remember=true, and exempts background polling ({ touch: false }) from extending expiry (CR-08)', async () => {
     const { clock, service } = createTestHarness();
 
-    const defaultLogin = await service.login({
-      studentId: 'MSSV-UNIT-001',
-      password: DEV_SEED_PASSWORD,
-      remember: false,
-      returnTo: '//evil.com',
-      ip: '10.0.0.3',
-    });
-    expect(defaultLogin.response.redirectTo).toBe('/boards');
-    expect(defaultLogin.response.expiresAt).toBe('2026-11-25T00:00:00.000Z');
-
-    clock.advanceByMs(12 * 60 * 60 * 1000);
-    const defaultSession = await service.getSessionInfo(defaultLogin.rawToken);
-    expect(defaultSession.expiresAt).toBe('2026-11-25T00:00:00.000Z');
-
-    clock.advanceByMs(12 * 60 * 60 * 1000);
-    const expiredErr = await captureAppError(() =>
-      service.getSessionInfo(defaultLogin.rawToken),
-    );
-    expect(expiredErr.httpStatus).toBe(401);
-    expect(expiredErr.code).toBe('SESSION_EXPIRED');
-
-    const rememberLogin = await service.login({
+    const loginResult = await service.login({
       studentId: 'MSSV-UNIT-001',
       password: DEV_SEED_PASSWORD,
       remember: true,
-      returnTo: '/my-tasks?filter=due',
+      returnTo: '//evil.com',
       ip: '10.0.0.3',
     });
-    expect(rememberLogin.response.redirectTo).toBe('/my-tasks?filter=due');
-    expect(rememberLogin.response.expiresAt).toBe('2026-12-25T00:00:00.000Z');
+    expect(loginResult.rememberMe).toBe(false);
+    expect(loginResult.response.redirectTo).toBe('/boards');
+    expect(loginResult.response.expiresAt).toBe('2026-11-24T00:30:00.000Z');
 
-    clock.advanceByMs(20 * 24 * 60 * 60 * 1000);
-    const slidSession = await service.getSessionInfo(rememberLogin.rawToken);
-    expect(slidSession.expiresAt).toBe('2027-01-14T00:00:00.000Z');
+    const initialInfo = await service.getSessionInfo(loginResult.rawToken);
+    expect(initialInfo.rememberMe).toBe(false);
+    expect(initialInfo.expiresAt).toBe('2026-11-24T00:30:00.000Z');
 
-    clock.advanceByMs(20 * 24 * 60 * 60 * 1000);
-    const extendedSession = await service.getSessionInfo(rememberLogin.rawToken);
-    expect(extendedSession.expiresAt).toBe('2027-02-03T00:00:00.000Z');
+    // Active user request at +20m slides expiry to +50m
+    clock.advanceByMs(20 * 60 * 1000);
+    const activeInfo = await service.getSessionInfo(loginResult.rawToken);
+    expect(activeInfo.rememberMe).toBe(false);
+    expect(activeInfo.expiresAt).toBe('2026-11-24T00:50:00.000Z');
 
-    clock.advanceByMs(30 * 24 * 60 * 60 * 1000);
+    // Background poll at +25m MUST NOT extend expiresAt or lastSeenAt
+    clock.advanceByMs(5 * 60 * 1000);
+    const pollSession = await service.authenticateSession(loginResult.rawToken, {
+      touch: false,
+    });
+    expect(pollSession.session.expiresAt.toISOString()).toBe('2026-11-24T00:50:00.000Z');
+    expect(pollSession.session.lastSeenAt.toISOString()).toBe('2026-11-24T00:20:00.000Z');
+
+    // Idle >= 30m after last active touch (+25m more -> +50m total) expires both normal & background poll
+    clock.advanceByMs(25 * 60 * 1000);
     const idleExpired = await captureAppError(() =>
-      service.getSessionInfo(rememberLogin.rawToken),
+      service.getSessionInfo(loginResult.rawToken),
     );
     expect(idleExpired.httpStatus).toBe(401);
     expect(idleExpired.code).toBe('SESSION_EXPIRED');
+
+    const pollExpired = await captureAppError(() =>
+      service.authenticateSession(loginResult.rawToken, { touch: false }),
+    );
+    expect(pollExpired.httpStatus).toBe(401);
+    expect(pollExpired.code).toBe('SESSION_EXPIRED');
+  });
+
+  it('revokes prior active sessions on login in a transaction while leaving other users active (CR-08 single active session)', async () => {
+    const { clock, repo, service } = createTestHarness();
+
+    const user1First = await service.login({
+      studentId: 'MSSV-UNIT-001',
+      password: DEV_SEED_PASSWORD,
+      ip: '10.0.0.10',
+    });
+    const user2Session = await service.login({
+      studentId: 'MSSV-UNIT-FIRST',
+      password: DEV_SEED_PASSWORD,
+      ip: '10.0.0.11',
+    });
+
+    await expect(service.getSessionInfo(user1First.rawToken)).resolves.toMatchObject({
+      userId: 'user-1',
+    });
+    await expect(service.getSessionInfo(user2Session.rawToken)).resolves.toMatchObject({
+      userId: 'user-first-login',
+    });
+
+    clock.advanceByMs(60_000);
+    const user1Second = await service.login({
+      studentId: 'MSSV-UNIT-001',
+      password: DEV_SEED_PASSWORD,
+      ip: '10.0.0.12',
+    });
+
+    // Old token fails immediately with 401 SESSION_EXPIRED (both active and background poll)
+    const oldTokenErr = await captureAppError(() =>
+      service.getSessionInfo(user1First.rawToken),
+    );
+    expect(oldTokenErr.httpStatus).toBe(401);
+    expect(oldTokenErr.code).toBe('SESSION_EXPIRED');
+
+    const oldPollErr = await captureAppError(() =>
+      service.authenticateSession(user1First.rawToken, { touch: false }),
+    );
+    expect(oldPollErr.httpStatus).toBe(401);
+    expect(oldPollErr.code).toBe('SESSION_EXPIRED');
+
+    // New token succeeds, and user-2's session remains untouched
+    await expect(service.getSessionInfo(user1Second.rawToken)).resolves.toMatchObject({
+      userId: 'user-1',
+    });
+    await expect(service.getSessionInfo(user2Session.rawToken)).resolves.toMatchObject({
+      userId: 'user-first-login',
+    });
+
+    const user1ActiveSessions = Array.from(repo.sessions.values()).filter(
+      (s) => s.userId === 'user-1' && s.revokedAt === null,
+    );
+    expect(user1ActiveSessions).toHaveLength(1);
   });
 
   it('reflects live permission revocation and account deactivation immediately (AC-07)', async () => {
@@ -708,7 +777,7 @@ describe('AuthService', () => {
   });
 
   it('changes password returning 400 on wrong currentPassword, clears mustChangePassword, revokes other sessions while keeping current session, and leaks zero secrets', async () => {
-    const { repo, rawLogs, service } = createTestHarness();
+    const { clock, repo, rawLogs, service } = createTestHarness();
     const sessionOne = await service.login({
       studentId: 'MSSV-UNIT-FIRST',
       password: DEV_SEED_PASSWORD,
@@ -720,13 +789,29 @@ describe('AuthService', () => {
       ip: '10.0.0.8',
     });
 
-    const authSessionOne = await service.authenticateSession(sessionOne.rawToken);
-    const actor: AuthActor = authSessionOne.actor;
+    // CR-08 single active session: sessionOne is already revoked by sessionTwo login
+    const revokedByNewLoginErr = await captureAppError(() =>
+      service.authenticateSession(sessionOne.rawToken),
+    );
+    expect(revokedByNewLoginErr.httpStatus).toBe(401);
+    expect(revokedByNewLoginErr.code).toBe('SESSION_EXPIRED');
+
+    // Seed an extra unrevoked session directly to verify changeMyPassword defense-in-depth revocation
+    const legacyOtherSession = await repo.createSession({
+      userId: 'user-first-login',
+      tokenHash: 'legacy-extra-hash',
+      rememberMe: false,
+      expiresAt: new Date(clock.now().getTime() + 30 * 60 * 1000),
+      now: clock.now(),
+    });
+
+    const authSessionTwo = await service.authenticateSession(sessionTwo.rawToken);
+    const actor: AuthActor = authSessionTwo.actor;
 
     const wrongCurrentErr = await captureAppError(() =>
       service.changeMyPassword({
         actor,
-        currentSessionId: authSessionOne.session.id,
+        currentSessionId: authSessionTwo.session.id,
         input: {
           currentPassword: 'NotCurrent#1',
           newPassword: 'UpdatedPass#2026',
@@ -740,7 +825,7 @@ describe('AuthService', () => {
     const inactiveActorErr = await captureAppError(() =>
       service.changeMyPassword({
         actor: { ...actor, isActive: false },
-        currentSessionId: authSessionOne.session.id,
+        currentSessionId: authSessionTwo.session.id,
         input: {
           currentPassword: DEV_SEED_PASSWORD,
           newPassword: 'UpdatedPass#2026',
@@ -751,7 +836,7 @@ describe('AuthService', () => {
 
     const updatedMe = await service.changeMyPassword({
       actor,
-      currentSessionId: authSessionOne.session.id,
+      currentSessionId: authSessionTwo.session.id,
       input: {
         currentPassword: DEV_SEED_PASSWORD,
         newPassword: 'UpdatedPass#2026',
@@ -760,14 +845,11 @@ describe('AuthService', () => {
     expect(updatedMe.profile.mustChangePassword).toBe(false);
     expect('passwordHash' in updatedMe.profile).toBe(false);
 
-    // Current session stays active; second session is revoked
-    await expect(service.getMe(sessionOne.rawToken)).resolves.toMatchObject({
+    // Current session stays active; legacy extra session is revoked by defense-in-depth
+    await expect(service.getMe(sessionTwo.rawToken)).resolves.toMatchObject({
       response: { profile: { mustChangePassword: false } },
     });
-    const revokedOtherErr = await captureAppError(() =>
-      service.getMe(sessionTwo.rawToken),
-    );
-    expect(revokedOtherErr.httpStatus).toBe(401);
+    expect(repo.sessions.get(legacyOtherSession.id)?.revokedAt).not.toBeNull();
 
     // Old password rejected, new password accepted with default /boards redirect
     const oldPassErr = await captureAppError(() =>

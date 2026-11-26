@@ -115,6 +115,7 @@ describe('composition container', () => {
       nodeEnv: 'test',
       databaseUrl: 'postgresql://unused:unused@localhost:5432/unused',
       sessionSecret: 'test-session-secret-0123456789abcdef',
+      sessionTtlMinutes: 30,
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',

@@ -9,7 +9,9 @@ import { sanitizeReturnTo } from '../return-to';
 
 export { resolveImageUploadErrorKey as resolveAuthImageErrorKey };
 
-export type LoginRequest = components['schemas']['LoginRequest'];
+export type LoginRequest = Omit<components['schemas']['LoginRequest'], 'remember'> & {
+  remember?: boolean;
+};
 export type LoginResponse = components['schemas']['LoginResponse'];
 export type SessionInfoResponse = components['schemas']['SessionInfoResponse'];
 export type MeResponse = components['schemas']['MeResponse'];
@@ -46,6 +48,7 @@ export function useSessionQuery(enabled = true) {
     queryFn: ({ signal }) => apiFetch('/auth/session', { signal }),
     enabled: enabled && !isLoggedOut,
     retry: shouldRetryAuthQuery,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -77,7 +80,10 @@ export function useLoginMutation() {
 
   return useMutation({
     mutationFn: (payload: LoginRequest) =>
-      apiFetch('/auth/login', { method: 'post', body: payload }),
+      apiFetch('/auth/login', {
+        method: 'post',
+        body: payload as components['schemas']['LoginRequest'],
+      }),
     onSuccess: (data, variables) => {
       writeLocaleCookie(data.user.locale);
       queryClient.clear();

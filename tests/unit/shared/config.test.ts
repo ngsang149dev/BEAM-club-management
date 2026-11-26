@@ -17,6 +17,7 @@ describe('loadConfig', () => {
       databaseUrl: BASE_ENV.DATABASE_URL,
       testDatabaseUrl: undefined,
       sessionSecret: BASE_ENV.SESSION_SECRET,
+      sessionTtlMinutes: 30,
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
@@ -43,6 +44,7 @@ describe('loadConfig', () => {
       SMTP_USER: '',
       SMTP_PASS: '',
       SMTP_FROM: '',
+      SESSION_TTL_MINUTES: '45',
       SESSION_TTL_DEFAULT_HOURS: '12',
       SESSION_TTL_REMEMBER_DAYS: '14',
       UNDO_TOAST_SECONDS: '15',
@@ -50,6 +52,7 @@ describe('loadConfig', () => {
     });
 
     expect(config.allowedEmailDomain).toBe('eiu.edu.vn');
+    expect(config.sessionTtlMinutes).toBe(45);
     expect(config.sessionTtlDefaultHours).toBe(12);
     expect(config.sessionTtlRememberDays).toBe(14);
     expect(config.undoToastSeconds).toBe(15);
@@ -97,5 +100,17 @@ describe('loadConfig', () => {
       DEFAULT_INITIAL_PASSWORD: 'ProdInitial#2026',
     });
     expect(prodWithDefault.defaultInitialPassword).toBe('ProdInitial#2026');
+  });
+
+  it('validates SESSION_TTL_MINUTES bounds (1..1440) and defaults blank values to 30', () => {
+    expect(loadConfig({ ...BASE_ENV, SESSION_TTL_MINUTES: '' }).sessionTtlMinutes).toBe(30);
+    expect(loadConfig({ ...BASE_ENV, SESSION_TTL_MINUTES: '1' }).sessionTtlMinutes).toBe(1);
+    expect(loadConfig({ ...BASE_ENV, SESSION_TTL_MINUTES: '1440' }).sessionTtlMinutes).toBe(1440);
+    expect(() => loadConfig({ ...BASE_ENV, SESSION_TTL_MINUTES: '0' })).toThrow(
+      /SESSION_TTL_MINUTES/,
+    );
+    expect(() => loadConfig({ ...BASE_ENV, SESSION_TTL_MINUTES: '1441' })).toThrow(
+      /SESSION_TTL_MINUTES/,
+    );
   });
 });

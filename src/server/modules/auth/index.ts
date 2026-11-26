@@ -8,6 +8,9 @@ export type {
 export {
   buildLoginAttemptKey,
   buildPasswordChangeAttemptKey,
+  computeSessionExpiry,
+  computeSlidingExpiry,
+  DEFAULT_SESSION_TTL_MINUTES,
   FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
   isPairRateLimited,
   isPasswordChangeRateLimited,
@@ -18,14 +21,17 @@ export {
   RATE_LIMIT_MAX_FAILED_PER_PAIR,
   RATE_LIMIT_WINDOW_MINUTES,
   resolveLoginRedirect,
+  type SessionTtlConfig,
 } from './policy';
-export {
-  DrizzleAuthRepository,
-  type AuthRepository,
-  type DepartmentRecord,
-  type ProfileWithDepartmentsRecord,
-  type SessionRecord,
-} from './repository';
+export { DrizzleAuthRepository } from './repository';
+export type {
+  AuthRepository,
+  CreateSessionInput,
+  DepartmentRecord,
+  ProfileWithDepartmentsRecord,
+  RevokeAllActiveSessionsInput,
+  SessionRecord,
+} from './types';
 export {
   changeMyPasswordFormSchema,
   changeMyPasswordRequestSchema,
@@ -49,6 +55,7 @@ export {
 export {
   AuthService,
   type AuthenticatedSession,
+  type AuthenticateSessionOptions,
   type AuthServiceDeps,
   type ChangeMyPasswordCommand,
   type LoginCommand,

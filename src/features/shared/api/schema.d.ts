@@ -471,9 +471,8 @@ export interface paths {
          * @description Public endpoint protected by IP rate limiting (`login_attempts`).
          *     Verifies both `studentId` and `password` (`scrypt` + timing-safe dummy verify when missing/inactive/unset).
          *     Returns a generic `401` (`INVALID_CREDENTIALS`) whether the `studentId` does not exist, password mismatches, or the account is inactive (`is_active=false`).
-         *     Sets the `beam_session` `HttpOnly`/`Secure`/`SameSite` cookie:
-         *     - `remember=false` (default): browser session cookie with server max TTL `SESSION_TTL_DEFAULT` (24h).
-         *     - `remember=true`: persistent cookie with sliding server TTL `SESSION_TTL_REMEMBER` (30d).
+         *     Revokes all prior active sessions for the account in the same atomic transaction (single active session) and sets the `beam_session` `HttpOnly`/`Secure`/`SameSite=Lax` browser session cookie with sliding server TTL `SESSION_TTL_MINUTES` (default `30` minutes).
+         *     Legacy `remember` field is ignored (`rememberMe` is always `false`).
          *     Validates `returnTo` as a safe internal path (`WQ-09`, `WQ-15`); external URLs are rejected or sanitized to `/boards`.
          */
         post: {
@@ -3545,7 +3544,11 @@ export interface components {
         LoginRequest: {
             studentId: string;
             password: string;
-            /** @default false */
+            /**
+             * @deprecated
+             * @description Deprecated and ignored under CR-08; retained for backward client compatibility.
+             * @default false
+             */
             remember: boolean;
             returnTo?: string | null;
         };
@@ -3562,6 +3565,7 @@ export interface components {
             userId: string;
             isAdmin: boolean;
             permissions: components["schemas"]["PermissionCode"][];
+            /** @description Always `false` under CR-08 (browser session cookie with 30-minute sliding server TTL). */
             rememberMe: boolean;
             /** Format: date-time */
             expiresAt: string;

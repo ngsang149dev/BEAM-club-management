@@ -114,6 +114,7 @@ describe('Audit Logs Route Handler integration', () => {
       databaseUrl: process.env.TEST_DATABASE_URL!,
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `audit-test-secret-${suffix}-0123456789`,
+      sessionTtlMinutes: 30,
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',

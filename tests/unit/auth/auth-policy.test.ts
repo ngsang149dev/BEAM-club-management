@@ -14,6 +14,7 @@ import {
   buildPasswordChangeAttemptKey,
   computeSessionExpiry,
   computeSlidingExpiry,
+  DEFAULT_SESSION_TTL_MINUTES,
   FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
   generateOpaqueSessionToken,
   hashSessionToken,
@@ -91,25 +92,21 @@ describe('auth schemas', () => {
       loginFormSchema.parse({
         studentId: ' MSSV-DEV-001 ',
         password: 'BeamDev@2026',
-        remember: true,
       }),
     ).toEqual({
       studentId: 'MSSV-DEV-001',
       password: 'BeamDev@2026',
-      remember: true,
     });
     expect(
       loginFormSchema.safeParse({
         studentId: tooLong65,
         password: 'BeamDev@2026',
-        remember: false,
       }).success,
     ).toBe(false);
     expect(
       loginFormSchema.safeParse({
         studentId: 'MSSV-DEV-001',
         password: '',
-        remember: false,
       }).success,
     ).toBe(false);
 
@@ -122,6 +119,13 @@ describe('auth schemas', () => {
       password: 'BeamDev@2026',
       remember: false,
     });
+    expect(
+      loginRequestSchema.parse({
+        studentId: 'MSSV-DEV-001',
+        password: 'BeamDev@2026',
+        remember: true,
+      }).remember,
+    ).toBe(true);
     expect(
       loginRequestSchema.safeParse({ studentId: '   ', password: 'BeamDev@2026' })
         .success,
@@ -180,39 +184,29 @@ describe('auth schemas', () => {
 
 describe('auth policy rules', () => {
   const ttlConfig = {
-    sessionTtlDefaultHours: 24,
-    sessionTtlRememberDays: 30,
+    sessionTtlMinutes: 30,
   };
 
-  it('computes 24h default expiry and 30d remember expiry (AC-05)', () => {
+  it('computes 30-minute default expiry and honors custom sessionTtlMinutes (CR-08)', () => {
+    expect(DEFAULT_SESSION_TTL_MINUTES).toBe(30);
     const now = new Date('2026-11-24T00:00:00.000Z');
-    expect(computeSessionExpiry(now, false, ttlConfig).toISOString()).toBe(
-      '2026-11-25T00:00:00.000Z',
+    expect(computeSessionExpiry(now, ttlConfig).toISOString()).toBe(
+      '2026-11-24T00:30:00.000Z',
     );
-    expect(computeSessionExpiry(now, true, ttlConfig).toISOString()).toBe(
-      '2026-12-24T00:00:00.000Z',
+    expect(computeSessionExpiry(now, { sessionTtlMinutes: 45 }).toISOString()).toBe(
+      '2026-11-24T00:45:00.000Z',
     );
   });
 
-  it('slides expiry only when rememberMe is true (AC-13)', () => {
-    const originalExpiry = new Date('2026-11-25T00:00:00.000Z');
-    const later = new Date('2026-11-24T12:00:00.000Z');
+  it('always slides expiry forward by sessionTtlMinutes on activity (CR-08)', () => {
+    const later = new Date('2026-11-24T00:20:00.000Z');
 
+    expect(computeSlidingExpiry(later, ttlConfig).toISOString()).toBe(
+      '2026-11-24T00:50:00.000Z',
+    );
     expect(
-      computeSlidingExpiry(
-        later,
-        { rememberMe: false, expiresAt: originalExpiry },
-        ttlConfig,
-      ).toISOString(),
-    ).toBe('2026-11-25T00:00:00.000Z');
-
-    expect(
-      computeSlidingExpiry(
-        later,
-        { rememberMe: true, expiresAt: new Date('2026-12-24T00:00:00.000Z') },
-        ttlConfig,
-      ).toISOString(),
-    ).toBe('2026-12-24T12:00:00.000Z');
+      computeSlidingExpiry(later, { sessionTtlMinutes: 15 }).toISOString(),
+    ).toBe('2026-11-24T00:35:00.000Z');
   });
 
   it('detects expired and revoked sessions at exact boundaries', () => {

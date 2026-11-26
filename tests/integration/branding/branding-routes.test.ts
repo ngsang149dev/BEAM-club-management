@@ -119,6 +119,7 @@ function makeTestConfig(suffix: string): Config {
     databaseUrl: process.env.TEST_DATABASE_URL!,
     testDatabaseUrl: process.env.TEST_DATABASE_URL!,
     sessionSecret: `branding-test-secret-${suffix}-0123456789`,
+    sessionTtlMinutes: 30,
     sessionTtlDefaultHours: 24,
     sessionTtlRememberDays: 30,
     allowedEmailDomain: 'eiu.edu.vn',

@@ -18,14 +18,16 @@ import {
 import {
   buildLoginAttemptKey,
   computeSessionExpiry,
-  computeSlidingExpiry,
   generateOpaqueSessionToken,
   hashSessionToken,
   isSessionExpired,
   resolveLoginRedirect,
 } from './policy';
 import {
+  applySlidingSessionTouch,
   assertLoginWithinRateLimit,
+  buildAuthActor,
+  issueSingleActiveSession,
   persistMyAvatarRemoval,
   persistMyAvatarUpdate,
   verifyCurrentPasswordForChange,
@@ -52,6 +54,10 @@ export interface AuthenticatedSession {
   readonly session: SessionRecord;
   readonly profile: ProfileWithDepartmentsRecord;
   readonly actor: AuthActor;
+}
+
+export interface AuthenticateSessionOptions {
+  readonly touch?: boolean;
 }
 
 export interface MeResult {
@@ -95,11 +101,18 @@ export class AuthService {
       createdAt: now,
     });
 
-    const rememberMe = Boolean(input.remember);
+    const rememberMe = false;
     const rawToken = generateOpaqueSessionToken();
     const tokenHash = hashSessionToken(rawToken, this.deps.config.sessionSecret);
-    const expiresAt = computeSessionExpiry(now, rememberMe, this.deps.config);
-    const session = await this.deps.authRepo.createSession({ userId: profile.id, tokenHash, rememberMe, expiresAt, now });
+    const expiresAt = computeSessionExpiry(now, this.deps.config);
+    const session = await issueSingleActiveSession({
+      authRepo: this.deps.authRepo,
+      transactionRunner: this.deps.transactionRunner,
+      userId: profile.id,
+      tokenHash,
+      expiresAt,
+      now,
+    });
     const redirectTo = resolveLoginRedirect(input.returnTo, profile.mustChangePassword);
     this.deps.logger.info('User authenticated', { userId: profile.id, rememberMe });
     return {
@@ -112,6 +125,7 @@ export class AuthService {
 
   async authenticateSession(
     rawToken: string | null | undefined,
+    options?: AuthenticateSessionOptions,
   ): Promise<AuthenticatedSession> {
     if (!rawToken) {
       throw unauthorized('errors.unauthorized', {}, 'UNAUTHORIZED');
@@ -130,25 +144,18 @@ export class AuthService {
       throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
     }
     const permissions = await this.deps.authRepo.findUserPermissions(profile.id);
-    const nextExpiresAt = computeSlidingExpiry(now, session, this.deps.config);
-    await this.deps.authRepo.touchSession({
-      sessionId: session.id,
-      lastSeenAt: now,
-      expiresAt: nextExpiresAt,
+    const activeSession = await applySlidingSessionTouch({
+      authRepo: this.deps.authRepo,
+      session,
+      now,
+      config: this.deps.config,
+      shouldTouch: options?.touch !== false,
     });
-    const updatedSession: SessionRecord = {
-      ...session,
-      lastSeenAt: now,
-      expiresAt: nextExpiresAt,
+    return {
+      session: activeSession,
+      profile,
+      actor: buildAuthActor(profile, permissions),
     };
-    const actor: AuthActor = {
-      id: profile.id,
-      isActive: profile.isActive,
-      isAdmin: profile.isAdmin,
-      permissions,
-      departmentIds: profile.departments.map((d) => d.id),
-    };
-    return { session: updatedSession, profile, actor };
   }
 
   async getSessionInfo(

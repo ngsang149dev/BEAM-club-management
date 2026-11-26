@@ -14,6 +14,7 @@ export interface Config {
   readonly databaseUrl: string;
   readonly testDatabaseUrl?: string;
   readonly sessionSecret: string;
+  readonly sessionTtlMinutes: number;
   readonly sessionTtlDefaultHours: number;
   readonly sessionTtlRememberDays: number;
   readonly allowedEmailDomain: string;
@@ -49,6 +50,10 @@ const envSchema = z.object({
   DATABASE_URL: z.string().trim().min(1),
   TEST_DATABASE_URL: optionalNonEmptyString,
   SESSION_SECRET: z.string().min(16),
+  SESSION_TTL_MINUTES: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(1).max(1440).default(30),
+  ),
   SESSION_TTL_DEFAULT_HOURS: z.preprocess(
     emptyToUndefined,
     z.coerce.number().int().positive().default(24),
@@ -106,6 +111,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl: data.DATABASE_URL,
     testDatabaseUrl: data.TEST_DATABASE_URL,
     sessionSecret: data.SESSION_SECRET,
+    sessionTtlMinutes: data.SESSION_TTL_MINUTES,
     sessionTtlDefaultHours: data.SESSION_TTL_DEFAULT_HOURS,
     sessionTtlRememberDays: data.SESSION_TTL_REMEMBER_DAYS,
     allowedEmailDomain: data.ALLOWED_EMAIL_DOMAIN,
