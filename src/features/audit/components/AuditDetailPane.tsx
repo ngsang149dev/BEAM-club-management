@@ -62,8 +62,28 @@ function appendEntityMetadata(
   if (typeof detail.locale === 'string' && detail.locale) {
     rows.push({ label: t('detailFieldLocale'), value: detail.locale, mono: true });
   }
+}
+
+function appendReminderMetadata(
+  detail: Record<string, unknown>,
+  rows: MetadataEntry[],
+  t: ReturnType<typeof useTranslations<'auditLogs'>>
+): void {
   if (Array.isArray(detail.daysBefore)) {
-    rows.push({ label: t('detailFieldReminders'), value: detail.daysBefore.join(', '), mono: true });
+    const days = detail.daysBefore.filter(
+      (day): day is number => typeof day === 'number' && Number.isFinite(day)
+    );
+    rows.push({
+      label: t('detailFieldReminders'),
+      value: days.length > 0 ? days.join(', ') : t('detailValues.reminderDaysNone'),
+      mono: true,
+    });
+  }
+  if (typeof detail.remindOverdue === 'boolean') {
+    rows.push({
+      label: t('detailLabels.remindOverdue'),
+      value: formatYesNo(detail.remindOverdue, t),
+    });
   }
 }
 
@@ -190,6 +210,7 @@ function buildMetadataRows(
   const rows: MetadataEntry[] = [];
   appendPermissionMetadata(detail, rows, t, tPerm);
   appendEntityMetadata(detail, rows, t);
+  appendReminderMetadata(detail, rows, t);
   appendMediaMetadata(detail, rows, t);
   appendSecurityMetadata(detail, rows, t);
   appendArchiveRetentionMetadata(detail, rows, t);

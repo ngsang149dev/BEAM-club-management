@@ -21,7 +21,7 @@
 | **CR-07** | Trang Quản trị Giao diện CLB (`/admin/branding`) & Khung treo ảnh Polaroid động trang Login Desktop (`A1`–`A4`, `[RỦI RO CAO]`) | Nâng cấp `S01`/`CR-02` | Done |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Done |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
-| **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Chờ duyệt danh sách item |
+| **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done — chờ chủ dự án duyệt merge `main` |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Backlog |
 
 ---
@@ -532,7 +532,7 @@
 
 ---
 
-## Epic E8 — Email nhắc deadline, Cấu hình `app_settings` & Vercel Cron (`FR-02`, `FR-30`, `FR-31`) *(Chờ chủ dự án duyệt danh sách item)*
+## Epic E8 — Email nhắc deadline, Cấu hình `app_settings` & Vercel Cron (`FR-02`, `FR-30`, `FR-31`) *(Done — chờ chủ dự án duyệt merge `main`)*
 
 ### E8-01
 - **ID:** `E8-01`
@@ -551,7 +551,7 @@
 - **Kiểm thử bắt buộc:** Unit test policy/service/email-template (`AC-03` không gửi trùng, gộp 1 email/người, loại Done/deleted/inactive, `CR-03` ban, `WQ-27` che tiêu đề task ẩn, `vi`/`en`, lỗi SMTP từng phần, 0 PII) & integration test PostgreSQL trên `beam_test` (`GET/PUT /settings/reminders` `401`/`403`/`200` + `audit_logs`, `POST/GET /internal/cron/reminders` `401`/`200` chạy 2 lần idempotent).
 - **Ngoài phạm vi:** Đổi `docs/openapi.yaml`, thêm thư viện ngoài, chạm cấu hình production.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `Done (chờ chủ dự án duyệt merge)` *(đã hoàn tất trên `feat/E8-deadline-reminders`: `src/lib/reminders.ts`, `src/server/modules/reminders/*`, `composition-workstream.ts`, `GET/PUT /api/v1/settings/reminders`, `POST/GET /api/v1/internal/cron/reminders` & `GET` `/internal/cron/archive-purge`, `vercel.json`, unit `reminders-policy-service.test.ts` + integration `reminders-routes.test.ts` xanh)*
 
 ### E8-02
 - **ID:** `E8-02`
@@ -569,7 +569,7 @@
 - **Kiểm thử bắt buộc:** Unit test trang `S12` (quyền `403`, bật/tắt mốc, cảnh báo tắt hết, preview `VI`/`EN` che task ẩn & 0 PII), audit formatter `settings.reminders_updated`, `i18n-parity`.
 - **Ngoài phạm vi:** Đổi API, thêm nút gửi thử ngoài `openapi.yaml`, sửa mã backend `src/server/*`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `Done (chờ chủ dự án duyệt merge)` *(đã hoàn tất trên `feat/E8-deadline-reminders`: `/admin/reminders`, `useReminderSettings.ts`, `preview-helpers.ts` dùng chung `@/lib/reminders`, `ReminderMilestonesCard.tsx`, `RemindersAdminView.tsx`, `ReminderEmailPreview.tsx` + `ReminderEmailPreviewParts.tsx`, `settings.reminders_updated` trên `S13`, `vi`/`en` `100%`, unit `reminders-admin.test.tsx` & `audit-logs.test.tsx` xanh)*
 
 ### E8-03
 - **ID:** `E8-03`
@@ -583,4 +583,4 @@
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `Done (chờ chủ dự án duyệt merge)` *(vượt `8/8` cổng CI sau sửa: `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `345` module / `1,677` phụ thuộc, `57` unit / `301` test, `18` integration PostgreSQL / `30` test, `next build` `41/41` route, `44/44` Chrome E2E `2.7m` gồm `reminders.spec.ts` `2/2`, và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` với `0` Blocker, `0` Major)*

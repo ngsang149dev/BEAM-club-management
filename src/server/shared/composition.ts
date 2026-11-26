@@ -8,17 +8,21 @@ import type { DepartmentsService } from '@/server/modules/departments';
 import type { MembersService } from '@/server/modules/members';
 import type { NotificationsService } from '@/server/modules/notifications';
 import type { PermissionsService } from '@/server/modules/permissions';
+import type { RemindersService } from '@/server/modules/reminders';
 import type { TaskEventsService } from '@/server/modules/task-events';
 import type { TasksService } from '@/server/modules/tasks';
 import { type Clock, SystemClock } from './clock';
 import {
   buildDirectoryServices,
   buildGovernanceServices,
-  buildWorkstreamServices,
   createDefaultAuditRepo,
-  type ServiceOverrides,
+  type DirectoryGovernanceOverrides,
   type SharedInfraContext,
 } from './composition-services';
+import {
+  buildWorkstreamServices,
+  type WorkstreamServiceOverrides,
+} from './composition-workstream';
 import { type Config, loadConfig } from './config';
 import { createDatabaseClient, type Database } from './db';
 import { type Logger, StructuredLogger } from './logger';
@@ -45,8 +49,12 @@ export interface ServerContainer {
   readonly notificationsService: NotificationsService;
   readonly boardsService: BoardsService;
   readonly archiveService: ArchiveService;
+  readonly remindersService: RemindersService;
   dispose(): Promise<void>;
 }
+
+export type ServiceOverrides = DirectoryGovernanceOverrides &
+  WorkstreamServiceOverrides;
 
 export interface ContainerOverrides extends ServiceOverrides {
   readonly config?: Config;

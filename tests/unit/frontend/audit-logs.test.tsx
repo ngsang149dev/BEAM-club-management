@@ -30,7 +30,13 @@ vi.mock('next/link', () => ({
 
 import { AuditLogsView } from '@/features/audit/components/AuditLogsView';
 import { describeAuditError } from '@/features/audit/error-mapping';
-import { computeAuditFromIso, formatAuditTimestamp, resolveAuditActionKey } from '@/features/audit/formatters';
+import {
+  AUDIT_FILTER_ACTION_OPTIONS,
+  computeAuditFromIso,
+  formatAuditDetailPreview,
+  formatAuditTimestamp,
+  resolveAuditActionKey,
+} from '@/features/audit/formatters';
 
 type AuditLogDto = components['schemas']['AuditLogDto'];
 
@@ -446,5 +452,72 @@ describe('AuditLogsView & S13 helpers', () => {
     const wordmarkEnHtml = renderAudit({ permissions: ['audit.view'], locale: 'en' });
     expect(wordmarkEnHtml).toContain('Updated club wordmark');
     expect(wordmarkEnHtml).toContain('Restored default club wordmark');
+  });
+
+  it('supports settings.reminders_updated filter, empty/non-empty daysBefore preview, and remindOverdue detail pane in vi/en', () => {
+    expect(AUDIT_FILTER_ACTION_OPTIONS).toContainEqual({
+      value: 'settings.reminders_updated',
+      key: 'remindersUpdated',
+    });
+    expect(resolveAuditActionKey('settings.reminders_updated')).toBe('remindersUpdated');
+    expect(resolveAuditActionKey('reminders.updated')).toBe('remindersUpdated');
+
+    expect(formatAuditDetailPreview({ daysBefore: [2, 1], remindOverdue: true })).toBe(
+      '[2, 1] · overdue=yes'
+    );
+    expect(formatAuditDetailPreview({ daysBefore: [], remindOverdue: false })).toBe(
+      '[] · overdue=no'
+    );
+
+    const remindersOnEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      targetUser: null,
+      action: 'settings.reminders_updated',
+      detail: { daysBefore: [2, 1], remindOverdue: true },
+    };
+    const remindersOffEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      id: '90000000-0000-4000-8000-000000000099',
+      targetUser: null,
+      action: 'settings.reminders_updated',
+      detail: { daysBefore: [], remindOverdue: false },
+    };
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [remindersOffEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const viOffHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(viOffHtml).toContain('value="settings.reminders_updated"');
+    expect(viOffHtml).toContain('Cập nhật nhắc deadline');
+    expect(viOffHtml).toContain('[] · overdue=no');
+    expect(viOffHtml).toContain('Mốc nhắc');
+    expect(viOffHtml).toContain('Không có ([])');
+    expect(viOffHtml).toContain('Nhắc task quá hạn');
+    expect(viOffHtml).toContain('>Không<');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [remindersOnEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const enOnHtml = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(enOnHtml).toContain('Updated reminders');
+    expect(enOnHtml).toContain('[2, 1] · overdue=yes');
+    expect(enOnHtml).toContain('Reminder schedule');
+    expect(enOnHtml).toContain('2, 1');
+    expect(enOnHtml).toContain('Remind overdue tasks');
+    expect(enOnHtml).toContain('>Yes<');
   });
 });

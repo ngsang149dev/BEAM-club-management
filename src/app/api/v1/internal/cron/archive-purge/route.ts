@@ -3,7 +3,7 @@ import { getRequestId } from '@/server/shared/auth-http';
 import { getContainer } from '@/server/shared/composition';
 import { toErrorResponse } from '@/server/shared/http';
 
-export async function POST(request: Request): Promise<NextResponse> {
+async function handleArchivePurgeCron(request: Request): Promise<NextResponse> {
   const requestId = getRequestId(request);
   const container = getContainer();
 
@@ -20,4 +20,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   } catch (error) {
     return toErrorResponse(error, container.logger, requestId);
   }
+}
+
+export async function POST(request: Request): Promise<NextResponse> {
+  return handleArchivePurgeCron(request);
+}
+
+export async function GET(request: Request): Promise<NextResponse> {
+  return handleArchivePurgeCron(request);
 }
