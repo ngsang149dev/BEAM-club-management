@@ -19,9 +19,9 @@
 | **CR-06** | Thiết kế lại trình chỉnh sửa Task 2 cột (`~900px` / modal `720px`) & tách riêng tùy chọn Thông báo trên web / Email cho cả Ban & thành viên lẻ (`A1`–`A3`, `[RỦI RO CAO]`) | Nâng cấp `S04`, `S05`, `CR-03` | Done |
 | **E6** | Lọc & tìm kiếm board/task nâng cao; nút chuyển cột bàn phím/mobile (kéo thả & priority 1–4 đã giao trong E5) | FR-22, FR-25, FR-27 | Done |
 | **CR-07** | Trang Quản trị Giao diện CLB (`/admin/branding`) & Khung treo ảnh Polaroid động trang Login Desktop (`A1`–`A4`, `[RỦI RO CAO]`) | Nâng cấp `S01`/`CR-02` | Done |
-| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Done (chờ duyệt merge vào main) |
-| **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Backlog |
-| **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-30, FR-31 | Backlog |
+| **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Done |
+| **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
+| **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Chờ duyệt danh sách item |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Backlog |
 
 ---
@@ -478,7 +478,7 @@
 
 ---
 
-## Epic E7A — Lịch sử hoạt động `task_events`, Hoàn tác (Undo) & Thùng rác theo Board (`FR-60`, `FR-61`, `FR-62`) *(Done — chờ chủ dự án duyệt merge `main`)*
+## Epic E7A — Lịch sử hoạt động `task_events`, Hoàn tác (Undo) & Thùng rác theo Board (`FR-60`, `FR-61`, `FR-62`) *(Done, đã duyệt & merge vào `main`)*
 
 ### E7A-01
 - **ID:** `E7A-01`
@@ -495,7 +495,7 @@
 - **Kiểm thử bắt buộc:** Unit test Command Registry & service (đủ từng loại sự kiện, `400`, `403`, `404`, `409` conflict + `force=true`, 0 PII) & integration test PostgreSQL trên `beam_test` (cả append-only trigger `task_events` `AC-22` và `/boards/{id}/trash` `WQ-17`).
 - **Ngoài phạm vi:** Sửa/xóa `task_events` (bị khóa), xóa vĩnh viễn ngoài Archive (`CR-04`), sửa `docs/openapi.yaml`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done` *(chờ chủ dự án duyệt merge `main`; `E7A-01` unit `task-events-policy-service.test.ts` + integration PostgreSQL `task-events-revert-trash-routes.test.ts` xanh)*
+- **Trạng thái:** `Done` *(đã duyệt & merge `main`; `E7A-01` unit `task-events-policy-service.test.ts` + integration PostgreSQL `task-events-revert-trash-routes.test.ts` xanh)*
 
 ### E7A-02
 - **ID:** `E7A-02`
@@ -513,7 +513,7 @@
 - **Kiểm thử bắt buộc:** Unit test tab Lịch sử, formatter loại sự kiện `vi`/`en`, hộp thoại xung đột `409`, toast Hoàn tác, kiểm tra `i18n-parity`.
 - **Ngoài phạm vi:** Đổi API, sửa mã backend `src/server/*`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Done` *(chờ chủ dự án duyệt merge `main`; `E7A-02` tab Lịch sử `S05` + toast Hoàn tác `10s` + modal `409` + Thùng rác `S04` + unit `task-history-undo.test.tsx`, `i18n` `vi`/`en` xanh)*
+- **Trạng thái:** `Done` *(đã duyệt & merge `main`; `E7A-02` tab Lịch sử `S05` + toast Hoàn tác `10s` + modal `409` + Thùng rác `S04` + unit `task-history-undo.test.tsx`, `i18n` `vi`/`en` xanh)*
 
 ### E7A-03
 - **ID:** `E7A-03`
@@ -527,4 +527,60 @@
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done` *(chờ chủ dự án duyệt merge `main`; vượt `8/8` cổng CI: `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `326/1584`, `55` unit / `289` test, `17` integration / `29` test, `next build` `38/38` route, `42/42` Chrome E2E `2.7m` gồm `task-history-undo.spec.ts` `4/4`, và `qa-reviewer` ngữ cảnh sạch `6A.8`/`§7`/`§8` đạt `VERDICT: PASS` với `0` Blocker, `0` Major)*
+- **Trạng thái:** `Done` *(đã duyệt & merge `main`; vượt `8/8` cổng CI: `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `326/1584`, `55` unit / `289` test, `17` integration / `29` test, `next build` `38/38` route, `42/42` Chrome E2E `2.7m` gồm `task-history-undo.spec.ts` `4/4`, và `qa-reviewer` ngữ cảnh sạch `6A.8`/`§7`/`§8` đạt `VERDICT: PASS` với `0` Blocker, `0` Major)*
+
+
+---
+
+## Epic E8 — Email nhắc deadline, Cấu hình `app_settings` & Vercel Cron (`FR-02`, `FR-30`, `FR-31`) *(Chờ chủ dự án duyệt danh sách item)*
+
+### E8-01
+- **ID:** `E8-01`
+- **Tiêu đề:** Backend `GET/PUT /settings/reminders`, Cron `POST` (& `GET`) `/internal/cron/reminders` (`CRON_SECRET`), mẫu email gộp song ngữ `E01` & cấu hình `vercel.json` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `FR-02`, `FR-26`, `FR-30`, `FR-31`, `FR-42`, `FR-43`, `FR-50`, `AC-03`, `WQ-08`, `WQ-12`, `WQ-19`, `WQ-26`, `WQ-27`, `WQ-34`, `WQ-35`
+- **Phụ thuộc:** `E7A` (`Done`, merged `main`); schema `app_settings` / `reminders` / `tasks` / `task_assignees` / `task_departments` & `docs/openapi.yaml` đã khóa (`0` migration, `0` thay đổi OpenAPI)
+- **Mục tài liệu cần đọc:** `HANDOFF` (mục 8.1, 8.4, 9 `AC-03`, 11.5), `docs/openapi.yaml` (`/settings/reminders`, `/internal/cron/reminders`), `docs/DECISIONS.md` (`WQ-08`, `WQ-12`, `WQ-19`, `WQ-26`, `WQ-27`, `WQ-34`, `WQ-35`, `CR-03`, `CR-04`, `E6`), `AGENTS.md` (§6A.3, §6A.4, §7)
+- **Phạm vi file được sửa:** `src/lib/reminders.ts`, `src/server/modules/reminders/*`, `src/server/shared/composition*.ts`, `src/app/api/v1/settings/reminders/route.ts`, `src/app/api/v1/internal/cron/reminders/route.ts`, `src/app/api/v1/internal/cron/archive-purge/route.ts` (bổ sung alias `GET` tương thích Vercel Cron), `vercel.json`, `tests/unit/reminders/*`, `tests/integration/reminders/*`
+- **Tiêu chí chấp nhận:**
+  1. `GET /api/v1/settings/reminders` & `PUT /api/v1/settings/reminders`: kiểm tra `authorize(actor, 'reminder.configure')` (`403` nếu thiếu); chuẩn hóa `daysBefore` (`0..365`, khử trùng lặp, sắp giảm dần, cho phép `[]` khi tắt hết mốc trước hạn), lưu `app_settings('reminders')` (giữ `sendHourVn: 7`) và ghi `audit_logs` (`action = 'settings.reminders_updated'`, 0 PII) trong cùng transaction; `updatedBy` trả qua `MemberPublicSummary`.
+  2. `POST` (& `GET`) `/api/v1/internal/cron/reminders`: bảo vệ bằng `Authorization: Bearer <CRON_SECRET>` (`401` nếu thiếu/sai); tính ngày theo `Asia/Ho_Chi_Minh` (`WQ-12`), lọc task đang hoạt động (`deleted_at IS NULL`, `purged_at IS NULL`, board chưa lưu trữ/purge, **không thuộc cột cuối `Done`** theo `notDoneColumnSqlCondition`) khớp `daysBefore` (`kind = 'd<N>'`) hoặc đã quá hạn khi `remindOverdue = true` (`kind = 'overdue'` theo `HANDOFF §8.1`).
+  3. Tập người nhận = hợp khử trùng lặp giữa `task_assignees` đang hoạt động và thành viên đang hoạt động thuộc `task_departments` (`CR-03`), loại trừ `is_active = false` / `purged_at IS NOT NULL` (`FR-43`), kiểm tra kép `canViewTask` cho task ẩn (`FR-26`); bỏ qua bộ `(task_id, user_id, kind)` đã có trong `reminders` (`skippedAlreadySent`, `AC-03`, `WQ-26`).
+  4. Gộp tối đa **1 email duy nhất / người / lần chạy** (`FR-31`, `WQ-08`), nhóm **Quá hạn / Đến hạn hôm nay / Sắp tới** (`priority DESC`, `due_at ASC`, `title ASC` `WQ-34`), ngôn ngữ theo `profiles.locale` (`vi`/`en` Strategy `6A.4`, `FR-50`), CTA `${APP_URL}/my-tasks` (`WQ-35`); **không lộ MSSV/email/tên người khác (`FR-42`) và che hoàn toàn tiêu đề task ẩn (`WQ-27`)**. Chỉ ghi `reminders` sau khi gửi SMTP thành công cho người nhận đó; lỗi SMTP của một người được log qua `Logger` (`scrubPiiText`) mà không làm hỏng lượt gửi của người khác.
+  5. Thêm `vercel.json` cấu hình lịch chạy hằng ngày (`0 0 * * *` UTC = `07:00 UTC+7` cho `/api/v1/internal/cron/reminders` và `5 0 * * *` UTC cho `/api/v1/internal/cron/archive-purge`).
+- **Kiểm thử bắt buộc:** Unit test policy/service/email-template (`AC-03` không gửi trùng, gộp 1 email/người, loại Done/deleted/inactive, `CR-03` ban, `WQ-27` che tiêu đề task ẩn, `vi`/`en`, lỗi SMTP từng phần, 0 PII) & integration test PostgreSQL trên `beam_test` (`GET/PUT /settings/reminders` `401`/`403`/`200` + `audit_logs`, `POST/GET /internal/cron/reminders` `401`/`200` chạy 2 lần idempotent).
+- **Ngoài phạm vi:** Đổi `docs/openapi.yaml`, thêm thư viện ngoài, chạm cấu hình production.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Chờ chủ dự án duyệt`
+
+### E8-02
+- **ID:** `E8-02`
+- **Tiêu đề:** Trang Cấu hình Nhắc deadline `S12` (`/admin/reminders`), Xem trước email `E01` song ngữ `VI`/`EN` & nhãn Audit `settings.reminders_updated`
+- **Sub-agent phụ trách:** `frontend`
+- **Liên quan:** `FR-02`, `FR-30`, `FR-42`, `FR-50`, `S12`, `E01`, `S13`, `WQ-08`, `WQ-27`, `WQ-34`
+- **Phụ thuộc:** `E7A` (`Done`), `docs/openapi.yaml` đã khóa (có thể chạy song song `E8-01` sau khi duyệt do không trùng vùng file)
+- **Mục tài liệu cần đọc:** `HANDOFF` (mục 8.4, 11.3 `S12`), `wireframes/s12-reminders.html`, `wireframes/e01-reminder-email.html`, `docs/openapi.yaml` (`/settings/reminders`)
+- **Phạm vi file được sửa:** `src/app/admin/reminders/page.tsx`, `src/features/reminders/*`, `src/features/audit/*`, `src/app/globals.css`, `messages/vi.json`, `messages/en.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:**
+  1. Trang `/admin/reminders` (`S12`, đã có sẵn mục điều hướng trên `AppShellNav`): yêu cầu `reminder.configure` hoặc Admin (trả `403` `ErrorState` chuẩn khi thiếu quyền).
+  2. Khối **Mốc nhắc (`daysBefore` & `remindOverdue`)**: bật/tắt mốc chuẩn (`Còn 2 ngày`, `Còn 1 ngày`, `Đã quá hạn`) và hỗ trợ thêm/xóa mốc ngày tùy chỉnh (`0..365`); hiện cảnh báo rõ khi tắt hết mọi mốc kèm nút **`Bật lại mốc mặc định`** (`[2, 1]`, `remindOverdue: true`); hiển thị giờ gửi cố định `07:00 · Asia/Ho_Chi_Minh (UTC+7)`, quy tắc người nhận/loại trừ, thông tin người cập nhật gần nhất (0 PII), nút `Hủy` / `Lưu cấu hình` kèm toast.
+  3. Khối **Xem trước email (`E01`)**: chuyển đổi `VI` / `EN`, dựng khung email nhắc deadline từ tên `/me` và danh sách `/me/tasks` của chính người đang mở (hoặc trạng thái mẫu/trống an toàn, che tiêu đề task ẩn `WQ-27`, không lộ MSSV/email/tên người khác).
+  4. Định dạng hành động `settings.reminders_updated` trên `S13` (`/admin/audit`); 100% chuỗi qua `messages/{vi,en}.json`.
+- **Kiểm thử bắt buộc:** Unit test trang `S12` (quyền `403`, bật/tắt mốc, cảnh báo tắt hết, preview `VI`/`EN` che task ẩn & 0 PII), audit formatter `settings.reminders_updated`, `i18n-parity`.
+- **Ngoài phạm vi:** Đổi API, thêm nút gửi thử ngoài `openapi.yaml`, sửa mã backend `src/server/*`.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Chờ chủ dự án duyệt`
+
+### E8-03
+- **ID:** `E8-03`
+- **Tiêu đề:** Kiểm thử E2E Chrome & kiểm định kiến trúc/bảo mật độc lập Epic `E8` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-engineer` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `FR-02`, `FR-26`, `FR-30`, `FR-31`, `FR-42`, `FR-43`, `FR-50`, `AC-03`, `WQ-27`, `AGENTS.md` (§6A.8, §7, §8)
+- **Phụ thuộc:** `E8-01`, `E8-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `HANDOFF` (`FR-30`, `FR-31`, `AC-03`), `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `tests/e2e/reminders.spec.ts` (và bổ sung test trong `tests/*` nếu cần phủ AC)
+- **Tiêu chí chấp nhận:** Chrome E2E xác minh phân quyền `/admin/reminders` (`403` vs `reminder.configure`/Admin, lưu mốc + `audit_logs`, cảnh báo tắt hết mốc, xem trước `VI`/`EN`), bảo vệ `/api/v1/internal/cron/reminders` bằng `CRON_SECRET` (`401`), chạy cron 2 lần liên tiếp chỉ gửi & ghi `1` nhắc mỗi mốc (`AC-03`), gộp 1 email/người cho cả gán cá nhân & Ban (`CR-03`), bỏ qua cột `Done`/task xóa mềm/thành viên đã rời, che tiêu đề task ẩn (`WQ-27`) & 0 PII; vượt `8/8` cổng CI và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
+- **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Chờ chủ dự án duyệt`
