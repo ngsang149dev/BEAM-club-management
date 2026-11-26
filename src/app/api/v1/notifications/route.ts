@@ -13,7 +13,10 @@ export async function GET(request: Request): Promise<NextResponse> {
   const container = getContainer();
 
   try {
-    const auth = await authenticateApiRequest(request, container);
+    const isBackgroundPoll = request.headers.get('x-beam-background') === '1';
+    const auth = await authenticateApiRequest(request, container, {
+      touch: !isBackgroundPoll,
+    });
     const searchParams = new URL(request.url).searchParams;
     const query = listNotificationsQuerySchema.parse({
       unreadOnly: searchParams.get('unreadOnly'),

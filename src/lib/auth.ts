@@ -18,7 +18,6 @@ export const newPasswordSchema = z
 export const loginFormSchema = z.object({
   studentId: studentIdSchema,
   password: passwordInputSchema,
-  remember: z.boolean(),
 });
 
 export type LoginFormInput = z.infer<typeof loginFormSchema>;

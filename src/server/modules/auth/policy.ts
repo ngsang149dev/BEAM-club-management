@@ -9,14 +9,11 @@ export const PASSWORD_CHANGE_RATE_LIMIT_MAX_FAILED = 5;
 export const PASSWORD_CHANGE_ATTEMPT_PREFIX = 'pwd:';
 export const LOGIN_ATTEMPT_ESCAPE_PREFIX = 'login:';
 export const FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT = '/profile?changePassword=1';
+export const DEFAULT_SESSION_TTL_MINUTES = 30;
 
-const MS_PER_HOUR = 60 * 60 * 1000;
-const MS_PER_DAY = 24 * MS_PER_HOUR;
+const MS_PER_MINUTE = 60 * 1000;
 
-export type SessionTtlConfig = Pick<
-  Config,
-  'sessionTtlDefaultHours' | 'sessionTtlRememberDays'
->;
+export type SessionTtlConfig = Pick<Config, 'sessionTtlMinutes'>;
 
 export function buildPasswordChangeAttemptKey(userId: string): string {
   return `${PASSWORD_CHANGE_ATTEMPT_PREFIX}${userId}`;
@@ -47,13 +44,9 @@ export function isPasswordChangeRateLimited(recentFailedAttempts: number): boole
 
 export function computeSessionExpiry(
   now: Date,
-  rememberMe: boolean,
   config: SessionTtlConfig,
 ): Date {
-  const ttlMs = rememberMe
-    ? config.sessionTtlRememberDays * MS_PER_DAY
-    : config.sessionTtlDefaultHours * MS_PER_HOUR;
-  return new Date(now.getTime() + ttlMs);
+  return new Date(now.getTime() + config.sessionTtlMinutes * MS_PER_MINUTE);
 }
 
 export function isSessionExpired(
@@ -68,13 +61,9 @@ export function isSessionExpired(
 
 export function computeSlidingExpiry(
   now: Date,
-  session: { readonly rememberMe: boolean; readonly expiresAt: Date },
-  config: Pick<Config, 'sessionTtlRememberDays'>,
+  config: SessionTtlConfig,
 ): Date {
-  if (!session.rememberMe) {
-    return new Date(session.expiresAt.getTime());
-  }
-  return new Date(now.getTime() + config.sessionTtlRememberDays * MS_PER_DAY);
+  return new Date(now.getTime() + config.sessionTtlMinutes * MS_PER_MINUTE);
 }
 
 export function generateOpaqueSessionToken(): string {

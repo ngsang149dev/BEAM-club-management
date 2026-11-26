@@ -183,12 +183,6 @@ function LoginFormFields({
           {...register('password', { onChange: onClearApiError })}
         />
       </div>
-      <label className="login-remember">
-        <input type="checkbox" className="login-remember-checkbox" disabled={isBusy} {...register('remember')} />
-        <span className="login-remember-text">
-          <span className="login-remember-label">{tAuth('rememberLabel')}</span>
-        </span>
-      </label>
     </>
   );
 }
@@ -200,7 +194,7 @@ export function LoginForm({ expired = false, returnTo }: LoginFormProps) {
   const loginMutation = useLoginMutation();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormInput>({
     resolver: zodResolver(loginFormSchema),
-    defaultValues: { studentId: '', password: '', remember: false },
+    defaultValues: { studentId: '', password: '' },
   });
   const isBusy = isSubmitting || loginMutation.isPending;
 
@@ -208,7 +202,6 @@ export function LoginForm({ expired = false, returnTo }: LoginFormProps) {
     loginMutation.mutate({
       studentId: values.studentId,
       password: values.password,
-      remember: values.remember,
       returnTo: resolveExplicitReturnTo(returnTo),
     });
   }

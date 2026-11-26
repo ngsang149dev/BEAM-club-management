@@ -117,6 +117,23 @@ describe('AuthGuard', () => {
     const me401Html = renderGuard();
     expect(me401Html).toContain('Đang tải...');
     expect(me401Html).not.toContain('protected-child');
+
+    hooksMock.useSessionQuery.mockReturnValue({
+      isPending: false,
+      isError: true,
+      data: undefined,
+      error: new ApiClientError({
+        status: 401,
+        code: 'SESSION_EXPIRED',
+        messageKey: 'errors.sessionExpired',
+        details: {},
+      }),
+      refetch: vi.fn(),
+    });
+    const sessionExpiredHtml = renderGuard();
+    expect(sessionExpiredHtml).toContain('Đang tải...');
+    expect(sessionExpiredHtml).not.toContain('protected-child');
+    expect(sessionExpiredHtml).not.toContain('Đã có lỗi xảy ra');
   });
 
   it('renders loading state when loggedOut flag is set after explicit sign-out', () => {

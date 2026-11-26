@@ -115,6 +115,7 @@ describe('Boards search q & viewer-scoped visibleTaskCount/overdueTaskCount inte
       databaseUrl: process.env.TEST_DATABASE_URL!,
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `boards-search-secret-${suffix}-0123456789`,
+      sessionTtlMinutes: 30,
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',

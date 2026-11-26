@@ -49,6 +49,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 import { ChangePasswordCard, resolveChangePasswordErrorKey } from '@/features/auth/components/ChangePasswordCard';
+import { ProfileSessionCard } from '@/features/auth/components/ProfileSideCards';
 import { ProfileContent, ProfileView } from '@/features/auth/components/ProfileView';
 
 type MemberDetail = components['schemas']['MemberDetail'];
@@ -119,20 +120,23 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     expect(html).toContain('Xem danh sách thành viên, họ tên và ban');
     expect(html).toContain('task.update_assigned');
     expect(html).toContain('comment.create');
-    expect(html).toContain('Tắt (phiên 24 giờ)');
+    expect(html).toContain('Chế độ phiên');
+    expect(html).toContain('1 thiết bị · 30 phút');
+    expect(html).not.toContain('Ghi nhớ đăng nhập');
+    expect(html).not.toContain('phiên 24 giờ');
     expect(html).toContain('15:30');
     expect(html).toContain('Đổi mật khẩu');
     expect(html).toContain('type="password"');
     expect(html).not.toContain('Cần đổi mật khẩu ngay');
   });
 
-  it('renders admin all-permissions state, remember-on state, no language card, and English ChangePasswordCard', () => {
+  it('renders admin all-permissions state, single-device session state, no language card, and English ChangePasswordCard', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
         <ProfileContent
           profile={{ ...BASE_PROFILE, isAdmin: true, locale: 'en' }}
           permissions={[]}
-          session={{ rememberMe: true, expiresAt: '2026-12-24T01:15:00.000Z' }}
+          session={{ rememberMe: false, expiresAt: '2026-12-24T01:15:00.000Z' }}
           onSignOut={vi.fn()}
         />
       </NextIntlClientProvider>
@@ -144,10 +148,31 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     expect(html).not.toContain('Ngôn ngữ giao diện');
     expect(html).not.toContain('lang-switch');
     expect(html).toContain('Admin accounts have full access across the workspace.');
-    expect(html).toContain('On (30 days)');
+    expect(html).toContain('Session mode');
+    expect(html).toContain('Single device · 30 min');
+    expect(html).not.toContain('Remember me');
+    expect(html).not.toContain('On (30 days)');
     expect(html).toContain('Sign out');
     expect(html).toContain('Change password');
     expect(html).not.toContain('Password change required');
+  });
+
+  it('renders ProfileSessionCard with expiresAt-only session object and Asia/Ho_Chi_Minh timezone', () => {
+    const html = renderToStaticMarkup(
+      <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
+        <ProfileSessionCard
+          session={{ expiresAt: '2026-11-24T08:30:00.000Z' }}
+          isSigningOut={false}
+          onSignOut={vi.fn()}
+        />
+      </NextIntlClientProvider>
+    );
+
+    expect(html).toContain('Phiên đăng nhập');
+    expect(html).toContain('Chế độ phiên');
+    expect(html).toContain('1 thiết bị · 30 phút');
+    expect(html).toContain('15:30');
+    expect(html).not.toContain('Ghi nhớ đăng nhập');
   });
 
   it('renders forced password-change banner when mustChangePassword is true or changePassword=1 query param is set', () => {

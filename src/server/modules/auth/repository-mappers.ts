@@ -1,4 +1,5 @@
 import type {
+  CreateSessionInput,
   DepartmentRecord,
   ProfileWithDepartmentsRecord,
   SessionRecord,
@@ -37,6 +38,47 @@ export function mapSessionRow(row: SessionRowShape): SessionRecord {
     expiresAt: row.expiresAt,
     lastSeenAt: row.lastSeenAt,
     revokedAt: row.revokedAt,
+  };
+}
+
+export function buildCreateSessionValues(input: CreateSessionInput) {
+  return {
+    userId: input.userId,
+    tokenHash: input.tokenHash,
+    rememberMe: input.rememberMe,
+    expiresAt: input.expiresAt,
+    lastSeenAt: input.now,
+    createdAt: input.now,
+    updatedAt: input.now,
+  };
+}
+
+export function requireCreatedSession(row: SessionRowShape | undefined): SessionRecord {
+  if (!row) {
+    throw new Error('Failed to create session record');
+  }
+  return mapSessionRow(row);
+}
+
+export function buildAvatarUpdateValues(input: {
+  readonly avatarData: Buffer;
+  readonly avatarMime: string;
+  readonly now: Date;
+}) {
+  return {
+    avatarData: input.avatarData,
+    avatarMime: input.avatarMime,
+    avatarUpdatedAt: input.now,
+    updatedAt: input.now,
+  };
+}
+
+export function buildClearAvatarValues(now: Date) {
+  return {
+    avatarData: null,
+    avatarMime: null,
+    avatarUpdatedAt: null,
+    updatedAt: now,
   };
 }
 

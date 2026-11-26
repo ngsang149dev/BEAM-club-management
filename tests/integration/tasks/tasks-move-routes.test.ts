@@ -92,6 +92,7 @@ describe('POST /api/v1/tasks/[id]/move integration', () => {
       databaseUrl: process.env.TEST_DATABASE_URL!,
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `move-test-secret-${suffix}-0123456789`,
+      sessionTtlMinutes: 30,
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',

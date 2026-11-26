@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/lib/errors';
 import {
   attachLocaleCookie,
   attachSessionCookie,
+  authenticateApiRequest,
   clearSessionCookie,
   extractClientIp,
   getRequestId,
@@ -15,7 +16,6 @@ import {
 
 const BASE_CONFIG = {
   nodeEnv: 'test' as const,
-  sessionTtlRememberDays: 30,
 };
 
 describe('auth-http helpers', () => {
@@ -85,7 +85,7 @@ describe('auth-http helpers', () => {
     expect(shouldUseSecureCookie(proxiedReq, { nodeEnv: 'development' })).toBe(true);
   });
 
-  it('attaches, refreshes, and clears session and locale cookies with AC-13 semantics', () => {
+  it('always issues browser session cookies without Max-Age/Expires and keeps refreshSessionCookieIfRemembered a no-op (CR-08)', () => {
     const req = new Request('http://localhost/api/v1/auth/login');
 
     const resDefault = NextResponse.json({ ok: true });
@@ -110,7 +110,11 @@ describe('auth-http helpers', () => {
       config: BASE_CONFIG,
     });
     const rememberCookie = resRemember.headers.getSetCookie()[0]!;
-    expect(rememberCookie).toMatch(/Max-Age=2592000/i);
+    expect(rememberCookie).toContain('beam_session=tok-remember');
+    expect(rememberCookie).toMatch(/HttpOnly/i);
+    expect(rememberCookie).toMatch(/SameSite=Lax/i);
+    expect(rememberCookie).not.toMatch(/Max-Age=/i);
+    expect(rememberCookie).not.toMatch(/Expires=/i);
 
     const resNoRefresh = NextResponse.json({ ok: true });
     refreshSessionCookieIfRemembered(resNoRefresh, {
@@ -128,7 +132,7 @@ describe('auth-http helpers', () => {
       request: req,
       config: BASE_CONFIG,
     });
-    expect(resRefresh.headers.getSetCookie()[0]).toMatch(/Max-Age=2592000/i);
+    expect(resRefresh.headers.getSetCookie()).toHaveLength(0);
 
     const resCleared = NextResponse.json({ ok: true });
     clearSessionCookie(resCleared, req, BASE_CONFIG);
@@ -171,5 +175,42 @@ describe('auth-http helpers', () => {
       code: 'INVALID_JSON',
       httpStatus: 400,
     } satisfies Partial<AppError>);
+  });
+
+  it('forwards optional { touch } options through authenticateApiRequest', async () => {
+    const authenticateSession = vi.fn().mockResolvedValue({
+      session: {
+        id: 'sess-1',
+        userId: 'user-1',
+        tokenHash: 'hash',
+        rememberMe: false,
+        expiresAt: new Date('2026-11-24T00:30:00.000Z'),
+        lastSeenAt: new Date('2026-11-24T00:00:00.000Z'),
+        revokedAt: null,
+      },
+      profile: {} as never,
+      actor: {
+        id: 'user-1',
+        isActive: true,
+        isAdmin: false,
+        permissions: [],
+        departmentIds: [],
+      },
+    });
+    const req = new Request('http://localhost/api/v1/notifications', {
+      headers: { cookie: 'beam_session=raw-tok-1' },
+    });
+
+    await authenticateApiRequest(req, { authService: { authenticateSession } });
+    expect(authenticateSession).toHaveBeenNthCalledWith(1, 'raw-tok-1', undefined);
+
+    await authenticateApiRequest(
+      req,
+      { authService: { authenticateSession } },
+      { touch: false },
+    );
+    expect(authenticateSession).toHaveBeenNthCalledWith(2, 'raw-tok-1', {
+      touch: false,
+    });
   });
 });

@@ -114,6 +114,7 @@ describe('Auth & /me Route Handlers integration', () => {
       databaseUrl: testDbUrl,
       testDatabaseUrl: testDbUrl,
       sessionSecret: `route-test-secret-${suffix}-0123456789`,
+      sessionTtlMinutes: 30,
       sessionTtlDefaultHours: 24,
       sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
@@ -384,7 +385,7 @@ describe('Auth & /me Route Handlers integration', () => {
     expect(attemptCountAfter).toBe(attemptCountBefore + 4);
   });
 
-  it('handles AC-13 cookie persistence & sliding cookie refresh across /auth/session and /me', async () => {
+  it('issues browser session cookies without Max-Age even when remember=true, revokes prior session, and avoids cookie refresh on /auth/session and /me (CR-08)', async () => {
     const defaultRes = await loginPost(
       new Request('http://localhost:3000/api/v1/auth/login', {
         method: 'POST',
@@ -419,19 +420,10 @@ describe('Auth & /me Route Handlers integration', () => {
     );
     expect(defaultSessionRes.status).toBe(200);
     expect(
-      defaultSessionRes.headers
-        .getSetCookie()
-        .some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`)),
+      ((await defaultSessionRes.json()) as { rememberMe: boolean }).rememberMe,
     ).toBe(false);
-
-    const defaultMeRes = await meGet(
-      new Request('http://localhost:3000/api/v1/me', {
-        headers: { cookie: defaultPair },
-      }),
-    );
-    expect(defaultMeRes.status).toBe(200);
     expect(
-      defaultMeRes.headers
+      defaultSessionRes.headers
         .getSetCookie()
         .some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`)),
     ).toBe(false);
@@ -453,43 +445,66 @@ describe('Auth & /me Route Handlers integration', () => {
       rememberRes.headers.getSetCookie(),
       SESSION_COOKIE_NAME,
     );
-    expect(rememberCookieLine).toMatch(/Max-Age=2592000/i);
+    expect(rememberCookieLine).toMatch(/HttpOnly/i);
+    expect(rememberCookieLine).toMatch(/SameSite=Lax/i);
+    expect(rememberCookieLine).not.toMatch(/Max-Age=/i);
+    expect(rememberCookieLine).not.toMatch(/Expires=/i);
     expect(((await rememberRes.json()) as { redirectTo: string }).redirectTo).toBe(
       '/my-tasks',
     );
 
+    // Previous session from defaultRes is revoked immediately under single active session
+    const revokedDefaultRes = await sessionGet(
+      new Request('http://localhost:3000/api/v1/auth/session', {
+        headers: { cookie: defaultPair },
+      }),
+    );
+    expect(revokedDefaultRes.status).toBe(401);
+    expect(
+      ((await revokedDefaultRes.json()) as { error: { code: string } }).error.code,
+    ).toBe('SESSION_EXPIRED');
+
     const rememberPair = extractCookiePair(rememberCookieLine);
-    const refreshedSession = await sessionGet(
+    const nextSession = await sessionGet(
       new Request('http://localhost:3000/api/v1/auth/session', {
         headers: { cookie: rememberPair },
       }),
     );
-    expect(refreshedSession.status).toBe(200);
+    expect(nextSession.status).toBe(200);
+    expect(((await nextSession.json()) as { rememberMe: boolean }).rememberMe).toBe(
+      false,
+    );
     expect(
-      findSetCookie(refreshedSession.headers.getSetCookie(), SESSION_COOKIE_NAME),
-    ).toMatch(/Max-Age=2592000/i);
+      nextSession.headers
+        .getSetCookie()
+        .some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`)),
+    ).toBe(false);
 
-    const refreshedMe = await meGet(
+    const nextMe = await meGet(
       new Request('http://localhost:3000/api/v1/me', {
         headers: { cookie: rememberPair },
       }),
     );
-    expect(refreshedMe.status).toBe(200);
+    expect(nextMe.status).toBe(200);
     expect(
-      findSetCookie(refreshedMe.headers.getSetCookie(), SESSION_COOKIE_NAME),
-    ).toMatch(/Max-Age=2592000/i);
+      nextMe.headers
+        .getSetCookie()
+        .some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`)),
+    ).toBe(false);
 
-    const refreshedPatch = await mePatch(
+    const nextPatch = await mePatch(
       new Request('http://localhost:3000/api/v1/me', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json', cookie: rememberPair },
         body: JSON.stringify({ locale: 'vi' }),
       }),
     );
-    expect(refreshedPatch.status).toBe(200);
+    expect(nextPatch.status).toBe(200);
     expect(
-      findSetCookie(refreshedPatch.headers.getSetCookie(), SESSION_COOKIE_NAME),
-    ).toMatch(/Max-Age=2592000/i);
+      nextPatch.headers
+        .getSetCookie()
+        .some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`)),
+    ).toBe(false);
   });
 
   it('reflects DB permission revocation immediately, updates /me locale, and invalidates on logout (AC-07)', async () => {
@@ -850,7 +865,7 @@ describe('Auth & /me Route Handlers integration', () => {
     expect(sessionOneBody.user.mustChangePassword).toBe(true);
     expect('passwordHash' in sessionOneBody.user).toBe(false);
 
-    // Concurrent second session for same user
+    // Second login for same user revokes sessionOne immediately under CR-08
     const sessionTwoRes = await loginPost(
       new Request('http://localhost:3000/api/v1/auth/login', {
         method: 'POST',
@@ -870,11 +885,28 @@ describe('Auth & /me Route Handlers integration', () => {
       findSetCookie(sessionTwoRes.headers.getSetCookie(), SESSION_COOKIE_NAME),
     );
 
+    const revokedSessionOneRes = await meGet(
+      new Request('http://localhost:3000/api/v1/me', {
+        headers: { cookie: sessionOneCookie },
+      }),
+    );
+    expect(revokedSessionOneRes.status).toBe(401);
+
+    // Seed an extra unrevoked session in PostgreSQL to verify defense-in-depth revocation on password change
+    const legacyExtraHash = `legacy-extra-pw-${suffix}`;
+    await db.insert(sessions).values({
+      userId: firstLoginUserId,
+      tokenHash: legacyExtraHash,
+      rememberMe: false,
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+      lastSeenAt: new Date(),
+    });
+
     // 3. Invalid body -> 400 VALIDATION_ERROR
     const badBodyRes = await mePasswordPost(
       new Request('http://localhost:3000/api/v1/me/password', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', cookie: sessionOneCookie },
+        headers: { 'content-type': 'application/json', cookie: sessionTwoCookie },
         body: JSON.stringify({
           currentPassword: DEV_SEED_PASSWORD,
           newPassword: 'short',
@@ -890,7 +922,7 @@ describe('Auth & /me Route Handlers integration', () => {
     const wrongCurrentRes = await mePasswordPost(
       new Request('http://localhost:3000/api/v1/me/password', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', cookie: sessionOneCookie },
+        headers: { 'content-type': 'application/json', cookie: sessionTwoCookie },
         body: JSON.stringify({
           currentPassword: 'WrongCurrent#2026',
           newPassword: 'ChangedPass#2026',
@@ -907,20 +939,20 @@ describe('Auth & /me Route Handlers integration', () => {
       messageKey: 'errors.invalidCurrentPassword',
     });
 
-    // Session one still valid after wrong currentPassword
+    // Session two still valid after wrong currentPassword
     const stillValidMe = await meGet(
       new Request('http://localhost:3000/api/v1/me', {
-        headers: { cookie: sessionOneCookie },
+        headers: { cookie: sessionTwoCookie },
       }),
     );
     expect(stillValidMe.status).toBe(200);
 
-    // 5. Successful password change -> 200, mustChangePassword: false, keeps sessionOne, revokes sessionTwo
+    // 5. Successful password change -> 200, mustChangePassword: false, keeps sessionTwo, revokes legacy extra session
     const newSecret = 'ChangedPass#2026';
     const changeOkRes = await mePasswordPost(
       new Request('http://localhost:3000/api/v1/me/password', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', cookie: sessionOneCookie },
+        headers: { 'content-type': 'application/json', cookie: sessionTwoCookie },
         body: JSON.stringify({
           currentPassword: DEV_SEED_PASSWORD,
           newPassword: newSecret,
@@ -939,7 +971,7 @@ describe('Auth & /me Route Handlers integration', () => {
 
     const meAfterChange = await meGet(
       new Request('http://localhost:3000/api/v1/me', {
-        headers: { cookie: sessionOneCookie },
+        headers: { cookie: sessionTwoCookie },
       }),
     );
     expect(meAfterChange.status).toBe(200);
@@ -948,12 +980,11 @@ describe('Auth & /me Route Handlers integration', () => {
         .profile.mustChangePassword,
     ).toBe(false);
 
-    const otherSessionAfterChange = await meGet(
-      new Request('http://localhost:3000/api/v1/me', {
-        headers: { cookie: sessionTwoCookie },
-      }),
-    );
-    expect(otherSessionAfterChange.status).toBe(401);
+    const [legacyRow] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.tokenHash, legacyExtraHash));
+    expect(legacyRow?.revokedAt).not.toBeNull();
 
     // 6. Old password fails, new password succeeds and redirects to /boards
     const oldLoginRes = await loginPost(

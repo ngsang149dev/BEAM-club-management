@@ -41,12 +41,12 @@ function renderLogin(locale: 'vi' | 'en', props: { expired?: boolean; returnTo?:
 }
 
 describe('LoginForm (S01)', () => {
-  it('renders a POST form with studentId (autocomplete="username"), password (autocomplete="current-password"), show/hide toggle, and unchecked remember checkbox', () => {
+  it('renders a POST form with studentId (autocomplete="username"), password (autocomplete="current-password"), show/hide toggle, and no remember checkbox', () => {
     const htmlVi = renderLogin('vi');
 
     expect(htmlVi).toMatch(/<form[^>]*method="post"/);
     const inputs = htmlVi.match(/<input\b[^>]*>/g) ?? [];
-    expect(inputs).toHaveLength(3);
+    expect(inputs).toHaveLength(2);
 
     const textInputs = inputs.filter((tag) => tag.includes('type="text"'));
     expect(textInputs).toHaveLength(1);
@@ -60,10 +60,10 @@ describe('LoginForm (S01)', () => {
     expect(htmlVi).toContain('aria-pressed="false"');
 
     const checkboxes = inputs.filter((tag) => tag.includes('type="checkbox"'));
-    expect(checkboxes).toHaveLength(1);
-    expect(checkboxes[0]).not.toContain('checked');
+    expect(checkboxes).toHaveLength(0);
 
-    expect(htmlVi).toContain('Ghi nhớ đăng nhập');
+    expect(htmlVi).not.toContain('login-remember');
+    expect(htmlVi).not.toContain('Ghi nhớ đăng nhập');
     expect(htmlVi).not.toContain('Chỉ tích trên thiết bị của bạn.');
     expect(htmlVi).not.toContain('không có mật khẩu');
     expect(htmlVi).not.toContain('Phiên đã hết hạn');
@@ -77,7 +77,8 @@ describe('LoginForm (S01)', () => {
     expect(htmlVi).toContain('class="login-collab-x"');
 
     const htmlEn = renderLogin('en');
-    expect(htmlEn).toContain('Remember me');
+    expect(htmlEn).not.toContain('type="checkbox"');
+    expect(htmlEn).not.toContain('Remember me');
     expect(htmlEn).not.toContain('Only tick this on your own device.');
     expect(htmlEn).toContain('aria-label="Show password"');
     expect(htmlEn).toContain('Sign in');
@@ -89,22 +90,22 @@ describe('LoginForm (S01)', () => {
 
   it('validates studentId and password bounds via shared loginFormSchema', () => {
     expect(
-      loginFormSchema.safeParse({ studentId: '  21010001  ', password: 'Password1!', remember: false }).success
+      loginFormSchema.safeParse({ studentId: '  21010001  ', password: 'Password1!' }).success
     ).toBe(true);
     expect(
-      loginFormSchema.safeParse({ studentId: '   ', password: 'Password1!', remember: false }).success
+      loginFormSchema.safeParse({ studentId: '   ', password: 'Password1!' }).success
     ).toBe(false);
     expect(
-      loginFormSchema.safeParse({ studentId: '21010001', password: '', remember: false }).success
+      loginFormSchema.safeParse({ studentId: '21010001', password: '' }).success
     ).toBe(false);
     expect(
-      loginFormSchema.safeParse({ studentId: '21010001', password: 'P'.repeat(129), remember: false }).success
+      loginFormSchema.safeParse({ studentId: '21010001', password: 'P'.repeat(129) }).success
     ).toBe(false);
     expect(
-      loginFormSchema.safeParse({ studentId: 'A'.repeat(65), password: 'Password1!', remember: false }).success
+      loginFormSchema.safeParse({ studentId: 'A'.repeat(65), password: 'Password1!' }).success
     ).toBe(false);
     expect(
-      loginFormSchema.safeParse({ studentId: 'A'.repeat(64), password: 'Password1!', remember: true }).success
+      loginFormSchema.safeParse({ studentId: 'A'.repeat(64), password: 'Password1!' }).success
     ).toBe(true);
   });
 
@@ -171,11 +172,11 @@ describe('LoginForm (S01)', () => {
   it('renders session expired banner when expired is true in both locales', () => {
     const htmlVi = renderLogin('vi', { expired: true, returnTo: '/my-tasks' });
     expect(htmlVi).toContain('Phiên đã hết hạn');
-    expect(htmlVi).toContain('Vui lòng đăng nhập lại để tiếp tục.');
+    expect(htmlVi).toContain('Phiên đã hết hạn hoặc tài khoản vừa đăng nhập ở nơi khác.');
 
     const htmlEn = renderLogin('en', { expired: true, returnTo: '/my-tasks' });
     expect(htmlEn).toContain('Your session has expired');
-    expect(htmlEn).toContain('Please sign in again to continue.');
+    expect(htmlEn).toContain('Your session expired or was signed in elsewhere.');
   });
 
   it('resolves and renders 429 countdown, network error, and generic 401/validation banners', () => {

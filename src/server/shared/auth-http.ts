@@ -8,7 +8,6 @@ import type { AuthenticatedSession } from '@/server/modules/auth';
 import type { Config } from './config';
 import { assertValidCsrfRequest } from './csrf';
 
-const SECONDS_PER_DAY = 86_400;
 const LOCALE_COOKIE_MAX_AGE = 31_536_000;
 
 function extractValidIp(rawHeader: string | null, splitComma: boolean): string | null {
@@ -85,47 +84,32 @@ export function attachSessionCookie(
   response: NextResponse,
   options: {
     readonly rawToken: string;
-    readonly rememberMe: boolean;
+    readonly rememberMe?: boolean;
     readonly request: Request;
-    readonly config: Pick<Config, 'nodeEnv' | 'sessionTtlRememberDays'>;
+    readonly config: Pick<Config, 'nodeEnv'>;
   },
 ): void {
-  const baseAttributes = {
+  // Always issue a browser session cookie (no Max-Age) under CR-08; server enforces 30m sliding TTL.
+  response.cookies.set(SESSION_COOKIE_NAME, options.rawToken, {
     httpOnly: true,
-    sameSite: 'lax' as const,
+    sameSite: 'lax',
     path: '/',
     secure: shouldUseSecureCookie(options.request, options.config),
-  };
-
-  if (options.rememberMe) {
-    response.cookies.set(SESSION_COOKIE_NAME, options.rawToken, {
-      ...baseAttributes,
-      maxAge: options.config.sessionTtlRememberDays * SECONDS_PER_DAY,
-    });
-    return;
-  }
-
-  response.cookies.set(SESSION_COOKIE_NAME, options.rawToken, baseAttributes);
+  });
 }
 
 export function refreshSessionCookieIfRemembered(
   response: NextResponse,
   options: {
     readonly rawToken: string | null;
-    readonly rememberMe: boolean;
+    readonly rememberMe?: boolean;
     readonly request: Request;
-    readonly config: Pick<Config, 'nodeEnv' | 'sessionTtlRememberDays'>;
+    readonly config: Pick<Config, 'nodeEnv'>;
   },
 ): void {
-  if (!options.rawToken || !options.rememberMe) {
-    return;
-  }
-  attachSessionCookie(response, {
-    rawToken: options.rawToken,
-    rememberMe: true,
-    request: options.request,
-    config: options.config,
-  });
+  // Retained as a no-op for route callers; browser session cookies never carry Max-Age.
+  void response;
+  void options;
 }
 
 export function clearSessionCookie(
@@ -196,6 +180,7 @@ export interface ApiAuthenticator {
   readonly authService: {
     authenticateSession(
       rawToken: string | null | undefined,
+      options?: { readonly touch?: boolean },
     ): Promise<AuthenticatedSession>;
   };
   readonly config?: Pick<Config, 'appUrl'>;
@@ -208,10 +193,14 @@ export interface AuthenticatedRequestContext extends AuthenticatedSession {
 export async function authenticateApiRequest(
   request: Request,
   container: ApiAuthenticator,
+  options?: { readonly touch?: boolean },
 ): Promise<AuthenticatedRequestContext> {
   assertValidCsrfRequest(request, { appUrl: container.config?.appUrl });
   const rawToken = readSessionCookie(request);
-  const authenticated = await container.authService.authenticateSession(rawToken);
+  const authenticated = await container.authService.authenticateSession(
+    rawToken,
+    options,
+  );
   return {
     ...authenticated,
     rawToken: rawToken ?? '',
@@ -224,7 +213,7 @@ export interface AuthenticatedJsonResponseOptions {
   readonly rawToken: string;
   readonly rememberMe: boolean;
   readonly request: Request;
-  readonly config: Pick<Config, 'nodeEnv' | 'sessionTtlRememberDays'>;
+  readonly config: Pick<Config, 'nodeEnv'>;
 }
 
 export function createAuthenticatedJsonResponse<T>(

@@ -1,20 +1,25 @@
 import { badRequest, tooManyRequests, unauthorized } from '@/lib/errors';
+import type { PermissionCode } from '@/lib/permissions';
 import type { AuditLogWriter } from '@/server/modules/audit';
+import type { AuthActor } from '@/server/shared/authorize';
 import type { Logger } from '@/server/shared/logger';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '@/server/shared/password';
-import type { TransactionContext } from '@/server/shared/transaction';
+import type { TransactionContext, TransactionRunner } from '@/server/shared/transaction';
 import {
   buildLoginAttemptKey,
   buildPasswordChangeAttemptKey,
+  computeSlidingExpiry,
   isPairRateLimited,
   isPasswordChangeRateLimited,
   isRateLimited,
   RATE_LIMIT_WINDOW_MINUTES,
+  type SessionTtlConfig,
 } from './policy';
 import type {
   AuthRepository,
   LoginCommand,
   ProfileWithDepartmentsRecord,
+  SessionRecord,
 } from './types';
 
 const MS_PER_MINUTE = 60 * 1000;
@@ -219,4 +224,66 @@ export async function persistMyAvatarRemoval(params: {
     params.tx,
   );
   return updated;
+}
+
+export async function issueSingleActiveSession(params: {
+  readonly authRepo: AuthRepository;
+  readonly transactionRunner: TransactionRunner;
+  readonly userId: string;
+  readonly tokenHash: string;
+  readonly expiresAt: Date;
+  readonly now: Date;
+}): Promise<SessionRecord> {
+  return params.transactionRunner.runInTransaction(async (tx) => {
+    await params.authRepo.revokeAllActiveSessions(
+      { userId: params.userId, revokedAt: params.now },
+      tx,
+    );
+    return params.authRepo.createSession(
+      {
+        userId: params.userId,
+        tokenHash: params.tokenHash,
+        rememberMe: false,
+        expiresAt: params.expiresAt,
+        now: params.now,
+      },
+      tx,
+    );
+  });
+}
+
+export async function applySlidingSessionTouch(params: {
+  readonly authRepo: AuthRepository;
+  readonly session: SessionRecord;
+  readonly now: Date;
+  readonly config: SessionTtlConfig;
+  readonly shouldTouch: boolean;
+}): Promise<SessionRecord> {
+  if (!params.shouldTouch) {
+    return params.session;
+  }
+  const nextExpiresAt = computeSlidingExpiry(params.now, params.config);
+  await params.authRepo.touchSession({
+    sessionId: params.session.id,
+    lastSeenAt: params.now,
+    expiresAt: nextExpiresAt,
+  });
+  return {
+    ...params.session,
+    lastSeenAt: params.now,
+    expiresAt: nextExpiresAt,
+  };
+}
+
+export function buildAuthActor(
+  profile: ProfileWithDepartmentsRecord,
+  permissions: PermissionCode[],
+): AuthActor {
+  return {
+    id: profile.id,
+    isActive: profile.isActive,
+    isAdmin: profile.isAdmin,
+    permissions,
+    departmentIds: profile.departments.map((d) => d.id),
+  };
 }

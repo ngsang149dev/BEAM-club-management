@@ -12,23 +12,21 @@ import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { PASSWORD_CHANGE_ATTEMPT_PREFIX } from './policy';
 import {
+  buildAvatarUpdateValues,
+  buildClearAvatarValues,
+  buildCreateSessionValues,
   mapProfileWithDepartmentsRow,
   mapSessionRow,
+  requireCreatedSession,
   type SelectedAuthProfileRow,
 } from './repository-mappers';
 import type {
   AuthRepository,
-  DepartmentRecord,
+  CreateSessionInput,
   ProfileWithDepartmentsRecord,
+  RevokeAllActiveSessionsInput,
   SessionRecord,
 } from './types';
-
-export type {
-  AuthRepository,
-  DepartmentRecord,
-  ProfileWithDepartmentsRecord,
-  SessionRecord,
-};
 
 const AUTH_PROFILE_COLUMNS = {
   id: profiles.id,
@@ -137,30 +135,16 @@ export class DrizzleAuthRepository implements AuthRepository {
     );
   }
 
-  async createSession(input: {
-    readonly userId: string;
-    readonly tokenHash: string;
-    readonly rememberMe: boolean;
-    readonly expiresAt: Date;
-    readonly now: Date;
-  }): Promise<SessionRecord> {
-    const rows = await this.db
+  async createSession(
+    input: CreateSessionInput,
+    tx?: TransactionContext,
+  ): Promise<SessionRecord> {
+    const executor = tx ?? this.db;
+    const rows = await executor
       .insert(sessions)
-      .values({
-        userId: input.userId,
-        tokenHash: input.tokenHash,
-        rememberMe: input.rememberMe,
-        expiresAt: input.expiresAt,
-        lastSeenAt: input.now,
-        createdAt: input.now,
-        updatedAt: input.now,
-      })
+      .values(buildCreateSessionValues(input))
       .returning();
-    const created = rows[0];
-    if (!created) {
-      throw new Error('Failed to create session record');
-    }
-    return mapSessionRow(created);
+    return requireCreatedSession(rows[0]);
   }
 
   async findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | null> {
@@ -195,6 +179,23 @@ export class DrizzleAuthRepository implements AuthRepository {
       .update(sessions)
       .set({ revokedAt: input.revokedAt, updatedAt: input.revokedAt })
       .where(eq(sessions.id, input.sessionId));
+  }
+
+  async revokeAllActiveSessions(
+    input: RevokeAllActiveSessionsInput,
+    tx?: TransactionContext,
+  ): Promise<void> {
+    const executor = tx ?? this.db;
+    // Lock the profile row first so concurrent logins for the same account serialize cleanly.
+    await executor
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(eq(profiles.id, input.userId))
+      .for('update');
+    await executor
+      .update(sessions)
+      .set({ revokedAt: input.revokedAt, updatedAt: input.revokedAt })
+      .where(and(eq(sessions.userId, input.userId), isNull(sessions.revokedAt)));
   }
 
   async updateProfileLocale(input: {
@@ -255,12 +256,7 @@ export class DrizzleAuthRepository implements AuthRepository {
     const executor = tx ?? this.db;
     const rows = await executor
       .update(profiles)
-      .set({
-        avatarData: input.avatarData,
-        avatarMime: input.avatarMime,
-        avatarUpdatedAt: input.now,
-        updatedAt: input.now,
-      })
+      .set(buildAvatarUpdateValues(input))
       .where(eq(profiles.id, input.userId))
       .returning(AUTH_PROFILE_COLUMNS);
     return rows[0] ? this.hydrateProfile(rows[0], executor) : null;
@@ -273,12 +269,7 @@ export class DrizzleAuthRepository implements AuthRepository {
     const executor = tx ?? this.db;
     const rows = await executor
       .update(profiles)
-      .set({
-        avatarData: null,
-        avatarMime: null,
-        avatarUpdatedAt: null,
-        updatedAt: input.now,
-      })
+      .set(buildClearAvatarValues(input.now))
       .where(eq(profiles.id, input.userId))
       .returning(AUTH_PROFILE_COLUMNS);
     return rows[0] ? this.hydrateProfile(rows[0], executor) : null;

@@ -46,9 +46,11 @@ describe('DrizzleAuthRepository integration', () => {
   let repo: DrizzleAuthRepository;
   const suffix = randomUUID().slice(0, 8);
   const userId = randomUUID();
+  const otherUserId = randomUUID();
   const deptId = randomUUID();
   const testIp = `198.51.100.${Math.floor(Math.random() * 200) + 1}`;
   const studentId = `MSSV-REPO-${suffix}`;
+  const otherStudentId = `MSSV-REPO-OTHER-${suffix}`;
 
   beforeAll(async () => {
     loadEnvLocalIfMissing();
@@ -90,17 +92,30 @@ describe('DrizzleAuthRepository integration', () => {
     });
 
     const initialHash = await hashPassword(DEV_SEED_PASSWORD);
-    await db.insert(profiles).values({
-      id: userId,
-      studentId,
-      email: `repo-${suffix}@eiu.edu.vn`,
-      fullName: `Repo Test Member ${suffix}`,
-      passwordHash: initialHash,
-      mustChangePassword: true,
-      isAdmin: false,
-      isActive: true,
-      locale: 'vi',
-    });
+    await db.insert(profiles).values([
+      {
+        id: userId,
+        studentId,
+        email: `repo-${suffix}@eiu.edu.vn`,
+        fullName: `Repo Test Member ${suffix}`,
+        passwordHash: initialHash,
+        mustChangePassword: true,
+        isAdmin: false,
+        isActive: true,
+        locale: 'vi',
+      },
+      {
+        id: otherUserId,
+        studentId: otherStudentId,
+        email: `repo-other-${suffix}@eiu.edu.vn`,
+        fullName: `Repo Other Member ${suffix}`,
+        passwordHash: initialHash,
+        mustChangePassword: false,
+        isAdmin: false,
+        isActive: true,
+        locale: 'vi',
+      },
+    ]);
 
     await db.insert(memberDepartments).values({
       userId,
@@ -116,15 +131,15 @@ describe('DrizzleAuthRepository integration', () => {
 
   afterAll(async () => {
     if (db) {
-      await db.delete(sessions).where(inArray(sessions.userId, [userId]));
+      await db.delete(sessions).where(inArray(sessions.userId, [userId, otherUserId]));
       await db
         .delete(userPermissions)
-        .where(inArray(userPermissions.userId, [userId]));
+        .where(inArray(userPermissions.userId, [userId, otherUserId]));
       await db
         .delete(memberDepartments)
-        .where(inArray(memberDepartments.userId, [userId]));
+        .where(inArray(memberDepartments.userId, [userId, otherUserId]));
       await db.delete(loginAttempts).where(inArray(loginAttempts.ip, [testIp]));
-      await db.delete(profiles).where(inArray(profiles.id, [userId]));
+      await db.delete(profiles).where(inArray(profiles.id, [userId, otherUserId]));
       await db.delete(departments).where(inArray(departments.id, [deptId]));
     }
     await pool?.end();
@@ -263,5 +278,61 @@ describe('DrizzleAuthRepository integration', () => {
       new Date('2026-11-24T00:50:00.000Z'),
     );
     expect(recentPwdFailed).toBe(1);
+  });
+
+  it('revokeAllActiveSessions locks target profile row, revokes all active user sessions in tx, and leaves other users active', async () => {
+    const t0 = new Date('2026-11-24T05:00:00.000Z');
+    const exp = new Date('2026-11-24T05:30:00.000Z');
+    const u1OldA = `hash-u1-a-${suffix}`;
+    const u1OldB = `hash-u1-b-${suffix}`;
+    const u1New = `hash-u1-new-${suffix}`;
+    const u2Keep = `hash-u2-keep-${suffix}`;
+
+    await repo.createSession({
+      userId,
+      tokenHash: u1OldA,
+      rememberMe: false,
+      expiresAt: exp,
+      now: t0,
+    });
+    await repo.createSession({
+      userId,
+      tokenHash: u1OldB,
+      rememberMe: false,
+      expiresAt: exp,
+      now: t0,
+    });
+    await repo.createSession({
+      userId: otherUserId,
+      tokenHash: u2Keep,
+      rememberMe: false,
+      expiresAt: exp,
+      now: t0,
+    });
+
+    const t1 = new Date('2026-11-24T05:05:00.000Z');
+    const exp1 = new Date('2026-11-24T05:35:00.000Z');
+    await db.transaction(async (tx) => {
+      await repo.revokeAllActiveSessions({ userId, revokedAt: t1 }, tx);
+      await repo.createSession(
+        {
+          userId,
+          tokenHash: u1New,
+          rememberMe: false,
+          expiresAt: exp1,
+          now: t1,
+        },
+        tx,
+      );
+    });
+
+    expect((await repo.findSessionByTokenHash(u1OldA))?.revokedAt?.toISOString()).toBe(
+      t1.toISOString(),
+    );
+    expect((await repo.findSessionByTokenHash(u1OldB))?.revokedAt?.toISOString()).toBe(
+      t1.toISOString(),
+    );
+    expect((await repo.findSessionByTokenHash(u1New))?.revokedAt).toBeNull();
+    expect((await repo.findSessionByTokenHash(u2Keep))?.revokedAt).toBeNull();
   });
 });

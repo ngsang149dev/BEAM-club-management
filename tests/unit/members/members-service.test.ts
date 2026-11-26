@@ -255,6 +255,7 @@ const TEST_CONFIG: Config = {
   nodeEnv: 'test',
   databaseUrl: 'postgresql://unused:unused@localhost:5432/unused',
   sessionSecret: 'unit-test-secret-0123456789abcdef',
+  sessionTtlMinutes: 30,
   sessionTtlDefaultHours: 24,
   sessionTtlRememberDays: 30,
   allowedEmailDomain: 'eiu.edu.vn',
