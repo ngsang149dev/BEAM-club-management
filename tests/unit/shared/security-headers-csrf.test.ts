@@ -6,6 +6,7 @@ import { AppError } from '@/lib/errors';
 import {
   BINARY_IMAGE_CSP,
   BINARY_IMAGE_HEADER_SOURCES,
+  buildAllowedDevOrigins,
   buildContentSecurityPolicy,
   buildGlobalSecurityHeaders,
   buildNextHeaderRules,
@@ -393,5 +394,26 @@ describe('Binary image CDN caching, ETag/304, and cron maxDuration', () => {
   it('exports maxDuration = 60 on both cron route handlers', () => {
     expect(remindersMaxDuration).toBe(60);
     expect(archivePurgeMaxDuration).toBe(60);
+  });
+
+  it('builds deduplicated private LAN and custom allowedDevOrigins patterns', () => {
+    const defaults = buildAllowedDevOrigins();
+    expect(defaults).toContain('127.0.0.1');
+    expect(defaults).toContain('192.168.*.*');
+    expect(defaults).toContain('10.*.*.*');
+    expect(defaults).toContain('*.local');
+    for (let second = 16; second <= 31; second += 1) {
+      expect(defaults).toContain(`172.${second}.*.*`);
+    }
+    expect(defaults).not.toContain('172.15.*.*');
+    expect(defaults).not.toContain('172.32.*.*');
+
+    const withCustom = buildAllowedDevOrigins(
+      ' 192.168.*.* , beam-dev.local, , 100.64.1.2 , beam-dev.local ',
+    );
+    expect(withCustom).toContain('beam-dev.local');
+    expect(withCustom).toContain('100.64.1.2');
+    expect(withCustom.filter((origin) => origin === '192.168.*.*')).toHaveLength(1);
+    expect(withCustom.filter((origin) => origin === 'beam-dev.local')).toHaveLength(1);
   });
 });

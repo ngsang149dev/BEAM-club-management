@@ -103,3 +103,28 @@ export function buildNextHeaderRules({
     })),
   ];
 }
+
+const PRIVATE_CLASS_B_DEV_ORIGINS = Array.from(
+  { length: 16 },
+  (_unused, index) => `172.${16 + index}.*.*`,
+);
+
+const DEFAULT_ALLOWED_DEV_ORIGINS = [
+  '127.0.0.1',
+  '192.168.*.*',
+  '10.*.*.*',
+  ...PRIVATE_CLASS_B_DEV_ORIGINS,
+  '*.local',
+] as const;
+
+/**
+ * Returns private LAN and local dev host patterns so Next.js 16 allows
+ * `/_next/*` assets and HMR when testing `next dev` from mobile devices on LAN.
+ */
+export function buildAllowedDevOrigins(rawEnv?: string): string[] {
+  const customOrigins = (rawEnv ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return Array.from(new Set([...DEFAULT_ALLOWED_DEV_ORIGINS, ...customOrigins]));
+}
