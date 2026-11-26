@@ -22,10 +22,6 @@ export const AUTH_QUERY_KEYS = {
   loggedOut: ['auth', 'loggedOut'] as const,
 };
 
-export function isLoggedOutState(queryClient: QueryClient): boolean {
-  return Boolean(queryClient.getQueryData<boolean>(AUTH_QUERY_KEYS.loggedOut));
-}
-
 export function useLoggedOutState(): boolean {
   const { data } = useQuery<boolean>({
     queryKey: AUTH_QUERY_KEYS.loggedOut,

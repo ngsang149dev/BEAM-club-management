@@ -183,3 +183,13 @@ Trạng thái: Đã duyệt bởi chủ dự án
   2. **Nền tường triển lãm & chữ ký collab (`/login`):** Tường gạch/thạch cao sáng có ánh đèn rọi & bóng khung Polaroid nổi bật trên Desktop (`>= 900px`), và chân trang `/login` hiển thị chữ ký `BEAM CLUB × Sang` gắn link Facebook chính thức (`target="_blank"`, `rel="noopener noreferrer"`).
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Migration `0006_login_gallery.sql`, `db/schema/identity.ts`, `docs/ERD.md` (22 bảng), `docs/openapi.yaml` (`src/features/shared/api/schema.d.ts`).
 - **Trạng thái:** Đã duyệt bởi chủ dự án (`A1`–`A4` + bổ sung 2026-11-26); đã hoàn tất, đạt QA độc lập (`VERDICT: PASS`) & merge vào `main`.
+
+---
+
+## 2026-11-26 · Dọn phụ thuộc dev không sử dụng (`@vitejs/plugin-react`, `tsx`) và tệp rác `.DS_Store` (`chore/repo-cleanup`)
+Bối cảnh: Chủ dự án yêu cầu rà soát toàn bộ dự án và loại bỏ các phần dư thừa có thể xóa bỏ an toàn sau khi merge `Epic E8`.
+Đề xuất / quyết định:
+- Gỡ `@vitejs/plugin-react` và `tsx` khỏi `devDependencies` (`package.json`, `package-lock.json`) vì kiểm tra toàn repo (`vitest.config.ts`, `scripts/`, `src/`, `tests/`) cho thấy `0` nơi sử dụng (`tsx` và `@vitejs/plugin-react` không còn cần thiết; toàn bộ `scripts/*.mjs` chạy trực tiếp bằng Node và `tests/` chạy qua Vitest/esbuild).
+- Gỡ `.DS_Store` khỏi git index (`git rm -f .DS_Store`), giữ nguyên `wireframes/` & `docs/WIREFRAME-BRIEF.md` đến khi chủ dự án xác nhận có muốn xóa tài liệu thiết kế 0A hay không.
+Ảnh hưởng (`openapi`, `schema`, tài liệu): `package.json`, `package-lock.json`, xóa `.DS_Store` (0 đổi schema CSDL, 0 đổi `openapi.yaml`).
+Trạng thái: Đang mở trên nhánh `chore/repo-cleanup`, chờ chủ dự án Sang duyệt merge vào `main`.

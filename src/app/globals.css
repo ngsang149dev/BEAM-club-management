@@ -745,8 +745,7 @@ svg {
   gap: 4px;
 }
 
-.app-nav-item,
-.side-link {
+.app-nav-item {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -765,21 +764,18 @@ svg {
     box-shadow 0.14s ease;
 }
 
-.app-nav-item .ic,
-.side-link .ic {
+.app-nav-item .ic {
   color: var(--ink-3);
 }
 
-.app-nav-item:hover,
-.side-link:hover {
+.app-nav-item:hover {
   background: var(--surface);
   border-color: var(--line-soft);
   color: var(--ink);
   transform: translateX(2px);
 }
 
-.app-nav-item.is-active,
-.side-link.is-active {
+.app-nav-item.is-active {
   background: var(--pink-soft);
   border-color: var(--ink);
   color: var(--ink);
@@ -787,8 +783,7 @@ svg {
   box-shadow: var(--shadow-pop-xs);
 }
 
-.app-nav-item.is-active .ic,
-.side-link.is-active .ic {
+.app-nav-item.is-active .ic {
   color: var(--pink-deep);
 }
 
@@ -1150,117 +1145,6 @@ svg {
   margin-top: 6px;
 }
 
-/* ---------- Home workspace ---------- */
-
-.home-page,
-.home-stack {
-  width: 100%;
-  max-width: 1180px;
-  margin-inline: auto;
-  display: grid;
-  gap: 24px;
-}
-
-.home-head {
-  padding-bottom: 18px;
-  border-bottom: 1.5px solid var(--ink);
-}
-
-.home-kicker {
-  display: inline-block;
-  margin-bottom: 6px;
-  padding: 2px 9px;
-  border: 1px solid var(--ink);
-  border-radius: 999px;
-  background: var(--pink-soft);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.home-head h1 {
-  margin: 4px 0 6px;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.home-head p {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 14px;
-}
-
-.home-section-title {
-  margin: 0 0 12px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.home-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
-
-@media (min-width: 640px) {
-  .home-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.home-card {
-  display: grid;
-  gap: 8px;
-  padding: 18px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--shadow-pop-xs);
-  animation: beamFadeUp 0.25s ease both;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-}
-
-.home-card:hover {
-  border-color: var(--pink-strong);
-  transform: translate(-2px, -2px);
-  box-shadow: var(--shadow-pop);
-}
-
-.home-card-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 15.5px;
-  font-weight: 700;
-}
-
-.home-card-body {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--ink-2);
-  line-height: 1.5;
-}
-
-.home-card-cta {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--pink-deep);
-}
-
-.home-prio-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 14px 16px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--shadow-pop-xs);
-}
-
 /* ---------- Shared chips, badges & loading ---------- */
 
 .ui-chip {
@@ -1455,11 +1339,6 @@ svg {
 .login-remember-label {
   font-size: 12.5px;
   font-weight: 600;
-}
-
-.login-remember-hint {
-  font-size: 11px;
-  color: var(--ink-3);
 }
 
 .login-submit {
@@ -1837,8 +1716,7 @@ svg {
 
 /* ---------- S08 Profile screen ---------- */
 
-.profile-page,
-.profile-stack {
+.profile-page {
   width: 100%;
   max-width: 1080px;
   margin-inline: auto;
@@ -1961,11 +1839,6 @@ svg {
   font-family: var(--font-mono);
 }
 
-.profile-lock {
-  color: var(--ink-3);
-  font-size: 10.5px;
-}
-
 .profile-depts {
   display: flex;
   flex-wrap: wrap;
@@ -2047,12 +1920,6 @@ svg {
   font-size: 11.5px;
   color: var(--ink-3);
   line-height: 1.45;
-}
-
-.profile-error {
-  margin: 8px 0 0;
-  font-size: 11.5px;
-  color: var(--danger);
 }
 
 /* ---------- S07 / S09 / S11 Forms, tables, drawers & modals ---------- */
@@ -2484,8 +2351,7 @@ svg {
   padding: 0;
 }
 
-.dept-row,
-.dept-card {
+.dept-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2493,14 +2359,6 @@ svg {
   gap: 10px;
   padding: 12px 4px;
   border-bottom: 1px solid var(--line-2);
-}
-
-.dept-card {
-  padding: 14px 16px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--shadow-pop-xs);
 }
 
 .dept-row:last-child {
@@ -2576,10 +2434,6 @@ svg {
   overflow-y: auto;
   box-shadow: -6px 0 0 rgba(17, 17, 17, 0.12);
   animation: beamDrawerSlideIn 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) both;
-}
-
-.ui-drawer.ui-drawer-wide {
-  max-width: 580px;
 }
 
 .ui-drawer.ui-drawer-task {
@@ -2857,8 +2711,7 @@ svg {
   gap: 6px;
 }
 
-.perm-preset,
-.perm-preset-card {
+.perm-preset {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2873,8 +2726,7 @@ svg {
   transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
 }
 
-.perm-preset:hover,
-.perm-preset-card:hover {
+.perm-preset:hover {
   border-color: var(--pink-strong);
   background: var(--paper-2);
   transform: translate(-1px, -1px);
@@ -3183,16 +3035,14 @@ svg {
   box-shadow: 0 0 0 3px var(--pink-glow);
 }
 
-.board-grid,
-.boards-grid {
+.board-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 16px;
   align-items: stretch;
 }
 
-.board-tile,
-.board-card {
+.board-tile {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 12px;
@@ -3207,15 +3057,13 @@ svg {
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
-.board-tile:hover,
-.board-card:hover {
+.board-tile:hover {
   border-color: var(--pink-strong);
   transform: translate(-1px, -1px);
   box-shadow: var(--shadow-pop);
 }
 
-.board-tile.is-archived,
-.board-card.is-archived {
+.board-tile.is-archived {
   background: var(--paper-2);
   opacity: 0.88;
 }
@@ -3416,13 +3264,6 @@ svg {
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.kanban-col-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
 }
 
 .kanban-col-body {
@@ -4231,8 +4072,7 @@ svg {
     height: 64px;
   }
 
-  .app-nav-item,
-  .side-link {
+  .app-nav-item {
     min-height: 42px;
     padding: 9px 12px;
     font-size: 14.5px;
@@ -4250,22 +4090,12 @@ svg {
     font-size: 10px;
   }
 
-  .home-page,
-  .home-stack {
-    max-width: 1280px;
-  }
-
-  .profile-page,
-  .profile-stack {
+  .profile-page {
     max-width: 1180px;
   }
 
   .admin-page-stack {
     max-width: 1420px;
-  }
-
-  .home-head h1 {
-    font-size: 32px;
   }
 
   .profile-pagehead h1 {
@@ -4353,12 +4183,7 @@ svg {
     font-size: 12px;
   }
 
-  .home-card {
-    padding: 22px;
-  }
-
   .board-tile,
-  .board-card,
   .admin-card:not(.directory-list-card) {
     padding: 20px;
   }
@@ -6316,14 +6141,10 @@ svg {
 
   .ui-btn:hover:not(:disabled),
   .login-submit:hover:not(:disabled),
-  .home-card:hover,
   .board-tile:hover,
-  .board-card:hover,
   .kanban-card:hover,
   .app-nav-item:hover,
-  .side-link:hover,
   .perm-preset:hover,
-  .perm-preset-card:hover,
   .login-polaroid-card:hover,
   .login-photo-wall-arrow:hover {
     transform: none !important;

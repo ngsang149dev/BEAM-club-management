@@ -82,7 +82,6 @@ describe('i18n message dictionaries (vi/en)', () => {
       'member.leftBadge',
       'language.vi',
       'language.en',
-      'home.title',
       'errors.requestIdLabel',
       'errors.validation',
       'errors.401.title',
