@@ -23,7 +23,7 @@
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done |
-| **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Ready for Merge |
+| **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Done |
 
 ---
 
@@ -663,7 +663,7 @@
 
 ---
 
-## Epic E10 — Triển khai Production Miễn phí & Tự động hóa Email Nhắc hạn (`HANDOFF §7, §9, §10`) *(Ready for Merge — chờ chủ dự án duyệt merge vào `main`)*
+## Epic E10 — Triển khai Production Miễn phí & Tự động hóa Email Nhắc hạn (`HANDOFF §7, §9, §10`) *(Done — đã duyệt & merge vào `main`)*
 
 ### E10-01
 - **ID:** `E10-01`
@@ -681,7 +681,7 @@
 - **Kiểm thử bắt buộc:** Integration test kiểm chứng migration `0007` trên DB sạch, unit/integration test cho logic `db-bootstrap-admin` & `smtp-verify` trên mock SMTP / `beam_test` (cấm chạm production).
 - **Ngoài phạm vi:** Agent tự kết nối hoặc chạy lệnh lên Neon Production / Gmail thật của CLB (`AGENTS.md §0 #4`).
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Chờ chủ dự án duyệt merge` (nhánh `feat/E10-production-readiness` — `59/59` unit tệp / `318` test, `19/19` integration tệp / `35` test chạy `3/3` lượt liên tiếp `105/105` xanh, `qa-reviewer` ngữ cảnh sạch `VERDICT: PASS` `0` Blocker / `0` Major / `0` Minor, `13/13` mục `6A.8`)
+- **Trạng thái:** `Done` (đã duyệt & merge vào `main` — `59/59` unit tệp / `318` test, `19/19` integration tệp / `35` test chạy `3/3` lượt liên tiếp `105/105` xanh, `qa-reviewer` ngữ cảnh sạch `VERDICT: PASS` `0` Blocker / `0` Major / `0` Minor, `13/13` mục `6A.8`)
 
 ### E10-02
 - **ID:** `E10-02`
@@ -698,4 +698,4 @@
 - **Kiểm thử bắt buộc:** `lint`, `typecheck`, kiểm tra cú pháp JSON/YAML của `vercel.json` & `.github/workflows/daily-cron.yml`, `build`.
 - **Ngoài phạm vi:** Thao tác trực tiếp trên dashboard Vercel/Neon/GitHub của CLB.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Chờ chủ dự án duyệt merge` (nhánh `feat/E10-production-readiness` — `vercel.json` `sin1`, `.github/workflows/daily-cron.yml`, `OPERATIONS.md` & `README.md` đạt `qa-reviewer` `VERDICT: PASS`)
+- **Trạng thái:** `Done` (đã duyệt & merge vào `main` — `vercel.json` `sin1`, `.github/workflows/daily-cron.yml`, `OPERATIONS.md` & `README.md` đạt `qa-reviewer` `VERDICT: PASS`)
