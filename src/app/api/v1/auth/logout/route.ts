@@ -5,11 +5,18 @@ import {
   readSessionCookie,
 } from '@/server/shared/auth-http';
 import { getContainer } from '@/server/shared/composition';
+import { assertValidCsrfRequest } from '@/server/shared/csrf';
 import { toErrorResponse } from '@/server/shared/http';
 
 export async function POST(request: Request): Promise<NextResponse> {
   const requestId = getRequestId(request);
   const container = getContainer();
+
+  try {
+    assertValidCsrfRequest(request, { appUrl: container.config.appUrl });
+  } catch (error) {
+    return toErrorResponse(error, container.logger, requestId);
+  }
 
   try {
     const result = await container.authService.logout(readSessionCookie(request));

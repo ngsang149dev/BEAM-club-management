@@ -3,6 +3,7 @@ import { changeMyPasswordRequestSchema } from '@/server/modules/auth';
 import {
   authenticateApiRequest,
   createAuthenticatedJsonResponse,
+  extractClientIp,
   getRequestId,
   parseJsonBody,
 } from '@/server/shared/auth-http';
@@ -21,6 +22,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       actor: auth.actor,
       currentSessionId: auth.session.id,
       input,
+      ip: extractClientIp(request),
     });
     return createAuthenticatedJsonResponse(data, {
       requestId,

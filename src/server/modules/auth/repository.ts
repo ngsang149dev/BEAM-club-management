@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, eq, gte, isNull, ne, notLike, type SQL } from 'drizzle-orm';
 import {
   departments,
   loginAttempts,
@@ -10,6 +10,12 @@ import {
 import { dedupeCanonicalPermissions, isPermissionCode, type PermissionCode } from '@/lib/permissions';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { PASSWORD_CHANGE_ATTEMPT_PREFIX } from './policy';
+import {
+  mapProfileWithDepartmentsRow,
+  mapSessionRow,
+  type SelectedAuthProfileRow,
+} from './repository-mappers';
 import type {
   AuthRepository,
   DepartmentRecord,
@@ -38,48 +44,50 @@ const AUTH_PROFILE_COLUMNS = {
   locale: profiles.locale,
 };
 
-interface SelectedAuthProfileRow {
-  readonly id: string;
-  readonly studentId: string;
-  readonly email: string;
-  readonly fullName: string;
-  readonly passwordHash: string | null;
-  readonly mustChangePassword: boolean;
-  readonly avatarUpdatedAt: Date | null;
-  readonly isAdmin: boolean;
-  readonly isActive: boolean;
-  readonly leftAt: Date | null;
-  readonly locale: string;
-}
-
-type SessionRow = typeof sessions.$inferSelect;
-
-function mapSessionRow(row: SessionRow): SessionRecord {
-  return {
-    id: row.id,
-    userId: row.userId,
-    tokenHash: row.tokenHash,
-    rememberMe: row.rememberMe,
-    expiresAt: row.expiresAt,
-    lastSeenAt: row.lastSeenAt,
-    revokedAt: row.revokedAt,
-  };
-}
-
 export class DrizzleAuthRepository implements AuthRepository {
   constructor(private readonly db: DbExecutor) {}
 
   async countRecentFailedLoginAttempts(ip: string, since: Date): Promise<number> {
+    return this.countAttempts(
+      and(
+        eq(loginAttempts.ip, ip),
+        eq(loginAttempts.success, false),
+        gte(loginAttempts.createdAt, since),
+        notLike(loginAttempts.studentId, `${PASSWORD_CHANGE_ATTEMPT_PREFIX}%`),
+      ),
+    );
+  }
+
+  async countRecentFailedLoginAttemptsForPair(
+    ip: string,
+    studentId: string,
+    since: Date,
+  ): Promise<number> {
+    return this.countAttempts(
+      and(
+        eq(loginAttempts.ip, ip),
+        eq(loginAttempts.studentId, studentId),
+        eq(loginAttempts.success, false),
+        gte(loginAttempts.createdAt, since),
+      ),
+    );
+  }
+
+  async countRecentFailedAttemptsByKey(key: string, since: Date): Promise<number> {
+    return this.countAttempts(
+      and(
+        eq(loginAttempts.studentId, key),
+        eq(loginAttempts.success, false),
+        gte(loginAttempts.createdAt, since),
+      ),
+    );
+  }
+
+  private async countAttempts(condition: SQL | undefined): Promise<number> {
     const rows = await this.db
       .select({ value: count() })
       .from(loginAttempts)
-      .where(
-        and(
-          eq(loginAttempts.ip, ip),
-          eq(loginAttempts.success, false),
-          gte(loginAttempts.createdAt, since),
-        ),
-      );
+      .where(condition);
     return Number(rows[0]?.value ?? 0);
   }
 
@@ -286,19 +294,6 @@ export class DrizzleAuthRepository implements AuthRepository {
       .innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
       .where(eq(memberDepartments.userId, row.id))
       .orderBy(asc(departments.name));
-    return {
-      id: row.id,
-      studentId: row.studentId,
-      email: row.email,
-      fullName: row.fullName,
-      passwordHash: row.passwordHash,
-      mustChangePassword: row.mustChangePassword,
-      avatarUpdatedAt: row.avatarUpdatedAt,
-      isAdmin: row.isAdmin,
-      isActive: row.isActive,
-      leftAt: row.leftAt,
-      locale: row.locale === 'en' ? 'en' : 'vi',
-      departments: deptRows,
-    };
+    return mapProfileWithDepartmentsRow(row, deptRows);
   }
 }

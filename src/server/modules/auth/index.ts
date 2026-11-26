@@ -6,8 +6,16 @@ export type {
   SessionInfoResponseDto,
 } from './mapper';
 export {
+  buildLoginAttemptKey,
+  buildPasswordChangeAttemptKey,
   FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
+  isPairRateLimited,
+  isPasswordChangeRateLimited,
+  LOGIN_ATTEMPT_ESCAPE_PREFIX,
+  PASSWORD_CHANGE_ATTEMPT_PREFIX,
+  PASSWORD_CHANGE_RATE_LIMIT_MAX_FAILED,
   RATE_LIMIT_MAX_FAILED_ATTEMPTS,
+  RATE_LIMIT_MAX_FAILED_PER_PAIR,
   RATE_LIMIT_WINDOW_MINUTES,
   resolveLoginRedirect,
 } from './policy';

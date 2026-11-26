@@ -6,6 +6,7 @@ import { SESSION_COOKIE_NAME } from '@/lib/auth';
 import { badRequest } from '@/lib/errors';
 import type { AuthenticatedSession } from '@/server/modules/auth';
 import type { Config } from './config';
+import { assertValidCsrfRequest } from './csrf';
 
 const SECONDS_PER_DAY = 86_400;
 const LOCALE_COOKIE_MAX_AGE = 31_536_000;
@@ -197,6 +198,7 @@ export interface ApiAuthenticator {
       rawToken: string | null | undefined,
     ): Promise<AuthenticatedSession>;
   };
+  readonly config?: Pick<Config, 'appUrl'>;
 }
 
 export interface AuthenticatedRequestContext extends AuthenticatedSession {
@@ -207,6 +209,7 @@ export async function authenticateApiRequest(
   request: Request,
   container: ApiAuthenticator,
 ): Promise<AuthenticatedRequestContext> {
+  assertValidCsrfRequest(request, { appUrl: container.config?.appUrl });
   const rawToken = readSessionCookie(request);
   const authenticated = await container.authService.authenticateSession(rawToken);
   return {

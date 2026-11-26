@@ -8,6 +8,7 @@ import {
   parseJsonBody,
 } from '@/server/shared/auth-http';
 import { getContainer } from '@/server/shared/composition';
+import { assertValidCsrfRequest } from '@/server/shared/csrf';
 import { toErrorResponse } from '@/server/shared/http';
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -15,6 +16,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const container = getContainer();
 
   try {
+    assertValidCsrfRequest(request, { appUrl: container.config.appUrl });
     const body = await parseJsonBody(request);
     const input = loginRequestSchema.parse(body);
     const result = await container.authService.login({

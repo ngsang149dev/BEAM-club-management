@@ -699,3 +699,43 @@
 - **Ngoài phạm vi:** Thao tác trực tiếp trên dashboard Vercel/Neon/GitHub của CLB.
 - **Mức rủi ro:** Trung bình
 - **Trạng thái:** `Done` (đã duyệt & merge vào `main` — `vercel.json` `sin1`, `.github/workflows/daily-cron.yml`, `OPERATIONS.md` & `README.md` đạt `qa-reviewer` `VERDICT: PASS`)
+
+---
+
+## Epic E11 — Gia cố Bảo mật Production (OWASP Headers, CSRF Origin Guard & Chống lạm dụng/DDoS nhẹ `0đ`) *(Done — đã duyệt & merge vào `main`)*
+
+### E11-01
+- **ID:** `E11-01`
+- **Tiêu đề:** Global HTTP Security Headers (OWASP: `CSP`, `X-Frame-Options`, `nosniff`, `HSTS`, `Referrer-Policy`, `Permissions-Policy`) & CSRF `Origin`/`Sec-Fetch-Site` Guard cho toàn bộ API ghi `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `NFR-01`–`NFR-05`, `AGENTS.md` (§6A, §7, §8), `next.config.ts`, `src/server/shared/auth-http.ts`
+- **Phụ thuộc:** `E10` (`Done`, merged `main`)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A, §7, §8), `next.config.ts`, `src/server/shared/auth-http.ts`, `src/server/shared/config.ts`, `src/app/api/v1/**`
+- **Phạm vi file được sửa:** `next.config.ts`, `src/server/shared/csrf.ts` (hoặc mở rộng `src/server/shared/auth-http.ts`), `src/proxy.ts` (nếu dùng Next.js 16 proxy cho CSRF API), `tests/unit/shared/security-headers-csrf.test.ts`, `tests/integration/auth/security-hardening.test.ts`
+- **Tiêu chí chấp nhận:**
+  1. Mọi trang & API phản hồi đầy đủ HTTP Security Headers: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (tắt `camera`, `microphone`, `geolocation`), `Strict-Transport-Security` (trên HTTPS/production), và `Content-Security-Policy` tương thích Next.js + `next-intl` + `@dnd-kit` + blob/data preview ảnh (`frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`, không lỗi console trên Chrome E2E).
+  2. Toàn bộ request ghi dữ liệu (`POST`, `PUT`, `PATCH`, `DELETE`) vào `/api/v1/*` (ngoại trừ `/api/v1/internal/cron/*` xác thực bằng `Bearer CRON_SECRET`) kiểm tra chéo nguồn gốc (`Origin` / `Sec-Fetch-Site`) khớp `Host` hoặc `NEXT_PUBLIC_APP_URL`; từ chối `403 CSRF_ORIGIN_MISMATCH` với request cross-site giả mạo mà vẫn giữ tương thích với same-origin browser, test integration và công cụ gọi không gửi cookie phiên.
+  3. Không phá vỡ bất kỳ test unit/integration/E2E hiện có; vượt toàn bộ cổng CI và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Unit test cho policy kiểm tra `Origin`/`Sec-Fetch-Site` + cấu hình headers; integration test chứng minh request `POST`/`PUT`/`DELETE` giả mạo `Origin: https://evil.example` có cookie phiên bị chặn `403`, trong khi same-origin hợp lệ và Cron `Bearer` vẫn đi qua; chạy lại toàn bộ CI + E2E.
+- **Ngoài phạm vi:** Đổi contract JSON của `docs/openapi.yaml` hoặc chạm production.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Done` *(đã duyệt & merge vào `main` — vượt đủ cổng CI, `60/60` unit / `330` test, `20/20` integration / `38` test, `next build` `42/42` route + `ƒ Proxy (Middleware)`, `44/44` Chrome E2E xanh & `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` `13/13` mục `6A.8`)*
+
+### E11-02
+- **ID:** `E11-02`
+- **Tiêu đề:** Chống Brute-force & Anti-Abuse/DoS nhẹ `0đ` (Rate limit IP + MSSV, đổi mật khẩu, CDN cache ảnh branding, `maxDuration` Cron & hướng dẫn Vercel WAF) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db` + `Coordinator` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `NFR-01`–`NFR-05`, `AGENTS.md` (§7, §8), `src/server/modules/auth/*`, `src/server/shared/media.ts`, `docs/OPERATIONS.md`
+- **Phụ thuộc:** `E11-01`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A, §7, §8), `src/server/modules/auth/{policy,service,service-helpers,repository}.ts`, `src/server/shared/media.ts`, `src/app/api/v1/branding/**`, `src/app/api/v1/internal/cron/**`, `docs/OPERATIONS.md`
+- **Phạm vi file được sửa:** `src/server/modules/auth/{policy,service,service-helpers,repository,types}.ts`, `src/server/shared/media.ts`, `src/app/api/v1/branding/{logo,wordmark,gallery/[id]/image}/route.ts`, `src/app/api/v1/internal/cron/{reminders,archive-purge}/route.ts`, `docs/OPERATIONS.md`, `tests/unit/auth/*`, `tests/integration/auth/*`, `tests/integration/branding/*`
+- **Tiêu chí chấp nhận:**
+  1. Rate limit đăng nhập (`POST /api/v1/auth/login`) áp dụng song song **2 lớp** không gây khóa oan cả CLB chung Wi-Fi trường: (a) chặn `429` theo cặp `(IP, studentId)` (vd `5` lần sai / `15` phút) chống dò mật khẩu 1 tài khoản cụ thể; (b) chặn `429` theo tổng `IP` (vd `20` lần sai / `15` phút) chống spam làm nghẽn CPU `scrypt` trên Vercel/Neon.
+  2. Bổ sung rate limit chống dò mật khẩu hiện tại trên `POST /api/v1/me/password` (trả `429 RATE_LIMITED` khi nhập sai vượt ngưỡng trong cửa sổ 15 phút).
+  3. Các endpoint ảnh branding công khai (`GET /api/v1/branding/logo`, `/wordmark`, `/gallery/{id}/image`) hỗ trợ `ETag` (`304 Not Modified`) và `Cache-Control: public, max-age=300, stale-while-revalidate=3600` (hoặc cache dài hơn khi URL có `?v=<timestamp>`) để Vercel Edge CDN hấp thụ traffic thay vì đánh trực tiếp vào Neon PostgreSQL mỗi lần tải `/login`; vẫn giữ nguyên `X-Content-Type-Options: nosniff` và `Content-Security-Policy: default-src 'none'; sandbox` (ảnh avatar có xác thực giữ `private, no-store`).
+  4. Khai báo `export const maxDuration = 60;` trên 2 route Cron (`/api/v1/internal/cron/reminders`, `/api/v1/internal/cron/archive-purge`) phòng trường hợp gửi email đông bị cắt sớm timeout mặc định trên Vercel.
+  5. Bổ sung vào `docs/OPERATIONS.md` hướng dẫn bật **Vercel Firewall / WAF Rate Limit Rules miễn phí** (và tùy chọn Cloudflare Free nếu gắn tên miền riêng) + lưu ý giữ repo GitHub Private & chạy `npm audit`.
+- **Kiểm thử bắt buộc:** Unit & integration test cho rate limit 2 lớp (`(IP, studentId)` không khóa lây tài khoản khác cùng IP; tổng IP vẫn chặn spam; đổi mật khẩu sai quá ngưỡng trả `429`), test `ETag`/`304`/`Cache-Control` cho ảnh branding công khai vs avatar riêng tư; vượt toàn bộ CI và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS`.
+- **Ngoài phạm vi:** Mua gói WAF trả phí hoặc cài Redis bên ngoài trong MVP.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Done` *(đã duyệt & merge vào `main` — vượt đủ cổng CI, `60/60` unit / `330` test, `20/20` integration / `38` test, `next build` `42/42` route + `ƒ Proxy (Middleware)`, `44/44` Chrome E2E xanh & `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` `13/13` mục `6A.8`)*

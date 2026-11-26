@@ -24,6 +24,8 @@ export async function GET(
     const response = buildBinaryImageResponse({
       data: asset.data,
       mimeType: asset.mimeType,
+      request,
+      cacheMode: 'public-cdn',
     });
     response.headers.set('x-request-id', requestId);
     return response;

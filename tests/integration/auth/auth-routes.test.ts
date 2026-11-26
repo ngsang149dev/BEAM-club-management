@@ -711,8 +711,9 @@ describe('Auth & /me Route Handlers integration', () => {
     expect(dbSessions.some((row) => row.revokedAt !== null)).toBe(true);
   });
 
-  it('enforces IP rate limit 429 on /auth/login and never leaks PII to logs (AC-12)', async () => {
-    for (let i = 0; i < 10; i += 1) {
+  it('enforces 2-layer login rate limit 429 on /auth/login (pair=5, global IP=20) and never leaks PII to logs (AC-12, E11-02)', async () => {
+    // 1. 5 failed attempts on a single (ip, studentId) pair -> 429 for that pair only
+    for (let i = 0; i < 5; i += 1) {
       const res = await loginPost(
         new Request('http://localhost:3000/api/v1/auth/login', {
           method: 'POST',
@@ -721,7 +722,59 @@ describe('Auth & /me Route Handlers integration', () => {
             'x-forwarded-for': rateLimitIp,
           },
           body: JSON.stringify({
-            studentId: 'MSSV-UNKNOWN-RATE',
+            studentId: 'MSSV-UNKNOWN-RATE-A',
+            password: DEV_SEED_PASSWORD,
+          }),
+        }),
+      );
+      expect(res.status).toBe(401);
+    }
+
+    const pairBlockedRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': rateLimitIp,
+        },
+        body: JSON.stringify({
+          studentId: 'MSSV-UNKNOWN-RATE-A',
+          password: DEV_SEED_PASSWORD,
+        }),
+      }),
+    );
+    expect(pairBlockedRes.status).toBe(429);
+    expect(((await pairBlockedRes.json()) as { error: { code: string } }).error.code).toBe(
+      'RATE_LIMITED',
+    );
+
+    // Different member on same shared Wi-Fi IP is NOT blocked by pair cap
+    const unaffectedRes = await loginPost(
+      new Request('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': rateLimitIp,
+        },
+        body: JSON.stringify({
+          studentId: activeStudentId,
+          password: DEV_SEED_PASSWORD,
+        }),
+      }),
+    );
+    expect(unaffectedRes.status).toBe(200);
+
+    // 2. 15 more failures across other accounts hits global IP cap of 20
+    for (let i = 0; i < 15; i += 1) {
+      const res = await loginPost(
+        new Request('http://localhost:3000/api/v1/auth/login', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': rateLimitIp,
+          },
+          body: JSON.stringify({
+            studentId: `MSSV-UNKNOWN-RATE-${Math.floor(i / 3)}`,
             password: DEV_SEED_PASSWORD,
           }),
         }),

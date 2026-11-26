@@ -35,6 +35,12 @@ export interface SessionRecord {
 
 export interface AuthRepository {
   countRecentFailedLoginAttempts(ip: string, since: Date): Promise<number>;
+  countRecentFailedLoginAttemptsForPair(
+    ip: string,
+    studentId: string,
+    since: Date,
+  ): Promise<number>;
+  countRecentFailedAttemptsByKey(key: string, since: Date): Promise<number>;
   recordLoginAttempt(input: {
     readonly studentId: string;
     readonly ip: string;
@@ -107,6 +113,7 @@ export interface ChangeMyPasswordCommand {
   readonly actor: AuthActor;
   readonly currentSessionId: string;
   readonly input: ChangeMyPasswordRequestInput;
+  readonly ip?: string;
 }
 
 export interface UpdateMyAvatarCommand {

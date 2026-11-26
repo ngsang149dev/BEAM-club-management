@@ -1,15 +1,11 @@
-import { badRequest, unauthorized } from '@/lib/errors';
+import { unauthorized } from '@/lib/errors';
 import type { AuditLogWriter } from '@/server/modules/audit';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
 import type { Logger } from '@/server/shared/logger';
 import { parseAndValidateImageDataUrl } from '@/server/shared/media';
-import {
-  DUMMY_PASSWORD_HASH,
-  hashPassword,
-  verifyPassword,
-} from '@/server/shared/password';
+import { hashPassword } from '@/server/shared/password';
 import type { TransactionRunner } from '@/server/shared/transaction';
 import {
   type LoginResponseDto,
@@ -20,6 +16,7 @@ import {
   toSessionInfoResponseDto,
 } from './mapper';
 import {
+  buildLoginAttemptKey,
   computeSessionExpiry,
   computeSlidingExpiry,
   generateOpaqueSessionToken,
@@ -28,9 +25,10 @@ import {
   resolveLoginRedirect,
 } from './policy';
 import {
-  assertIpWithinRateLimit,
+  assertLoginWithinRateLimit,
   persistMyAvatarRemoval,
   persistMyAvatarUpdate,
+  verifyCurrentPasswordForChange,
   verifyLoginProfile,
 } from './service-helpers';
 import type {
@@ -82,9 +80,20 @@ export class AuthService {
 
   async login(input: LoginCommand): Promise<LoginResult> {
     const now = this.deps.clock.now();
-    await assertIpWithinRateLimit({ authRepo: this.deps.authRepo, logger: this.deps.logger, ip: input.ip, now });
+    await assertLoginWithinRateLimit({
+      authRepo: this.deps.authRepo,
+      logger: this.deps.logger,
+      ip: input.ip,
+      studentId: input.studentId,
+      now,
+    });
     const profile = await verifyLoginProfile({ authRepo: this.deps.authRepo, logger: this.deps.logger, input, now });
-    await this.deps.authRepo.recordLoginAttempt({ studentId: profile.studentId, ip: input.ip, success: true, createdAt: now });
+    await this.deps.authRepo.recordLoginAttempt({
+      studentId: buildLoginAttemptKey(profile.studentId),
+      ip: input.ip,
+      success: true,
+      createdAt: now,
+    });
 
     const rememberMe = Boolean(input.remember);
     const rawToken = generateOpaqueSessionToken();
@@ -198,17 +207,15 @@ export class AuthService {
     if (!profile || !profile.isActive) {
       throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
     }
-    const currentValid = await verifyPassword(
-      command.input.currentPassword,
-      profile.passwordHash ?? DUMMY_PASSWORD_HASH,
-    );
-    if (!currentValid) {
-      throw badRequest(
-        'errors.invalidCurrentPassword',
-        {},
-        'INVALID_CURRENT_PASSWORD',
-      );
-    }
+    const now = this.deps.clock.now();
+    await verifyCurrentPasswordForChange({
+      authRepo: this.deps.authRepo,
+      logger: this.deps.logger,
+      profile,
+      currentPassword: command.input.currentPassword,
+      ip: command.ip,
+      now,
+    });
     const passwordHash = await hashPassword(command.input.newPassword);
     const updated =
       await this.deps.authRepo.updatePasswordAndRevokeOtherSessions({
@@ -216,7 +223,7 @@ export class AuthService {
         currentSessionId: command.currentSessionId,
         passwordHash,
         mustChangePassword: false,
-        now: this.deps.clock.now(),
+        now,
       });
     if (!updated) {
       throw unauthorized('errors.sessionExpired', {}, 'SESSION_EXPIRED');

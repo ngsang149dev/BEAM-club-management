@@ -454,9 +454,34 @@ describe('Branding Route Handlers integration', () => {
       expect(getPngRes.headers.get('content-security-policy')).toContain(
         "default-src 'none'",
       );
-      expect(getPngRes.headers.get('cache-control')).toBe('no-store');
+      expect(getPngRes.headers.get('cache-control')).toBe(
+        'public, max-age=300, s-maxage=300, stale-while-revalidate=3600',
+      );
+      const logoEtag = getPngRes.headers.get('etag');
+      expect(logoEtag).toMatch(/^"[a-f0-9]{64}"$/);
       expect(Buffer.from(await getPngRes.arrayBuffer()).equals(SAMPLE_PNG_BYTES)).toBe(
         true,
+      );
+
+      const getVersionedLogoRes = await logoGet(
+        new Request(`http://localhost:3000${putPngBody.logoUrl}`),
+      );
+      expect(getVersionedLogoRes.status).toBe(200);
+      expect(getVersionedLogoRes.headers.get('cache-control')).toBe(
+        'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+      );
+      expect(getVersionedLogoRes.headers.get('etag')).toBe(logoEtag);
+
+      const logoNotModifiedRes = await logoGet(
+        new Request(`http://localhost:3000${putPngBody.logoUrl}`, {
+          headers: { 'if-none-match': logoEtag! },
+        }),
+      );
+      expect(logoNotModifiedRes.status).toBe(304);
+      expect(logoNotModifiedRes.headers.get('etag')).toBe(logoEtag);
+      expect(logoNotModifiedRes.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(logoNotModifiedRes.headers.get('content-security-policy')).toBe(
+        "default-src 'none'; sandbox",
       );
 
       const putWebpRes = await logoPut(
@@ -783,8 +808,34 @@ describe('Branding Route Handlers integration', () => {
       expect(imgRes.headers.get('content-security-policy')).toBe(
         "default-src 'none'; sandbox",
       );
-      expect(imgRes.headers.get('cache-control')).toBe('no-store');
+      expect(imgRes.headers.get('cache-control')).toBe(
+        'public, max-age=300, s-maxage=300, stale-while-revalidate=3600',
+      );
+      const galleryEtag = imgRes.headers.get('etag');
+      expect(galleryEtag).toMatch(/^"[a-f0-9]{64}"$/);
       expect(Buffer.from(await imgRes.arrayBuffer()).equals(largeValidPng)).toBe(true);
+
+      const galleryVersionedRes = await galleryImageGet(
+        new Request(`http://localhost:3000${item0.imageUrl}`),
+        { params: Promise.resolve({ id: item0.id }) },
+      );
+      expect(galleryVersionedRes.status).toBe(200);
+      expect(galleryVersionedRes.headers.get('cache-control')).toBe(
+        'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+      );
+
+      const gallery304Res = await galleryImageGet(
+        new Request(`http://localhost:3000${item0.imageUrl}`, {
+          headers: { 'if-none-match': galleryEtag! },
+        }),
+        { params: Promise.resolve({ id: item0.id }) },
+      );
+      expect(gallery304Res.status).toBe(304);
+      expect(gallery304Res.headers.get('etag')).toBe(galleryEtag);
+      expect(gallery304Res.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(gallery304Res.headers.get('content-security-policy')).toBe(
+        "default-src 'none'; sandbox",
+      );
 
       // 5. PATCH update & 404 on missing
       expect(
@@ -1146,10 +1197,29 @@ describe('Branding Route Handlers integration', () => {
       expect(getWordmarkRes.headers.get('content-security-policy')).toBe(
         "default-src 'none'; sandbox",
       );
-      expect(getWordmarkRes.headers.get('cache-control')).toBe('no-store');
+      expect(getWordmarkRes.headers.get('cache-control')).toBe(
+        'public, max-age=300, s-maxage=300, stale-while-revalidate=3600',
+      );
+      const wordmarkEtag = getWordmarkRes.headers.get('etag');
+      expect(wordmarkEtag).toMatch(/^"[a-f0-9]{64}"$/);
       expect(
         Buffer.from(await getWordmarkRes.arrayBuffer()).equals(SAMPLE_WEBP_BYTES),
       ).toBe(true);
+
+      const wordmark304Res = await wordmarkGet(
+        new Request(`http://localhost:3000${putWordmarkBody.wordmarkUrl}`, {
+          headers: { 'if-none-match': wordmarkEtag! },
+        }),
+      );
+      expect(wordmark304Res.status).toBe(304);
+      expect(wordmark304Res.headers.get('cache-control')).toBe(
+        'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+      );
+      expect(wordmark304Res.headers.get('etag')).toBe(wordmarkEtag);
+      expect(wordmark304Res.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(wordmark304Res.headers.get('content-security-policy')).toBe(
+        "default-src 'none'; sandbox",
+      );
 
       // 4. Delete wordmark -> wordmarkUrl resets to null & GET returns 404, preserving logoUrl & galleryItems
       const delWordmarkRes = await wordmarkDelete(

@@ -1,9 +1,16 @@
-import { tooManyRequests, unauthorized } from '@/lib/errors';
+import { badRequest, tooManyRequests, unauthorized } from '@/lib/errors';
 import type { AuditLogWriter } from '@/server/modules/audit';
 import type { Logger } from '@/server/shared/logger';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '@/server/shared/password';
 import type { TransactionContext } from '@/server/shared/transaction';
-import { isRateLimited, RATE_LIMIT_WINDOW_MINUTES } from './policy';
+import {
+  buildLoginAttemptKey,
+  buildPasswordChangeAttemptKey,
+  isPairRateLimited,
+  isPasswordChangeRateLimited,
+  isRateLimited,
+  RATE_LIMIT_WINDOW_MINUTES,
+} from './policy';
 import type {
   AuthRepository,
   LoginCommand,
@@ -12,25 +19,109 @@ import type {
 
 const MS_PER_MINUTE = 60 * 1000;
 
-export async function assertIpWithinRateLimit(params: {
+function computeRateLimitSince(now: Date): Date {
+  return new Date(now.getTime() - RATE_LIMIT_WINDOW_MINUTES * MS_PER_MINUTE);
+}
+
+function throwRateLimited(): never {
+  throw tooManyRequests(
+    'errors.tooManyRequests',
+    { retryAfterSeconds: RATE_LIMIT_WINDOW_MINUTES * 60 },
+    'RATE_LIMITED',
+  );
+}
+
+export async function assertLoginWithinRateLimit(params: {
   readonly authRepo: AuthRepository;
   readonly logger: Logger;
   readonly ip: string;
+  readonly studentId: string;
   readonly now: Date;
 }): Promise<void> {
-  const since = new Date(
-    params.now.getTime() - RATE_LIMIT_WINDOW_MINUTES * MS_PER_MINUTE,
-  );
-  const failedCount = await params.authRepo.countRecentFailedLoginAttempts(
+  const since = computeRateLimitSince(params.now);
+  const loginAttemptKey = buildLoginAttemptKey(params.studentId);
+  const pairFailedCount =
+    await params.authRepo.countRecentFailedLoginAttemptsForPair(
+      params.ip,
+      loginAttemptKey,
+      since,
+    );
+  if (isPairRateLimited(pairFailedCount)) {
+    params.logger.warn('Login rate limit exceeded', {
+      scope: 'pair',
+      failedCount: pairFailedCount,
+    });
+    throwRateLimited();
+  }
+
+  const ipFailedCount = await params.authRepo.countRecentFailedLoginAttempts(
     params.ip,
     since,
   );
-  if (isRateLimited(failedCount)) {
-    params.logger.warn('Login rate limit exceeded', { failedCount });
-    throw tooManyRequests(
-      'errors.tooManyRequests',
-      { retryAfterSeconds: RATE_LIMIT_WINDOW_MINUTES * 60 },
-      'RATE_LIMITED',
+  if (isRateLimited(ipFailedCount)) {
+    params.logger.warn('Login rate limit exceeded', {
+      scope: 'ip',
+      failedCount: ipFailedCount,
+    });
+    throwRateLimited();
+  }
+}
+
+async function assertPasswordChangeWithinRateLimit(params: {
+  readonly authRepo: AuthRepository;
+  readonly logger: Logger;
+  readonly userId: string;
+  readonly attemptKey: string;
+  readonly now: Date;
+}): Promise<void> {
+  const failedCount = await params.authRepo.countRecentFailedAttemptsByKey(
+    params.attemptKey,
+    computeRateLimitSince(params.now),
+  );
+  if (isPasswordChangeRateLimited(failedCount)) {
+    params.logger.warn('Password change rate limit exceeded', {
+      userId: params.userId,
+      failedCount,
+    });
+    throwRateLimited();
+  }
+}
+
+export async function verifyCurrentPasswordForChange(params: {
+  readonly authRepo: AuthRepository;
+  readonly logger: Logger;
+  readonly profile: ProfileWithDepartmentsRecord;
+  readonly currentPassword: string;
+  readonly ip?: string;
+  readonly now: Date;
+}): Promise<void> {
+  const attemptKey = buildPasswordChangeAttemptKey(params.profile.id);
+  await assertPasswordChangeWithinRateLimit({
+    authRepo: params.authRepo,
+    logger: params.logger,
+    userId: params.profile.id,
+    attemptKey,
+    now: params.now,
+  });
+
+  const currentValid = await verifyPassword(
+    params.currentPassword,
+    params.profile.passwordHash ?? DUMMY_PASSWORD_HASH,
+  );
+  if (!currentValid) {
+    await params.authRepo.recordLoginAttempt({
+      studentId: attemptKey,
+      ip: params.ip ?? 'unknown',
+      success: false,
+      createdAt: params.now,
+    });
+    params.logger.warn('Failed password change attempt', {
+      userId: params.profile.id,
+    });
+    throw badRequest(
+      'errors.invalidCurrentPassword',
+      {},
+      'INVALID_CURRENT_PASSWORD',
     );
   }
 }
@@ -52,7 +143,7 @@ export async function verifyLoginProfile(params: {
   );
   if (!profile || !activeHash || !passwordMatches) {
     await params.authRepo.recordLoginAttempt({
-      studentId: params.input.studentId,
+      studentId: buildLoginAttemptKey(params.input.studentId),
       ip: params.input.ip,
       success: false,
       createdAt: params.now,

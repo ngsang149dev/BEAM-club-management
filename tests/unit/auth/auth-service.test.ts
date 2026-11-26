@@ -6,6 +6,7 @@ import type { AuditLogEntry, AuditLogWriter } from '@/server/modules/audit';
 import {
   type AuthRepository,
   AuthService,
+  PASSWORD_CHANGE_ATTEMPT_PREFIX,
   type ProfileWithDepartmentsRecord,
   type SessionRecord,
 } from '@/server/modules/auth';
@@ -33,6 +34,30 @@ class InMemoryAuthRepository implements AuthRepository {
     return this.loginAttempts.filter(
       (attempt) =>
         attempt.ip === ip &&
+        !attempt.success &&
+        attempt.createdAt.getTime() >= since.getTime() &&
+        !attempt.studentId.startsWith(PASSWORD_CHANGE_ATTEMPT_PREFIX),
+    ).length;
+  }
+
+  async countRecentFailedLoginAttemptsForPair(
+    ip: string,
+    studentId: string,
+    since: Date,
+  ): Promise<number> {
+    return this.loginAttempts.filter(
+      (attempt) =>
+        attempt.ip === ip &&
+        attempt.studentId === studentId &&
+        !attempt.success &&
+        attempt.createdAt.getTime() >= since.getTime(),
+    ).length;
+  }
+
+  async countRecentFailedAttemptsByKey(key: string, since: Date): Promise<number> {
+    return this.loginAttempts.filter(
+      (attempt) =>
+        attempt.studentId === key &&
         !attempt.success &&
         attempt.createdAt.getTime() >= since.getTime(),
     ).length;
@@ -414,37 +439,195 @@ describe('AuthService', () => {
     expect(explicitRedirectLogin.response.redirectTo).toBe('/my-tasks');
   });
 
-  it('enforces IP rate limit after 10 failed attempts within 15 minutes (AC-12)', async () => {
+  it('enforces 2-layer login rate limit: pair (5) isolates accounts on shared IP while global IP cap (20) stops spray attacks (AC-12, E11-02)', async () => {
     const { clock, service } = createTestHarness();
-    for (let i = 0; i < 10; i += 1) {
+    const sharedIp = '10.0.0.9';
+
+    // 1. 5 failed attempts for one student blocks ONLY that (ip, studentId) pair
+    for (let i = 0; i < 5; i += 1) {
       await captureAppError(() =>
         service.login({
-          studentId: 'MSSV-UNKNOWN',
-          password: DEV_SEED_PASSWORD,
-          ip: '10.0.0.9',
+          studentId: 'MSSV-UNIT-FIRST',
+          password: 'WrongPassword#1',
+          ip: sharedIp,
         }),
       );
     }
 
-    const rateErr = await captureAppError(() =>
+    const pairRateErr = await captureAppError(() =>
+      service.login({
+        studentId: 'MSSV-UNIT-FIRST',
+        password: DEV_SEED_PASSWORD,
+        ip: sharedIp,
+      }),
+    );
+    expect(pairRateErr.httpStatus).toBe(429);
+    expect(pairRateErr.code).toBe('RATE_LIMITED');
+    expect(pairRateErr.messageKey).toBe('errors.tooManyRequests');
+    expect(pairRateErr.details.retryAfterSeconds).toBe(900);
+
+    // Another member on the same shared Wi-Fi IP is NOT blocked
+    const unaffectedLogin = await service.login({
+      studentId: 'MSSV-UNIT-001',
+      password: DEV_SEED_PASSWORD,
+      ip: sharedIp,
+    });
+    expect(unaffectedLogin.response.user.id).toBe('user-1');
+
+    // 2. 15 more failures across other studentIds reaches global IP cap of 20
+    for (let i = 0; i < 15; i += 1) {
+      await captureAppError(() =>
+        service.login({
+          studentId: `MSSV-SPRAY-${Math.floor(i / 3)}`,
+          password: DEV_SEED_PASSWORD,
+          ip: sharedIp,
+        }),
+      );
+    }
+
+    const globalIpRateErr = await captureAppError(() =>
       service.login({
         studentId: 'MSSV-UNIT-001',
         password: DEV_SEED_PASSWORD,
-        ip: '10.0.0.9',
+        ip: sharedIp,
+      }),
+    );
+    expect(globalIpRateErr.httpStatus).toBe(429);
+    expect(globalIpRateErr.code).toBe('RATE_LIMITED');
+    expect(globalIpRateErr.details.retryAfterSeconds).toBe(900);
+
+    clock.advanceByMs(15 * 60 * 1000 + 1);
+    const okAfterWindow = await service.login({
+      studentId: 'MSSV-UNIT-001',
+      password: DEV_SEED_PASSWORD,
+      ip: sharedIp,
+    });
+    expect(okAfterWindow.response.user.id).toBe('user-1');
+  });
+
+  it('enforces password-change rate limit (5 failed attempts / 15m) without affecting IP login budget (E11-02)', async () => {
+    const { clock, repo, rawLogs, service } = createTestHarness();
+    const sharedIp = '10.0.0.19';
+    const loggedIn = await service.login({
+      studentId: 'MSSV-UNIT-001',
+      password: DEV_SEED_PASSWORD,
+      ip: sharedIp,
+    });
+    const authSession = await service.authenticateSession(loggedIn.rawToken);
+
+    for (let i = 0; i < 5; i += 1) {
+      const err = await captureAppError(() =>
+        service.changeMyPassword({
+          actor: authSession.actor,
+          currentSessionId: authSession.session.id,
+          input: {
+            currentPassword: `WrongCurrent#${i}`,
+            newPassword: 'UpdatedPass#2026',
+          },
+          ip: sharedIp,
+        }),
+      );
+      expect(err.httpStatus).toBe(400);
+      expect(err.code).toBe('INVALID_CURRENT_PASSWORD');
+    }
+
+    // 6th attempt is blocked with 429 even if currentPassword is correct
+    const rateErr = await captureAppError(() =>
+      service.changeMyPassword({
+        actor: authSession.actor,
+        currentSessionId: authSession.session.id,
+        input: {
+          currentPassword: DEV_SEED_PASSWORD,
+          newPassword: 'UpdatedPass#2026',
+        },
+        ip: sharedIp,
       }),
     );
     expect(rateErr.httpStatus).toBe(429);
     expect(rateErr.code).toBe('RATE_LIMITED');
-    expect(rateErr.messageKey).toBe('errors.tooManyRequests');
     expect(rateErr.details.retryAfterSeconds).toBe(900);
 
+    // Failed pwd: entries do NOT count against login IP rate limit
+    const ipLoginCount = await repo.countRecentFailedLoginAttempts(
+      sharedIp,
+      new Date(clock.now().getTime() - 15 * 60 * 1000),
+    );
+    expect(ipLoginCount).toBe(0);
+
+    // After 15 minutes, password change succeeds again
     clock.advanceByMs(15 * 60 * 1000 + 1);
-    const okLogin = await service.login({
+    const updated = await service.changeMyPassword({
+      actor: authSession.actor,
+      currentSessionId: authSession.session.id,
+      input: {
+        currentPassword: DEV_SEED_PASSWORD,
+        newPassword: 'UpdatedPass#2026',
+      },
+      ip: sharedIp,
+    });
+    expect(updated.profile.id).toBe('user-1');
+
+    const logsSerialized = JSON.stringify(rawLogs);
+    expect(logsSerialized).not.toContain('MSSV-UNIT-001');
+    expect(logsSerialized).not.toContain('WrongCurrent#0');
+    expect(logsSerialized).not.toContain('UpdatedPass#2026');
+  });
+
+  it('prevents pwd: prefix collision: login with studentId="pwd:<userId>" cannot DoS /me/password and rotating pwd:<n> still hits global IP 429', async () => {
+    const { service } = createTestHarness();
+    const attackerIp = '10.0.0.29';
+    const loggedIn = await service.login({
       studentId: 'MSSV-UNIT-001',
       password: DEV_SEED_PASSWORD,
-      ip: '10.0.0.9',
+      ip: '10.0.0.28',
     });
-    expect(okLogin.response.user.id).toBe('user-1');
+    const authSession = await service.authenticateSession(loggedIn.rawToken);
+
+    // 1. 5 failed logins with studentId="pwd:user-1" MUST NOT lock out user-1 from changeMyPassword
+    for (let i = 0; i < 5; i += 1) {
+      const err = await captureAppError(() =>
+        service.login({
+          studentId: 'pwd:user-1',
+          password: 'WrongPassword#1',
+          ip: attackerIp,
+        }),
+      );
+      expect(err.httpStatus).toBe(401);
+    }
+
+    const updated = await service.changeMyPassword({
+      actor: authSession.actor,
+      currentSessionId: authSession.session.id,
+      input: {
+        currentPassword: DEV_SEED_PASSWORD,
+        newPassword: 'SafeAfterAttack#2026',
+      },
+      ip: '10.0.0.28',
+    });
+    expect(updated.profile.id).toBe('user-1');
+
+    // 2. 15 more rotating pwd:<n> / PWD:<n> logins (20 total on attackerIp) trigger global IP 429
+    for (let i = 0; i < 15; i += 1) {
+      const prefix = i % 2 === 0 ? 'pwd:' : 'PWD:';
+      const err = await captureAppError(() =>
+        service.login({
+          studentId: `${prefix}spray-${i}`,
+          password: 'WrongPassword#1',
+          ip: attackerIp,
+        }),
+      );
+      expect(err.httpStatus).toBe(401);
+    }
+
+    const globalBlocked = await captureAppError(() =>
+      service.login({
+        studentId: 'MSSV-UNIT-001',
+        password: 'SafeAfterAttack#2026',
+        ip: attackerIp,
+      }),
+    );
+    expect(globalBlocked.httpStatus).toBe(429);
+    expect(globalBlocked.code).toBe('RATE_LIMITED');
   });
 
   it('handles 24h fixed TTL vs 30d sliding TTL and session expiry (AC-05, AC-13)', async () => {
