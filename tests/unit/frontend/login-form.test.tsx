@@ -67,7 +67,7 @@ describe('LoginForm (S01)', () => {
     expect(htmlVi).not.toContain('Chỉ tích trên thiết bị của bạn.');
     expect(htmlVi).not.toContain('không có mật khẩu');
     expect(htmlVi).not.toContain('Phiên đã hết hạn');
-    expect(htmlVi).toContain('Make with');
+    expect(htmlVi).toContain(viMessages.auth.collabLabel);
     expect(htmlVi).toContain('href="https://www.facebook.com/eiu.beam.club"');
     expect(htmlVi).toContain('href="https://www.facebook.com/ng.sanggg149"');
     expect(htmlVi).toContain('target="_blank"');
@@ -82,7 +82,7 @@ describe('LoginForm (S01)', () => {
     expect(htmlEn).toContain('aria-label="Show password"');
     expect(htmlEn).toContain('Sign in');
     expect(htmlEn).not.toContain('no self sign-up, password or OTP');
-    expect(htmlEn).toContain('Make with');
+    expect(htmlEn).toContain(enMessages.auth.collabLabel);
     expect(htmlEn).toContain('href="https://www.facebook.com/eiu.beam.club"');
     expect(htmlEn).toContain('href="https://www.facebook.com/ng.sanggg149"');
   });

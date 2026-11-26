@@ -50,8 +50,7 @@
   },
   "member": {
     "leftBadge": "(đã rời)",
-    "activeStatus": "Đang hoạt động",
-    "leftStatus": "Đã rời"
+    "activeStatus": "Đang hoạt động"
   },
   "language": {
     "label": "Ngôn ngữ",
@@ -60,22 +59,6 @@
     "en": "EN",
     "viName": "Tiếng Việt",
     "enName": "English"
-  },
-  "home": {
-    "kicker": "Không gian CLB",
-    "title": "Không gian làm việc CLB BEAM",
-    "subtitle": "Quản lý thành viên, phân quyền theo ban và bảng task nội bộ.",
-    "statusTitle": "Nền tảng đã sẵn sàng",
-    "statusDescription": "Khung điều hướng song ngữ Việt/Anh, phân quyền tiện ích và kết nối API chuẩn OpenAPI đã được thiết lập.",
-    "quickLinksTitle": "Khu vực làm việc",
-    "priorityLegendTitle": "Mức độ ưu tiên",
-    "openSection": "Mở mục",
-    "cards": {
-      "boards": "Bảng Kanban, cột, thẻ công việc và Thùng rác theo từng mảng hoạt động.",
-      "myTasks": "Danh sách việc được giao sắp đến hạn và mức độ ưu tiên hiện tại.",
-      "members": "Danh bạ thành viên theo ban, bảo vệ MSSV và email theo quyền xem chi tiết.",
-      "profile": "Xem thông tin cá nhân, quyền hiệu lực và đổi mật khẩu."
-    }
   },
   "auth": {
     "title": "Đăng nhập",
@@ -100,7 +83,7 @@
     "sessionExpiredBody": "Vui lòng đăng nhập lại để tiếp tục.",
     "networkErrorTitle": "Không có kết nối",
     "networkError": "Không thể kết nối đến máy chủ. Kiểm tra mạng rồi thử lại.",
-    "collabLabel": "Make with",
+    "collabLabel": "A collaboration of",
     "showcase": {
       "showcaseLabel": "Khoảnh khắc CLB BEAM",
       "tag": "Khoảnh khắc CLB",
@@ -178,7 +161,6 @@
     "changePhoto": "Đổi ảnh",
     "uploadingPhoto": "Đang xử lý ảnh...",
     "removePhoto": "Xóa ảnh",
-    "removingPhoto": "Đang xóa...",
     "avatarHint": "PNG, JPEG hoặc WEBP · tối đa 256 KB."
   },
   "branding": {
@@ -200,7 +182,6 @@
     "removedToast": "Đã khôi phục logo mặc định của CLB.",
     "wordmarkTitle": "Ảnh chữ thương hiệu",
     "wordmarkSubtitle": "Thay thế chữ BEAM mặc định bên cạnh logo.",
-    "wordmarkAlt": "Chữ thương hiệu CLB BEAM",
     "customWordmarkActive": "Đã có ảnh chữ",
     "defaultWordmarkActive": "Mặc định",
     "wordmarkUploadHint": "PNG, JPEG, WEBP hoặc SVG, tự nén <= 256 KB.",
@@ -450,7 +431,6 @@
     "validationFullName": "Vui lòng nhập họ tên hợp lệ (1–120 ký tự).",
     "validationStudentId": "MSSV không được để trống (tối đa 64 ký tự).",
     "validationEmailDomain": "Email phải hợp lệ và thuộc tên miền @{domain}.",
-    "validationFormGeneric": "Vui lòng kiểm tra lại thông tin đã nhập.",
     "initialPasswordLabel": "Mật khẩu ban đầu",
     "initialPasswordPlaceholder": "Tối thiểu 8 ký tự",
     "initialPasswordHint": "Tối thiểu 8 ký tự · thành viên cần đổi khi đăng nhập lần đầu.",
@@ -541,7 +521,6 @@
     "cannotRevokeSelfHint": "Không thể tự gỡ quyền admin của chính bạn.",
     "lastAdminBannerTitle": "Không thể gỡ quyền admin cuối cùng",
     "effectiveSummaryCount": "{count} quyền đang bật",
-    "effectiveNone": "Chưa bật quyền nào",
     "unsavedChanges": "Có thay đổi chưa lưu",
     "discardChanges": "Hủy",
     "saveChanges": "Lưu thay đổi",
@@ -724,7 +703,6 @@
     "columnReorderedToast": "Đã cập nhật thứ tự cột.",
     "dragColumnHandle": "Kéo để sắp xếp cột",
     "dropHereHint": "Thả task vào cột này",
-    "columnMoveError": "Không thể cập nhật thứ tự cột.",
     "columnActionsMenu": "Tùy chọn cột",
     "boardActionsMenu": "Tùy chọn board",
     "visibleTaskCount": "{count} task",
@@ -790,7 +768,6 @@
     "notifySectionTitle": "Tùy chọn gửi thông báo",
     "notifyInAppLabel": "Thông báo trên web",
     "notifyEmailLabel": "Gửi email",
-    "notifyDepartmentMembersLabel": "Thông báo & gửi email cho thành viên ban",
     "individualAssigneesSummary": "Giao thêm cho từng thành viên",
     "assigneesLabel": "Người được giao",
     "assigneesEmpty": "Chưa có người được giao",
@@ -824,9 +801,7 @@
     "saveDetails": "Lưu thay đổi",
     "savingDetails": "Đang lưu...",
     "saveAssignments": "Cập nhật giao việc",
-    "saveAssignees": "Cập nhật giao việc",
     "savingAssignees": "Đang cập nhật...",
-    "departmentsSaveButton": "Cập nhật giao việc",
     "departmentsUpdatedToast": "Đã cập nhật giao việc.",
     "deleteTask": "Xóa task",
     "deleteConfirmTitle": "Chuyển task vào Thùng rác?",
@@ -839,11 +814,9 @@
     "validationTitle": "Tiêu đề task cần từ 1 đến 200 ký tự.",
     "createdToast": "Đã tạo task {title}.",
     "updatedToast": "Đã cập nhật task.",
-    "assigneesUpdatedToast": "Đã cập nhật người được giao.",
     "deletedToast": "Đã chuyển task vào Thùng rác.",
     "dragTaskHint": "Kéo task để di chuyển",
     "movedToast": "Đã chuyển task.",
-    "moveError": "Không thể chuyển task.",
     "taskActionsMenu": "Tùy chọn task",
     "moveToColumnMenu": "Chuyển tới cột…",
     "movedToColumnToast": "Đã chuyển task sang cột {column}.",
@@ -1048,7 +1021,6 @@
     "unreadCountLabel": "{count} chưa đọc",
     "markAllRead": "Đánh dấu đã đọc tất cả",
     "markingAllRead": "Đang xử lý...",
-    "markReadAction": "Đánh dấu đã đọc",
     "emptyTitle": "Chưa có thông báo nào",
     "emptyDescription": "Khi có công việc được giao cho ban hoặc cho bạn, thông báo sẽ hiện tại đây.",
     "loading": "Đang tải thông báo...",

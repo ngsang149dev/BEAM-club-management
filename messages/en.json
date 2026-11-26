@@ -50,8 +50,7 @@
   },
   "member": {
     "leftBadge": "(left)",
-    "activeStatus": "Active",
-    "leftStatus": "Left"
+    "activeStatus": "Active"
   },
   "language": {
     "label": "Language",
@@ -60,22 +59,6 @@
     "en": "EN",
     "viName": "Vietnamese",
     "enName": "English"
-  },
-  "home": {
-    "kicker": "Club workspace",
-    "title": "BEAM Club Workspace",
-    "subtitle": "Internal member directory, department permissions, and Kanban task boards.",
-    "statusTitle": "Foundation ready",
-    "statusDescription": "Bilingual Vietnamese/English navigation shell, UX permission helpers, and typed OpenAPI client are ready.",
-    "quickLinksTitle": "Core areas",
-    "priorityLegendTitle": "Task priorities",
-    "openSection": "Open",
-    "cards": {
-      "boards": "Kanban boards, columns, task cards, and Trash per club workstream.",
-      "myTasks": "Tasks assigned to you sorted by upcoming deadlines and priority.",
-      "members": "Club member directory by department with gated student ID and email visibility.",
-      "profile": "View your profile, effective permissions, and change your password."
-    }
   },
   "auth": {
     "title": "Sign in",
@@ -100,7 +83,7 @@
     "sessionExpiredBody": "Please sign in again to continue.",
     "networkErrorTitle": "Connection error",
     "networkError": "Could not reach the server. Check your connection and try again.",
-    "collabLabel": "Make with",
+    "collabLabel": "A collaboration of",
     "showcase": {
       "showcaseLabel": "BEAM Club moments",
       "tag": "Club moments",
@@ -178,7 +161,6 @@
     "changePhoto": "Change photo",
     "uploadingPhoto": "Uploading...",
     "removePhoto": "Remove photo",
-    "removingPhoto": "Removing...",
     "avatarHint": "PNG, JPEG, or WEBP · max 256 KB."
   },
   "branding": {
@@ -200,7 +182,6 @@
     "removedToast": "Restored default club logo.",
     "wordmarkTitle": "Club wordmark",
     "wordmarkSubtitle": "Replaces the default BEAM text next to the logo.",
-    "wordmarkAlt": "BEAM Club wordmark",
     "customWordmarkActive": "Custom wordmark",
     "defaultWordmarkActive": "Default",
     "wordmarkUploadHint": "PNG, JPEG, WEBP, or SVG, auto-compressed <= 256 KB.",
@@ -450,7 +431,6 @@
     "validationFullName": "Enter a valid full name (1–120 characters).",
     "validationStudentId": "Student ID is required (up to 64 characters).",
     "validationEmailDomain": "Enter a valid @{domain} email address.",
-    "validationFormGeneric": "Please check the highlighted form fields.",
     "initialPasswordLabel": "Initial password",
     "initialPasswordPlaceholder": "At least 8 characters",
     "initialPasswordHint": "At least 8 characters · required to change on first sign-in.",
@@ -541,7 +521,6 @@
     "cannotRevokeSelfHint": "You cannot remove your own admin access.",
     "lastAdminBannerTitle": "Cannot remove the last admin",
     "effectiveSummaryCount": "{count} permissions on",
-    "effectiveNone": "No permissions enabled",
     "unsavedChanges": "Unsaved changes",
     "discardChanges": "Cancel",
     "saveChanges": "Save changes",
@@ -724,7 +703,6 @@
     "columnReorderedToast": "Updated column order.",
     "dragColumnHandle": "Drag to reorder column",
     "dropHereHint": "Drop task here",
-    "columnMoveError": "Could not reorder columns.",
     "columnActionsMenu": "Column options",
     "boardActionsMenu": "Board options",
     "visibleTaskCount": "{count} tasks",
@@ -790,7 +768,6 @@
     "notifySectionTitle": "Notification options",
     "notifyInAppLabel": "Web notification",
     "notifyEmailLabel": "Send email",
-    "notifyDepartmentMembersLabel": "Notify & email department members",
     "individualAssigneesSummary": "Assign individual members",
     "assigneesLabel": "Assignees",
     "assigneesEmpty": "Unassigned",
@@ -824,9 +801,7 @@
     "saveDetails": "Save changes",
     "savingDetails": "Saving...",
     "saveAssignments": "Update assignments",
-    "saveAssignees": "Update assignments",
     "savingAssignees": "Updating...",
-    "departmentsSaveButton": "Update assignments",
     "departmentsUpdatedToast": "Updated task assignments.",
     "deleteTask": "Delete task",
     "deleteConfirmTitle": "Move task to Trash?",
@@ -839,11 +814,9 @@
     "validationTitle": "Task title must be 1 to 200 characters.",
     "createdToast": "Created task {title}.",
     "updatedToast": "Updated task.",
-    "assigneesUpdatedToast": "Updated task assignees.",
     "deletedToast": "Moved task to Trash.",
     "dragTaskHint": "Drag task to move",
     "movedToast": "Moved task.",
-    "moveError": "Could not move task.",
     "taskActionsMenu": "Task options",
     "moveToColumnMenu": "Move to column…",
     "movedToColumnToast": "Moved task to {column}.",
@@ -1048,7 +1021,6 @@
     "unreadCountLabel": "{count} unread",
     "markAllRead": "Mark all read",
     "markingAllRead": "Marking...",
-    "markReadAction": "Mark as read",
     "emptyTitle": "No notifications yet",
     "emptyDescription": "When tasks are assigned to your department or to you, they will appear here.",
     "loading": "Loading notifications...",
