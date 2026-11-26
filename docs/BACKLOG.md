@@ -23,7 +23,7 @@
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done |
-| **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | In Progress (đã duyệt) |
+| **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Ready for Merge |
 
 ---
 
@@ -663,7 +663,7 @@
 
 ---
 
-## Epic E10 — Triển khai Production Miễn phí & Tự động hóa Email Nhắc hạn (`HANDOFF §7, §9, §10`) *(In Progress — đã được chủ dự án duyệt triển khai)*
+## Epic E10 — Triển khai Production Miễn phí & Tự động hóa Email Nhắc hạn (`HANDOFF §7, §9, §10`) *(Ready for Merge — chờ chủ dự án duyệt merge vào `main`)*
 
 ### E10-01
 - **ID:** `E10-01`
@@ -672,7 +672,7 @@
 - **Liên quan:** `FR-04`, `FR-10`, `FR-17`–`FR-19`, `FR-30`, `NFR-08`, `HANDOFF` (§7.1, §8.1, §9, §10)
 - **Phụ thuộc:** `E9` (`Done`, sau khi duyệt merge `main`)
 - **Mục tài liệu cần đọc:** `AGENTS.md` (§0 #4, §6A, §7, §8), `HANDOFF` (mục 7, 8.1, 9, 10), `db/seed.sql`, `scripts/db-migrate.mjs`, `src/server/shared/password.ts`, `src/server/shared/mailer.ts`
-- **Phạm vi file được sửa:** `db/migrations/0007_system_catalog_defaults.sql`, `scripts/db-migrate.mjs`, `scripts/db-bootstrap-admin.mjs`, `scripts/smtp-verify.mjs`, `package.json`, `tests/integration/db/schema-invariants.test.ts`, `tests/integration/db/backup-restore.test.ts`
+- **Phạm vi file được sửa:** `db/migrations/0007_system_catalog_defaults.sql`, `scripts/db-cli.mjs`, `scripts/db-migrate.mjs`, `scripts/db-bootstrap-admin.mjs`, `scripts/smtp-verify.mjs`, `package.json`, `vitest.config.ts`, `src/features/audit/formatters.ts`, `messages/vi.json`, `messages/en.json`, `tests/unit/shared/ops-cli.test.ts`, `tests/unit/frontend/audit-logs.test.tsx`, `tests/unit/frontend/i18n-parity.test.ts`, `tests/integration/db/schema-invariants.test.ts`, `tests/integration/db/backup-restore.test.ts`, `tests/integration/auth/auth-routes.test.ts`
 - **Tiêu chí chấp nhận:**
   1. Tạo migration cộng thêm, idempotent `db/migrations/0007_system_catalog_defaults.sql` nạp sẵn `18` mã `permissions`, `3` `permission_presets` + `preset_permissions`, và `app_settings('reminders')` mặc định (`ON CONFLICT DO UPDATE / DO NOTHING`) — **tuyệt đối 0 tài khoản/board/task giả lập dev**, để CSDL Neon Production mới tạo chạy `db:migrate` là có đủ danh mục phân quyền.
   2. Nâng cấp `scripts/db-migrate.mjs` đối chiếu bảng `schema_migrations` để bỏ qua bản đã áp, ẩn thông tin nhạy cảm của URL trong log, và an toàn khi chủ dự án tự chạy với Direct URL của Neon.
@@ -681,7 +681,7 @@
 - **Kiểm thử bắt buộc:** Integration test kiểm chứng migration `0007` trên DB sạch, unit/integration test cho logic `db-bootstrap-admin` & `smtp-verify` trên mock SMTP / `beam_test` (cấm chạm production).
 - **Ngoài phạm vi:** Agent tự kết nối hoặc chạy lệnh lên Neon Production / Gmail thật của CLB (`AGENTS.md §0 #4`).
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `In Progress` (đã duyệt triển khai)
+- **Trạng thái:** `Chờ chủ dự án duyệt merge` (nhánh `feat/E10-production-readiness` — `59/59` unit tệp / `318` test, `19/19` integration tệp / `35` test chạy `3/3` lượt liên tiếp `105/105` xanh, `qa-reviewer` ngữ cảnh sạch `VERDICT: PASS` `0` Blocker / `0` Major / `0` Minor, `13/13` mục `6A.8`)
 
 ### E10-02
 - **ID:** `E10-02`
@@ -698,4 +698,4 @@
 - **Kiểm thử bắt buộc:** `lint`, `typecheck`, kiểm tra cú pháp JSON/YAML của `vercel.json` & `.github/workflows/daily-cron.yml`, `build`.
 - **Ngoài phạm vi:** Thao tác trực tiếp trên dashboard Vercel/Neon/GitHub của CLB.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready` (đã duyệt triển khai)
+- **Trạng thái:** `Chờ chủ dự án duyệt merge` (nhánh `feat/E10-production-readiness` — `vercel.json` `sin1`, `.github/workflows/daily-cron.yml`, `OPERATIONS.md` & `README.md` đạt `qa-reviewer` `VERDICT: PASS`)

@@ -153,6 +153,7 @@ describe('i18n message dictionaries (vi/en)', () => {
       'memberAdmin.resetPasswordAction',
       'memberAdmin.resetPasswordModalTitle',
       'auditLogs.actions.memberPasswordReset',
+      'auditLogs.actions.memberBootstrapAdmin',
     ];
 
     for (const key of authAndProfileKeys) {

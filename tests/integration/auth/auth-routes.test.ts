@@ -184,7 +184,7 @@ describe('Auth & /me Route Handlers integration', () => {
         mustChangePassword: false,
         isAdmin: false,
         isActive: false,
-        leftAt: new Date('2026-10-01T00:00:00.000Z'),
+        leftAt: new Date(),
         locale: 'vi',
       },
       {

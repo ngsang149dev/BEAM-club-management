@@ -603,6 +603,7 @@
       "purgeModePhysicalDelete": "Xóa hẳn bản ghi"
     },
     "actions": {
+      "memberBootstrapAdmin": "Khởi tạo Admin hệ thống",
       "memberCreated": "Tạo thành viên",
       "memberUpdated": "Sửa thành viên",
       "memberPasswordReset": "Đặt lại mật khẩu",

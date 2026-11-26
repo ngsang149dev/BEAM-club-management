@@ -71,11 +71,13 @@ npm run build             # Next.js production build
 npm run test:e2e          # Playwright end-to-end suite (requires build + TEST_DATABASE_URL)
 npm run db:backup         # Safe pg_dump SQL backup (dev/test only; blocks NODE_ENV=production)
 npm run db:restore:verify # Isolated temp-DB restore, schema, row-count & trigger verification
+npm run db:bootstrap-admin # Owner-only CLI to create/reset the initial Club Admin without dev seed data
+npm run smtp:verify -- --to admin@eiu.edu.vn # Verify real SMTP delivery into primary inbox before Go-Live
 ```
 
 ## Release, Operations & Governance Docs
 
 - Governance & layered architecture rules: `AGENTS.md` and `docs/STATUS.md`
-- Deployment, Vercel Cron schedule, weekly `pg_dump` backup & club handover (`NFR-06`, `NFR-08`): `docs/OPERATIONS.md`
+- Deployment, `0đ/month` Go-Live Runbook (Neon + Vercel `sin1` + Gmail/Brevo SMTP + GitHub Cron), weekly `pg_dump` backup & club handover (`NFR-06`, `NFR-08`): `docs/OPERATIONS.md`
 - 1-week club UAT checklist (`HANDOFF §9`, `AC-01`..`AC-22`): `docs/UAT-CHECKLIST.md`
 - API & schema contracts: `docs/openapi.yaml`, `docs/ERD.md`, `docs/TRACEABILITY.md`, `docs/DECISIONS.md`

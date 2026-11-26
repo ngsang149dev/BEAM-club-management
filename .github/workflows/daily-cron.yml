@@ -1,0 +1,117 @@
+name: Daily Cron (Backup & Manual Trigger)
+
+on:
+  schedule:
+    # 07:00 Asia/Ho_Chi_Minh (00:00 UTC) — daily deadline reminder digest
+    - cron: '0 0 * * *'
+    # 07:05 Asia/Ho_Chi_Minh (00:05 UTC) — daily archive retention purge
+    - cron: '5 0 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Cron job to trigger on production'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - reminders
+          - archive-purge
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-cron-trigger
+  cancel-in-progress: false
+
+jobs:
+  trigger-cron:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROD_APP_URL: ${{ secrets.PROD_APP_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      SCHEDULE_CRON: ${{ github.event.schedule }}
+      DISPATCH_TARGET: ${{ inputs.target }}
+
+    steps:
+      - name: Check configuration & resolve target endpoints
+        id: config
+        run: |
+          if [ -z "${PROD_APP_URL}" ] || [ -z "${CRON_SECRET}" ]; then
+            echo "::notice::Skipping daily cron trigger because PROD_APP_URL or CRON_SECRET repository secrets are not configured yet."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE_URL="${PROD_APP_URL%/}"
+          case "${BASE_URL}" in
+            https://*|http://localhost:*|http://127.0.0.1:*) ;;
+            *)
+              echo "::error::PROD_APP_URL must start with https:// (or localhost for testing)."
+              exit 1
+              ;;
+          esac
+
+          RUN_REMINDERS="false"
+          RUN_ARCHIVE_PURGE="false"
+
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+            if [ "${SCHEDULE_CRON}" = "5 0 * * *" ]; then
+              RUN_ARCHIVE_PURGE="true"
+            else
+              RUN_REMINDERS="true"
+            fi
+          else
+            case "${DISPATCH_TARGET}" in
+              reminders)
+                RUN_REMINDERS="true"
+                ;;
+              archive-purge)
+                RUN_ARCHIVE_PURGE="true"
+                ;;
+              *)
+                RUN_REMINDERS="true"
+                RUN_ARCHIVE_PURGE="true"
+                ;;
+            esac
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "run_reminders=${RUN_REMINDERS}" >> "$GITHUB_OUTPUT"
+          echo "run_archive_purge=${RUN_ARCHIVE_PURGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger deadline reminders cron
+        if: steps.config.outputs.configured == 'true' && steps.config.outputs.run_reminders == 'true'
+        run: |
+          BASE_URL="${PROD_APP_URL%/}"
+          HTTP_CODE=$(curl -sS -o /tmp/reminders-response.json -w "%{http_code}" \
+            --max-time 60 \
+            -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
+            "${BASE_URL}/api/v1/internal/cron/reminders")
+
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Deadline reminders cron returned HTTP ${HTTP_CODE}."
+            exit 1
+          fi
+          echo "Deadline reminders cron completed successfully (HTTP ${HTTP_CODE})."
+
+      - name: Trigger archive retention purge cron
+        if: steps.config.outputs.configured == 'true' && steps.config.outputs.run_archive_purge == 'true'
+        run: |
+          BASE_URL="${PROD_APP_URL%/}"
+          HTTP_CODE=$(curl -sS -o /tmp/archive-purge-response.json -w "%{http_code}" \
+            --max-time 60 \
+            -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
+            "${BASE_URL}/api/v1/internal/cron/archive-purge")
+
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Archive purge cron returned HTTP ${HTTP_CODE}."
+            exit 1
+          fi
+          echo "Archive purge cron completed successfully (HTTP ${HTTP_CODE})."
