@@ -25,8 +25,8 @@
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done |
 | **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Done |
 | **E11** | Gia cố Bảo mật Production: OWASP Headers, CSRF Origin Guard, Rate limit 2 lớp, CDN Cache branding & Runbook WAF `[RỦI RO CAO]` | NFR-01–NFR-05 | Done |
-| **CR-08** | Đăng nhập 1 thiết bị (tự đăng xuất phiên cũ) & Session trượt 30 phút (bỏ "Ghi nhớ đăng nhập") (`A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-04`, `AC-05`, `AC-13` | Ready for PR (chờ duyệt) |
-| **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | Ready |
+| **CR-08** | Đăng nhập 1 thiết bị (tự đăng xuất phiên cũ) & Session trượt 30 phút (bỏ "Ghi nhớ đăng nhập") (`A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-04`, `AC-05`, `AC-13` | Done |
+| **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | In Progress |
 | **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Ready |
 
 ---
@@ -746,7 +746,7 @@
 
 ---
 
-## Epic CR-08 — Đăng nhập 1 thiết bị & Session trượt `30` phút (`A3`, `[RỦI RO CAO]`) *(Chờ duyệt merge PR trên `feat/CR08-single-session-30m`)*
+## Epic CR-08 — Đăng nhập 1 thiết bị & Session trượt `30` phút (`A3`, `[RỦI RO CAO]`) *(Done — đã duyệt & merge vào `main`)*
 
 ### CR-08-01
 - **ID:** `CR-08-01`
@@ -764,7 +764,7 @@
 - **Kiểm thử bắt buộc:** Unit & integration PostgreSQL kiểm chứng thu hồi phiên cũ khi đăng nhập nơi khác (gồm đăng nhập đồng thời, không ảnh hưởng tài khoản khác), TTL `30` phút trượt theo thao tác, hết hạn sau `30` phút nhàn rỗi kể cả có background polling `x-beam-background: 1`, bỏ qua `remember: true`, và cookie không có `Max-Age`.
 - **Ngoài phạm vi:** Đổi schema CSDL hoặc sửa UI.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR` *(hoàn tất trên `feat/CR08-single-session-30m` — `lint`, `typecheck`, `arch:check`, `62` unit tệp / `341` test & `21` integration tệp / `42` test xanh)*
+- **Trạng thái:** `Done` *(đã duyệt & merge vào `main` — `lint`, `typecheck`, `arch:check`, `62` unit tệp / `341` test & `21` integration tệp / `42` test xanh)*
 
 ### CR-08-02
 - **ID:** `CR-08-02`
@@ -782,7 +782,7 @@
 - **Kiểm thử bắt buộc:** Unit test `LoginForm`, `ProfileSessionCard`, `QueryProvider` (invalidate khi gặp `401`), `useNotificationsQuery` (gửi `x-beam-background: 1`), parity `vi`/`en`.
 - **Ngoài phạm vi:** API backend, E2E Playwright.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready for PR` *(hoàn tất trên `feat/CR08-single-session-30m` — `33/33` unit frontend tệp / `184` test xanh)*
+- **Trạng thái:** `Done` *(đã duyệt & merge vào `main` — `33/33` unit frontend tệp / `184` test xanh)*
 
 ### CR-08-03
 - **ID:** `CR-08-03`
@@ -798,7 +798,7 @@
 - **Kiểm thử bắt buộc:** Full Playwright Chrome E2E + toàn bộ bộ test Vitest unit/integration + `next build`.
 - **Ngoài phạm vi:** Sửa code nghiệp vụ trực tiếp hoặc merge `main`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR` *(đạt **`VERDICT: PASS`** trên `feat/CR08-single-session-30m` — vượt 8/8 cổng, `62` unit / `341` test, `21` integration / `42` test, `next build` `42/42` route + Proxy, `45/45` Chrome E2E `2.7m`, `0` Blocker / `0` Major / `2` Minor không chặn, `13/13` mục `6A.8`)*
+- **Trạng thái:** `Done` *(đạt **`VERDICT: PASS`**, đã duyệt & merge vào `main` — vượt 8/8 cổng, `62` unit / `341` test, `21` integration / `42` test, `next build` `42/42` route + Proxy, `45/45` Chrome E2E `2.7m`, `0` Blocker / `0` Major / `2` Minor không chặn, `13/13` mục `6A.8`)*
 
 ---
 
