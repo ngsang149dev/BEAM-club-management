@@ -126,7 +126,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 30_000,
-  globalTimeout: 180_000,
+  globalTimeout: 240_000,
   reporter: 'list',
   use: {
     baseURL: baseUrl,

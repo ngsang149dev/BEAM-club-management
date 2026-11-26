@@ -97,7 +97,7 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'board.created', key: 'boardCreated' },
   { value: 'board.updated', key: 'boardUpdated' },
   { value: 'board.archived', key: 'boardArchived' },
-  { value: 'reminders.updated', key: 'remindersUpdated' },
+  { value: 'settings.reminders_updated', key: 'remindersUpdated' },
   { value: 'branding.logo_updated', key: 'brandingLogoUpdated' },
   { value: 'branding.logo_removed', key: 'brandingLogoRemoved' },
   { value: 'branding.wordmark_updated', key: 'brandingWordmarkUpdated' },
@@ -200,6 +200,23 @@ function formatGalleryPreview(detail: Record<string, unknown>): string | null {
   return readNonEmptyString(detail.itemId);
 }
 
+function formatRemindersPreview(detail: Record<string, unknown>): string | null {
+  const hasDays = Array.isArray(detail.daysBefore);
+  const hasOverdue = typeof detail.remindOverdue === 'boolean';
+  if (!hasDays && !hasOverdue) return null;
+  const parts: string[] = [];
+  if (hasDays) {
+    const days = (detail.daysBefore as unknown[]).filter(
+      (day): day is number => typeof day === 'number' && Number.isFinite(day)
+    );
+    parts.push(`[${days.join(', ')}]`);
+  }
+  if (hasOverdue) {
+    parts.push(`overdue=${detail.remindOverdue ? 'yes' : 'no'}`);
+  }
+  return parts.join(' · ');
+}
+
 function formatEntityPreview(detail: Record<string, unknown>): string {
   const textPreview =
     readNonEmptyString(detail.name) ??
@@ -209,6 +226,8 @@ function formatEntityPreview(detail: Record<string, unknown>): string {
   if (textPreview) return textPreview;
   const galleryPreview = formatGalleryPreview(detail);
   if (galleryPreview) return galleryPreview;
+  const remindersPreview = formatRemindersPreview(detail);
+  if (remindersPreview) return remindersPreview;
   if (typeof detail.isAdmin === 'boolean') return detail.isAdmin ? 'isAdmin=true' : 'isAdmin=false';
   return formatArchivePreview(detail) ?? '—';
 }
