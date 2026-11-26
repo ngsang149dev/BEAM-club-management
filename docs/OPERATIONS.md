@@ -203,3 +203,33 @@ Trên gói Vercel Hobby miễn phí, Vercel Cron chạy 1 lần/ngày với đ�
 ### Bước 6 — Chạy UAT 1 tuần & Bàn giao chính thức
 - Thực hiện lần lượt 10 kịch bản `U1`–`U10` trong [`docs/UAT-CHECKLIST.md`](UAT-CHECKLIST.md) cùng 5–10 thành viên CLB trước khi mở rộng cho toàn bộ ~50 thành viên.
 - Thiết lập lịch nhắc Admin kỹ thuật chạy `pg_dump` sao lưu hàng tuần theo **Mục 5.2**.
+
+---
+
+## 9. Gia cố Bảo mật Production, Vercel Firewall / WAF (`0đ`) & Kiểm tra CVE
+
+Hệ thống đã tích hợp sẵn lớp phòng thủ ở mức ứng dụng (Drizzle ORM tham số hóa, `scrypt` + `timingSafeEqual`, cookie `HttpOnly`/`Secure`/`SameSite=Lax`, OWASP HTTP Security Headers tại `next.config.ts`, CSRF `Origin`/`Sec-Fetch-Site` Guard tại `src/proxy.ts` + route API, rate limit 2 lớp `(IP, studentId)` & tổng IP trên `/auth/login`, rate limit trên `/me/password`, và CDN cache + `ETag` cho ảnh branding công khai). Để bảo vệ thêm quota miễn phí trước các đợt spam/DDoS nhẹ với chi phí **`0đ`**:
+
+### 9.1 Bật Vercel Firewall / WAF Rate Limit miễn phí (Vercel Dashboard)
+Vercel Hobby đã tự hấp thụ DDoS tầng L3/L4/L7 phổ thông. Admin kỹ thuật nên tạo thêm **1–2 quy tắc Firewall miễn phí** tại **Vercel Project → Firewall → Configure → Custom Rules**:
+1. **Chặn spam đăng nhập (bảo vệ CPU `scrypt` & Neon):**
+   - Condition: `Request Path` **Equals** `/api/v1/auth/login` **AND** `Request Method` **Equals** `POST`
+   - Action: **Rate Limit** — `30` requests / `60` seconds theo `IP Address` (đủ rộng cho cả CLB dùng chung 1 Wi-Fi trường đăng nhập cùng lúc, nhưng chặn ngay tool spam hàng trăm request/phút) → trả `429`.
+2. **Chống lạm dụng API chung:**
+   - Condition: `Request Path` **Starts With** `/api/v1/`
+   - Action: **Rate Limit** — `300` requests / `60` seconds theo `IP Address`.
+3. **Chế độ khẩn cấp khi bị phá (Attack Challenge Mode):**
+   - Nếu phát hiện bất thường ở **Vercel → Observability / Logs** (lượng gọi API tăng đột biến), bật tạm **Firewall → Attack Challenge Mode** (miễn phí trên Hobby) trong vài giờ để buộc trình duyệt vượt bước kiểm tra bot tự động.
+
+### 9.2 Tùy chọn Cloudflare Free (khi gắn tên miền riêng)
+- Nếu CLB mua tên miền riêng (ví dụ `beam.eiuclub.vn`) và trỏ DNS qua **Cloudflare Free (Proxied — đám mây cam)**:
+  - Bật **SSL/TLS mode: Full (strict)** và bật **Bot Fight Mode** (miễn phí).
+  - Giữ nguyên bản ghi DNS CNAME trỏ về `cname.vercel-dns.com` theo hướng dẫn ở **Vercel → Settings → Domains**.
+
+### 9.3 Bảo vệ mã nguồn & kiểm tra lỗ hổng thư viện định kỳ (`npm audit`)
+- **Giữ GitHub Repository ở chế độ `Private`:** Vercel Hobby và GitHub Actions Free (`2.000 phút/tháng`) hỗ trợ đầy đủ repo cá nhân Private mà không lộ mã nguồn ra ngoài.
+- **Rà soát CVE hàng tháng:** Định kỳ mỗi tháng hoặc trước mỗi đợt nâng cấp lớn, Admin kỹ thuật chạy:
+  ```bash
+  npm audit --omit=dev
+  ```
+  Nếu có lỗ hổng mức `high`/`critical` ở dependency runtime, tạo nhánh cập nhật `package-lock.json`, chạy đủ cổng CI và duyệt merge theo quy trình chuẩn.

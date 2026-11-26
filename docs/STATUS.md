@@ -1,7 +1,7 @@
 # STATUS
 
-Cập nhật: 2026-11-26 · Phiên: 19
-Epic hiện tại: Toàn bộ **`E0` → `E10`** & **`CR-01` → `CR-07`** đã **`Done`**, duyệt, merge vào `main` & push `origin/main` → Sẵn sàng **Go-Live Production `v1.0` (`0đ/tháng`) & UAT CLB (`U1`–`U10`)**
+Cập nhật: 2026-11-26 · Phiên: 20
+Epic hiện tại: **`Epic E11`** (`E11-01` & `E11-02`, `[RỦI RO CAO]`) trên nhánh `feat/E11-security-hardening` — **`In Review`** (`qa-reviewer` ngữ cảnh sạch **`VERDICT: PASS`** `13/13` mục `6A.8`, chờ chủ dự án duyệt merge vào `main`)
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -83,7 +83,7 @@ Epic hiện tại: Toàn bộ **`E0` → `E10`** & **`CR-01` → `CR-07`** đã 
   - Kiểm thử & QA độc lập (`qa-reviewer` ngữ cảnh sạch `0e30e9f0`): Thêm [ops-cli.test.ts](../tests/unit/shared/ops-cli.test.ts) và mở rộng [schema-invariants.test.ts](../tests/integration/db/schema-invariants.test.ts), [backup-restore.test.ts](../tests/integration/db/backup-restore.test.ts) (kiểm chứng trên DB trống hoàn toàn `beam_e10_clean_*`), [audit-logs.test.tsx](../tests/unit/frontend/audit-logs.test.tsx), [i18n-parity.test.ts](../tests/unit/frontend/i18n-parity.test.ts). Sau khi khắc phục triệt để `MAJOR-1`, `MAJOR-2`, `MINOR-1`, vượt toàn bộ cổng kiểm tra (`openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `345` module / `1,677` phụ thuộc, **`59` unit tệp / `318` test**, **`19` integration tệp / `35` test** đạt **`3/3` lượt liên tiếp = `105/105` lượt chạy**, `db:restore:verify -- --test`, `next build` **`42/42` route**) và đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `0` Minor, Checklist `6A.8` `13/13`).
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
-- Không có vướng mắc chặn tiến độ. Toàn bộ các Epic `E0` → `E10` và `CR-01` → `CR-07` đã được chủ dự án duyệt, merge vào `main` và đồng bộ lên `origin/main`.
+- **`Epic E11`** (`E11-01` & `E11-02`, `[RỦI RO CAO]`) đã hoàn tất triển khai trên nhánh `feat/E11-security-hardening`, vượt toàn bộ cổng kiểm tra (`typecheck`, `lint`, `arch:check` `349/1689`, `openapi:check`, `60/60` unit / `330` test, `20/20` integration / `38` test, `next build` `42/42` route + `ƒ Proxy (Middleware)`, Chrome E2E) và `qa-reviewer` ngữ cảnh sạch chốt **`VERDICT: PASS`** (`0` Blocker, `0` Major, `2` Minor không chặn, Checklist `6A.8` `13/13`). Chờ chủ dự án duyệt để commit, merge vào `main` & push `origin/main` (Vercel sẽ tự động deploy bản nâng cấp bảo mật).
 
 ## Việc tiếp theo
-- Chủ dự án thực hiện Go-Live `0đ/tháng` theo Mục 8 của [OPERATIONS.md](OPERATIONS.md) (Neon Singapore + Gmail/Brevo SMTP + Vercel `sin1` + GitHub Cron) và chạy **UAT thực tế (`U1`–`U10` trong [UAT-CHECKLIST.md](UAT-CHECKLIST.md))** với 5–10 thành viên CLB BEAM.
+- Sau khi chủ dự án duyệt merge **`Epic E11`** vào `main` và push `origin/main`, kiểm tra GitHub Actions CI xanh, xác nhận Vercel tự deploy bản mới, bật thêm 1–2 quy tắc **Vercel Firewall Rate Limit miễn phí** theo Mục 9 của [OPERATIONS.md](OPERATIONS.md) và chạy UAT CLB (`U1`–`U10` trong [UAT-CHECKLIST.md](UAT-CHECKLIST.md)).

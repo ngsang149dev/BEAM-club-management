@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { badRequest } from '@/lib/errors';
 import {
   type AllowedImageMimeType,
   MAX_IMAGE_BYTES,
   isAllowedImageMimeType,
 } from '@/lib/media';
+import { BINARY_IMAGE_CSP } from '@/lib/security-headers';
 
 export interface ParsedImageAsset {
   readonly mimeType: AllowedImageMimeType;
@@ -93,19 +95,98 @@ export function parseAndValidateImageDataUrl(
   return { mimeType: detectedMime, buffer };
 }
 
+export type BinaryImageCacheMode = 'private-no-store' | 'public-cdn';
+
+const IMAGE_SECURITY_CSP = BINARY_IMAGE_CSP;
+const PUBLIC_CDN_CACHE_UNVERSIONED =
+  'public, max-age=300, s-maxage=300, stale-while-revalidate=3600';
+const PUBLIC_CDN_CACHE_VERSIONED =
+  'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
+
+function computeImageEtag(data: Buffer): string {
+  const hash = createHash('sha256').update(data).digest('hex');
+  return `"${hash}"`;
+}
+
+function hasVersionQueryParam(request?: Request): boolean {
+  if (!request) {
+    return false;
+  }
+  try {
+    const version = new URL(request.url).searchParams.get('v');
+    return Boolean(version && version.trim().length > 0);
+  } catch {
+    return false;
+  }
+}
+
+function matchesIfNoneMatch(request: Request | undefined, etag: string): boolean {
+  const header = request?.headers.get('if-none-match');
+  if (!header) {
+    return false;
+  }
+  for (const part of header.split(',')) {
+    const candidate = part.trim();
+    if (candidate === '*') {
+      return true;
+    }
+    const normalized = candidate.startsWith('W/')
+      ? candidate.slice(2).trim()
+      : candidate;
+    if (normalized === etag) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildPrivateImageResponse(data: Buffer, mimeType: string): Response {
+  const bytes = Uint8Array.from(data);
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Length': String(bytes.byteLength),
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': IMAGE_SECURITY_CSP,
+    },
+  });
+}
+
 export function buildBinaryImageResponse(input: {
   readonly data: Buffer;
   readonly mimeType: string;
+  readonly request?: Request;
+  readonly cacheMode?: BinaryImageCacheMode;
 }): Response {
+  const cacheMode = input.cacheMode ?? 'private-no-store';
+  if (cacheMode === 'private-no-store') {
+    return buildPrivateImageResponse(input.data, input.mimeType);
+  }
+
+  const etag = computeImageEtag(input.data);
+  const cacheControl = hasVersionQueryParam(input.request)
+    ? PUBLIC_CDN_CACHE_VERSIONED
+    : PUBLIC_CDN_CACHE_UNVERSIONED;
+  const sharedHeaders = {
+    'Cache-Control': cacheControl,
+    ETag: etag,
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': IMAGE_SECURITY_CSP,
+  };
+
+  if (matchesIfNoneMatch(input.request, etag)) {
+    return new Response(null, { status: 304, headers: sharedHeaders });
+  }
+
   const bytes = Uint8Array.from(input.data);
   return new Response(bytes, {
     status: 200,
     headers: {
+      ...sharedHeaders,
       'Content-Type': input.mimeType,
       'Content-Length': String(bytes.byteLength),
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'none'; sandbox",
     },
   });
 }

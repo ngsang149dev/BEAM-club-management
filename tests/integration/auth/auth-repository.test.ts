@@ -239,10 +239,29 @@ describe('DrizzleAuthRepository integration', () => {
       success: true,
       createdAt: touchedAt,
     });
+    await repo.recordLoginAttempt({
+      studentId: `pwd:${userId}`,
+      ip: testIp,
+      success: false,
+      createdAt: now,
+    });
     const recentFailed = await repo.countRecentFailedLoginAttempts(
       testIp,
       new Date('2026-11-24T00:50:00.000Z'),
     );
     expect(recentFailed).toBe(1);
+
+    const recentPairFailed = await repo.countRecentFailedLoginAttemptsForPair(
+      testIp,
+      studentId,
+      new Date('2026-11-24T00:50:00.000Z'),
+    );
+    expect(recentPairFailed).toBe(1);
+
+    const recentPwdFailed = await repo.countRecentFailedAttemptsByKey(
+      `pwd:${userId}`,
+      new Date('2026-11-24T00:50:00.000Z'),
+    );
+    expect(recentPwdFailed).toBe(1);
   });
 });

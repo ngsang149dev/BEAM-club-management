@@ -10,14 +10,22 @@ import {
   updateMeRequestSchema,
 } from '@/lib/auth';
 import {
+  buildLoginAttemptKey,
+  buildPasswordChangeAttemptKey,
   computeSessionExpiry,
   computeSlidingExpiry,
   FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT,
   generateOpaqueSessionToken,
   hashSessionToken,
+  isPairRateLimited,
+  isPasswordChangeRateLimited,
   isRateLimited,
   isSessionExpired,
+  LOGIN_ATTEMPT_ESCAPE_PREFIX,
+  PASSWORD_CHANGE_ATTEMPT_PREFIX,
+  PASSWORD_CHANGE_RATE_LIMIT_MAX_FAILED,
   RATE_LIMIT_MAX_FAILED_ATTEMPTS,
+  RATE_LIMIT_MAX_FAILED_PER_PAIR,
   resolveLoginRedirect,
 } from '@/server/modules/auth/policy';
 
@@ -221,10 +229,39 @@ describe('auth policy rules', () => {
     ).toBe(true);
   });
 
-  it('enforces IP rate limit threshold (AC-12)', () => {
+  it('enforces 2-layer login and password-change rate limit thresholds (AC-12, E11-02)', () => {
+    expect(RATE_LIMIT_MAX_FAILED_PER_PAIR).toBe(5);
+    expect(RATE_LIMIT_MAX_FAILED_ATTEMPTS).toBe(20);
+    expect(PASSWORD_CHANGE_RATE_LIMIT_MAX_FAILED).toBe(5);
+    expect(buildPasswordChangeAttemptKey('user-123')).toBe(
+      `${PASSWORD_CHANGE_ATTEMPT_PREFIX}user-123`,
+    );
+    expect(buildLoginAttemptKey('MSSV-2026-001')).toBe('MSSV-2026-001');
+    expect(buildLoginAttemptKey('pwd:user-123')).toBe(
+      `${LOGIN_ATTEMPT_ESCAPE_PREFIX}pwd:user-123`,
+    );
+    expect(buildLoginAttemptKey('PWD:user-123')).toBe(
+      `${LOGIN_ATTEMPT_ESCAPE_PREFIX}PWD:user-123`,
+    );
+    expect(buildLoginAttemptKey('login:pwd:user-123')).toBe(
+      `${LOGIN_ATTEMPT_ESCAPE_PREFIX}login:pwd:user-123`,
+    );
+
+    expect(isPairRateLimited(0)).toBe(false);
+    expect(isPairRateLimited(RATE_LIMIT_MAX_FAILED_PER_PAIR - 1)).toBe(false);
+    expect(isPairRateLimited(RATE_LIMIT_MAX_FAILED_PER_PAIR)).toBe(true);
+
     expect(isRateLimited(0)).toBe(false);
     expect(isRateLimited(RATE_LIMIT_MAX_FAILED_ATTEMPTS - 1)).toBe(false);
     expect(isRateLimited(RATE_LIMIT_MAX_FAILED_ATTEMPTS)).toBe(true);
+
+    expect(isPasswordChangeRateLimited(0)).toBe(false);
+    expect(
+      isPasswordChangeRateLimited(PASSWORD_CHANGE_RATE_LIMIT_MAX_FAILED - 1),
+    ).toBe(false);
+    expect(
+      isPasswordChangeRateLimited(PASSWORD_CHANGE_RATE_LIMIT_MAX_FAILED),
+    ).toBe(true);
   });
 
   it('generates opaque tokens and deterministic HMAC-SHA256 hashes', () => {

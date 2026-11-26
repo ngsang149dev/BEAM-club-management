@@ -3,6 +3,8 @@ import { getRequestId } from '@/server/shared/auth-http';
 import { getContainer } from '@/server/shared/composition';
 import { toErrorResponse } from '@/server/shared/http';
 
+export const maxDuration = 60;
+
 async function handleArchivePurgeCron(request: Request): Promise<NextResponse> {
   const requestId = getRequestId(request);
   const container = getContainer();

@@ -585,6 +585,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
 
     // 3. dueStatus=overdue (confirms Done task excluded even when priority filter cleared)
     await page.getByRole('button', { name: viMessages.boards.clearFilters }).click();
+    await expect(page).not.toHaveURL(/priority=4/);
     const dueSelect = page.getByLabel(viMessages.boards.filterDueLabel, { exact: true });
     const duePromise = page.waitForResponse(
       (res) =>
@@ -625,6 +626,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
 
     // 6. sortBy & sortOrder + URL reload survival + TaskDetailDrawer close retention
     await page.getByRole('button', { name: viMessages.boards.clearFilters }).click();
+    await expect(page).not.toHaveURL(/dueStatus=|departmentId=|assigneeId=|priority=/);
     const sortBySelect = page.getByLabel(viMessages.boards.sortByLabel, { exact: true });
     const sortOrderSelect = page.getByLabel(viMessages.boards.sortOrderLabel, { exact: true });
 
@@ -698,6 +700,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
 
     // Sort-only (without filters) also pauses DnD and returns tasks sorted by priority desc
     await page.getByRole('button', { name: viMessages.boards.dndPausedReset }).click();
+    await expect(page).not.toHaveURL(/priority=|dueStatus=|sortBy=|sortOrder=/);
     const sortOnlyPromise = page.waitForResponse(
       (res) =>
         res.url().includes('/api/v1/tasks') &&
