@@ -1,6 +1,8 @@
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import pg from 'pg';
 import {
   formatSafeDbTarget,
   isLocalDatabaseUrl,
@@ -8,9 +10,15 @@ import {
 } from './load-env.mjs';
 
 export const VALID_DB_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_-]{0,62}$/;
+export const PG17_SERVER_VERSION_NUM = 170_000;
+
+const VALID_SNAPSHOT_ID_RE = /^[0-9a-fA-F-]+$/;
 const DEFAULT_DOCKER_CONTAINER = 'beam-postgres';
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const MAX_STDERR_BYTES = 65_536;
+const PG_TOOL_VERSION_RE = /\(PostgreSQL\)\s*(\d+)(?:\.\d+|(?:alpha|beta|rc)\d*)?\b/i;
+const COPY_FROM_STDIN_RE = /^\s*COPY\b.+\bFROM\s+stdin(?:\s+[^;]*)?;\s*$/i;
+const UNSUPPORTED_PG17_PREAMBLE_RE = /^\s*SET\s+transaction_timeout\s*=\s*0\s*;\s*$/i;
 
 export function parseCliOptions(argv = process.argv.slice(2)) {
   const options = {
@@ -144,24 +152,107 @@ export function buildDatabaseUrlWithName(connectionString, dbName) {
   return parsed.toString();
 }
 
-export function resolvePgToolRunner(toolName) {
+export async function queryServerVersionNum(connectionString) {
+  parsePgConnection(connectionString);
+  const client = new pg.Client({ connectionString });
   try {
-    execFileSync(toolName, ['--version'], { stdio: 'pipe' });
-    return { mode: 'host', binary: toolName };
-  } catch (hostError) {
-    const code =
-      hostError && typeof hostError === 'object' && 'code' in hostError
-        ? String(hostError.code)
-        : '';
-    if (code && code !== 'ENOENT') {
-      throw new Error(`Failed checking host ${toolName} (${code}).`);
+    await client.connect();
+    const res = await client.query(
+      "SELECT current_setting('server_version_num')::int AS ver",
+    );
+    const ver = res.rows[0]?.ver;
+    return typeof ver === 'number' && Number.isInteger(ver) && ver > 0 ? ver : null;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed querying PostgreSQL server version for ${formatSafeDbTarget(connectionString)}: ${detail}`,
+    );
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
+export function parsePgToolMajorVersion(rawVersionOutput) {
+  if (typeof rawVersionOutput !== 'string' || rawVersionOutput.length === 0) {
+    return null;
+  }
+  const match = PG_TOOL_VERSION_RE.exec(rawVersionOutput);
+  if (!match) {
+    return null;
+  }
+  const major = Number.parseInt(match[1], 10);
+  return Number.isInteger(major) && major > 0 ? major : null;
+}
+
+export function getHostPgToolCandidates(
+  toolName,
+  preferredMajorVersion,
+  platform = process.platform,
+) {
+  const hasPreferredMajor =
+    typeof preferredMajorVersion === 'number' &&
+    Number.isInteger(preferredMajorVersion) &&
+    preferredMajorVersion > 0;
+
+  if (!hasPreferredMajor) {
+    return [toolName];
+  }
+
+  if (platform === 'linux') {
+    return [`/usr/lib/postgresql/${preferredMajorVersion}/bin/${toolName}`, toolName];
+  }
+
+  if (platform === 'darwin') {
+    return [
+      `/opt/homebrew/opt/postgresql@${preferredMajorVersion}/bin/${toolName}`,
+      `/usr/local/opt/postgresql@${preferredMajorVersion}/bin/${toolName}`,
+      toolName,
+    ];
+  }
+
+  return [toolName];
+}
+
+export function resolvePgToolRunner(toolName, options = {}) {
+  const preferredMajorVersion = options.preferredMajorVersion ?? null;
+  const platform = options.platform ?? process.platform;
+  const execFn = options.execFileSyncFn ?? execFileSync;
+  const candidates = getHostPgToolCandidates(
+    toolName,
+    preferredMajorVersion,
+    platform,
+  );
+
+  for (const candidate of candidates) {
+    try {
+      const versionOut = execFn(candidate, ['--version'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8',
+      });
+      const text = Buffer.isBuffer(versionOut)
+        ? versionOut.toString('utf8')
+        : String(versionOut ?? '');
+      const majorVersion = parsePgToolMajorVersion(text);
+      return {
+        mode: 'host',
+        binary: candidate,
+        ...(majorVersion !== null ? { majorVersion } : {}),
+      };
+    } catch (hostError) {
+      const code =
+        hostError && typeof hostError === 'object' && 'code' in hostError
+          ? String(hostError.code)
+          : '';
+      if (code && code !== 'ENOENT' && code !== 'ENOTDIR') {
+        throw new Error(`Failed checking host ${candidate} (${code}).`);
+      }
     }
   }
 
   const container =
     process.env.BEAM_PG_DOCKER_CONTAINER?.trim() || DEFAULT_DOCKER_CONTAINER;
   try {
-    execFileSync('docker', ['--version'], { stdio: 'pipe' });
+    execFn('docker', ['--version'], { stdio: 'pipe' });
   } catch (dockerError) {
     const msg =
       dockerError instanceof Error ? dockerError.message : String(dockerError);
@@ -170,7 +261,79 @@ export function resolvePgToolRunner(toolName) {
     );
   }
 
-  return { mode: 'docker', binary: toolName, container };
+  let dockerMajorVersion = null;
+  try {
+    const dockerOut = execFn('docker', ['exec', container, toolName, '--version'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    });
+    const text = Buffer.isBuffer(dockerOut)
+      ? dockerOut.toString('utf8')
+      : String(dockerOut ?? '');
+    dockerMajorVersion = parsePgToolMajorVersion(text);
+  } catch {
+    // Container may not be running yet; majorVersion stays omitted until runtime
+  }
+
+  return {
+    mode: 'docker',
+    binary: toolName,
+    container,
+    ...(dockerMajorVersion !== null ? { majorVersion: dockerMajorVersion } : {}),
+  };
+}
+
+export function stripUnsupportedRestorePreambles(sqlContent, targetServerVersionNum) {
+  if (typeof sqlContent !== 'string' || sqlContent.length === 0) {
+    return sqlContent;
+  }
+  if (
+    typeof targetServerVersionNum !== 'number' ||
+    !Number.isFinite(targetServerVersionNum) ||
+    targetServerVersionNum <= 0 ||
+    targetServerVersionNum >= PG17_SERVER_VERSION_NUM
+  ) {
+    return sqlContent;
+  }
+
+  const keptChunks = [];
+  let inCopyBlock = false;
+  let cursor = 0;
+
+  while (cursor < sqlContent.length) {
+    const nlIdx = sqlContent.indexOf('\n', cursor);
+    const rawLineWithEnding =
+      nlIdx === -1 ? sqlContent.slice(cursor) : sqlContent.slice(cursor, nlIdx + 1);
+    cursor = nlIdx === -1 ? sqlContent.length : nlIdx + 1;
+
+    const lineWithoutEnding = rawLineWithEnding.endsWith('\r\n')
+      ? rawLineWithEnding.slice(0, -2)
+      : rawLineWithEnding.endsWith('\n')
+        ? rawLineWithEnding.slice(0, -1)
+        : rawLineWithEnding;
+
+    if (inCopyBlock) {
+      keptChunks.push(rawLineWithEnding);
+      if (lineWithoutEnding === '\\.') {
+        inCopyBlock = false;
+      }
+      continue;
+    }
+
+    if (COPY_FROM_STDIN_RE.test(lineWithoutEnding)) {
+      inCopyBlock = true;
+      keptChunks.push(rawLineWithEnding);
+      continue;
+    }
+
+    if (UNSUPPORTED_PG17_PREAMBLE_RE.test(lineWithoutEnding)) {
+      continue;
+    }
+
+    keptChunks.push(rawLineWithEnding);
+  }
+
+  return keptChunks.join('');
 }
 
 function buildToolConnectionArgs(conn, mode) {
@@ -219,12 +382,38 @@ function appendBoundedStderr(current, chunk) {
   return (current + chunk.toString('utf8')).slice(0, MAX_STDERR_BYTES);
 }
 
-export async function runPgDumpToFile({ runner, connectionString, outputPath }) {
+export async function runPgDumpToFile({
+  runner,
+  connectionString,
+  outputPath,
+  snapshotId,
+  serverVersionNum,
+}) {
+  if (
+    snapshotId !== undefined &&
+    snapshotId !== null &&
+    (typeof snapshotId !== 'string' || !VALID_SNAPSHOT_ID_RE.test(snapshotId))
+  ) {
+    throw new Error('Invalid PostgreSQL snapshot identifier.');
+  }
+
+  const effectiveServerVersionNum =
+    serverVersionNum === undefined
+      ? await queryServerVersionNum(connectionString)
+      : serverVersionNum;
+
   const conn = parsePgConnection(connectionString);
+  const toolArgs = [
+    '--no-owner',
+    '--no-privileges',
+    '--format=plain',
+    '--encoding=UTF8',
+    ...(snapshotId ? [`--snapshot=${snapshotId}`] : []),
+  ];
   const invocation = buildToolInvocation({
     runner,
     conn,
-    toolArgs: ['--no-owner', '--no-privileges', '--format=plain', '--encoding=UTF8'],
+    toolArgs,
     allowStdin: false,
   });
 
@@ -281,6 +470,21 @@ export async function runPgDumpToFile({ runner, connectionString, outputPath }) 
     });
   });
 
+  if (
+    typeof effectiveServerVersionNum === 'number' &&
+    effectiveServerVersionNum > 0 &&
+    effectiveServerVersionNum < PG17_SERVER_VERSION_NUM
+  ) {
+    const rawSql = fs.readFileSync(outputPath, 'utf8');
+    const sanitizedSql = stripUnsupportedRestorePreambles(
+      rawSql,
+      effectiveServerVersionNum,
+    );
+    if (sanitizedSql !== rawSql) {
+      fs.writeFileSync(outputPath, sanitizedSql, 'utf8');
+    }
+  }
+
   const stats = fs.statSync(outputPath);
   if (stats.size === 0) {
     fs.rmSync(outputPath, { force: true });
@@ -291,10 +495,21 @@ export async function runPgDumpToFile({ runner, connectionString, outputPath }) 
   return stats.size;
 }
 
-export async function runPsqlFromFile({ runner, connectionString, inputPath }) {
+export async function runPsqlFromFile({
+  runner,
+  connectionString,
+  inputPath,
+  serverVersionNum,
+}) {
   if (!fs.existsSync(inputPath) || fs.statSync(inputPath).size === 0) {
     throw new Error(`Backup SQL file is missing or empty: ${inputPath}`);
   }
+
+  const effectiveServerVersionNum =
+    serverVersionNum === undefined
+      ? await queryServerVersionNum(connectionString)
+      : serverVersionNum;
+
   const conn = parsePgConnection(connectionString);
   const invocation = buildToolInvocation({
     runner,
@@ -303,7 +518,22 @@ export async function runPsqlFromFile({ runner, connectionString, inputPath }) {
     allowStdin: true,
   });
 
-  const readStream = fs.createReadStream(inputPath);
+  const needsPreambleStrip =
+    typeof effectiveServerVersionNum === 'number' &&
+    effectiveServerVersionNum > 0 &&
+    effectiveServerVersionNum < PG17_SERVER_VERSION_NUM;
+
+  const inputStream = needsPreambleStrip
+    ? Readable.from([
+        Buffer.from(
+          stripUnsupportedRestorePreambles(
+            fs.readFileSync(inputPath, 'utf8'),
+            effectiveServerVersionNum,
+          ),
+          'utf8',
+        ),
+      ])
+    : fs.createReadStream(inputPath);
 
   await new Promise((resolve, reject) => {
     let stderrText = '';
@@ -317,11 +547,11 @@ export async function runPsqlFromFile({ runner, connectionString, inputPath }) {
     const fail = (err) => {
       if (settled) return;
       settled = true;
-      readStream.destroy();
+      inputStream.destroy();
       reject(err);
     };
 
-    readStream.on('error', (err) => fail(err));
+    inputStream.on('error', (err) => fail(err));
     child.stdin.on('error', () => undefined);
     child.stderr.on('data', (chunk) => {
       stderrText = appendBoundedStderr(stderrText, chunk);
@@ -329,7 +559,7 @@ export async function runPsqlFromFile({ runner, connectionString, inputPath }) {
     child.stdout.resume();
     child.on('error', (err) => fail(err));
 
-    readStream.pipe(child.stdin);
+    inputStream.pipe(child.stdin);
 
     child.on('close', (code) => {
       if (settled) return;

@@ -241,9 +241,23 @@ describe('Auth & /me Route Handlers integration', () => {
   });
 
   it('rejects unknown MSSV, inactive MSSV, wrong password, and null passwordHash with identical generic 401 without creating profiles (AC-01, AC-02)', async () => {
+    const unknownStudentId = `MSSV-UNKNOWN-${suffix}`;
+    const scopedStudentIds = [
+      unknownStudentId,
+      activeStudentId,
+      inactiveStudentId,
+      nullHashStudentId,
+    ];
     const profileCountBefore = Number(
-      (await db.select({ value: count() }).from(profiles))[0]?.value ?? 0,
+      (
+        await db
+          .select({ value: count() })
+          .from(profiles)
+          .where(inArray(profiles.studentId, scopedStudentIds))
+      )[0]?.value ?? 0,
     );
+    expect(profileCountBefore).toBe(3);
+
     const attemptCountBefore = Number(
       (
         await db
@@ -262,7 +276,7 @@ describe('Auth & /me Route Handlers integration', () => {
           'x-request-id': 'req-unknown-01',
         },
         body: JSON.stringify({
-          studentId: 'MSSV-UNKNOWN-999',
+          studentId: unknownStudentId,
           password: DEV_SEED_PASSWORD,
         }),
       }),
@@ -341,7 +355,20 @@ describe('Auth & /me Route Handlers integration', () => {
     expect(nullHashBody.error.messageKey).toBe(unknownBody.error.messageKey);
 
     const profileCountAfter = Number(
-      (await db.select({ value: count() }).from(profiles))[0]?.value ?? 0,
+      (
+        await db
+          .select({ value: count() })
+          .from(profiles)
+          .where(inArray(profiles.studentId, scopedStudentIds))
+      )[0]?.value ?? 0,
+    );
+    const unknownProfileCount = Number(
+      (
+        await db
+          .select({ value: count() })
+          .from(profiles)
+          .where(eq(profiles.studentId, unknownStudentId))
+      )[0]?.value ?? 0,
     );
     const attemptCountAfter = Number(
       (
@@ -351,7 +378,9 @@ describe('Auth & /me Route Handlers integration', () => {
           .where(eq(loginAttempts.ip, testIp))
       )[0]?.value ?? 0,
     );
+    expect(profileCountAfter).toBe(3);
     expect(profileCountAfter).toBe(profileCountBefore);
+    expect(unknownProfileCount).toBe(0);
     expect(attemptCountAfter).toBe(attemptCountBefore + 4);
   });
 

@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,12 +9,14 @@ import {
   formatUtcFileTimestamp,
   parseCliOptions,
   parsePgConnection,
+  queryServerVersionNum,
   resolvePgToolRunner,
   resolveRestoreVerifyConnectionString,
+  runPgDumpToFile,
   runPsqlFromFile,
   VALID_DB_NAME_RE,
 } from './db-cli.mjs';
-import { formatSafeDbTarget, isLocalDatabaseUrl } from './load-env.mjs';
+import { formatSafeDbTarget } from './load-env.mjs';
 
 export const EXPECTED_PUBLIC_TABLES = [
   'app_settings',
@@ -334,97 +335,6 @@ async function inspectRestoredDatabase(tempDbUrl, sourceCounts) {
   }
 }
 
-function buildSnapshotDumpInvocation(runner, connectionString, snapshotId) {
-  const conn = parsePgConnection(connectionString);
-  const loopbackHosts = new Set(['localhost', '127.0.0.1', '::1']);
-  const useContainerLocal =
-    runner.mode === 'docker' &&
-    isLocalDatabaseUrl(connectionString) &&
-    loopbackHosts.has(conn.host);
-  const host = useContainerLocal ? '127.0.0.1' : conn.host;
-  const port = useContainerLocal ? '5432' : conn.port;
-  const toolArgs = [
-    '--no-owner',
-    '--no-privileges',
-    '--format=plain',
-    '--encoding=UTF8',
-    `--snapshot=${snapshotId}`,
-    '-h',
-    host,
-    '-p',
-    port,
-    ...(conn.user ? ['-U', conn.user] : []),
-    '-d',
-    conn.database,
-  ];
-  if (runner.mode === 'host') {
-    const env = { ...process.env };
-    if (conn.password) env.PGPASSWORD = conn.password;
-    if (conn.sslmode) env.PGSSLMODE = conn.sslmode;
-    return { command: runner.binary, args: toolArgs, env };
-  }
-  const dockerArgs = ['exec'];
-  if (conn.password) dockerArgs.push('-e', `PGPASSWORD=${conn.password}`);
-  if (conn.sslmode) dockerArgs.push('-e', `PGSSLMODE=${conn.sslmode}`);
-  dockerArgs.push(runner.container, runner.binary, ...toolArgs);
-  return { command: 'docker', args: dockerArgs, env: process.env };
-}
-
-async function runSnapshotPgDumpToFile({ runner, connectionString, snapshotId, outputPath }) {
-  const invocation = buildSnapshotDumpInvocation(runner, connectionString, snapshotId);
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  const writeStream = fs.createWriteStream(outputPath, { encoding: 'utf8' });
-
-  await new Promise((resolve, reject) => {
-    let stderrText = '';
-    let settled = false;
-    const child = spawn(invocation.command, invocation.args, {
-      env: invocation.env,
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const fail = (err) => {
-      if (settled) return;
-      settled = true;
-      writeStream.destroy();
-      fs.rmSync(outputPath, { force: true });
-      reject(err);
-    };
-    const writeDone = new Promise((res, rej) => {
-      writeStream.on('finish', res);
-      writeStream.on('error', rej);
-    });
-    child.stderr.on('data', (chunk) => {
-      if (stderrText.length < 65_536) {
-        stderrText = (stderrText + chunk.toString('utf8')).slice(0, 65_536);
-      }
-    });
-    child.on('error', fail);
-    child.stdout.pipe(writeStream);
-    child.on('close', async (code) => {
-      if (settled) return;
-      try {
-        await writeDone;
-      } catch (streamErr) {
-        fail(streamErr);
-        return;
-      }
-      if (code !== 0) {
-        const detail = stderrText.trim() || `exit code ${code}`;
-        fail(new Error(`pg_dump failed for ${formatSafeDbTarget(connectionString)}: ${detail}`));
-        return;
-      }
-      settled = true;
-      resolve();
-    });
-  });
-
-  if (fs.statSync(outputPath).size === 0) {
-    fs.rmSync(outputPath, { force: true });
-    throw new Error(`pg_dump produced an empty file for ${formatSafeDbTarget(connectionString)}.`);
-  }
-}
-
 async function queryTableRowCountsWithClient(client, tableNames) {
   const counts = {};
   for (const table of tableNames) {
@@ -434,7 +344,12 @@ async function queryTableRowCountsWithClient(client, tableNames) {
   return counts;
 }
 
-async function captureConsistentDumpAndCounts({ dumpRunner, connectionString, dumpPath }) {
+async function captureConsistentDumpAndCounts({
+  dumpRunner,
+  connectionString,
+  dumpPath,
+  serverVersionNum,
+}) {
   const sourceClient = new pg.Client({ connectionString });
   await sourceClient.connect();
   try {
@@ -445,11 +360,12 @@ async function captureConsistentDumpAndCounts({ dumpRunner, connectionString, du
       throw new Error('Failed to export PostgreSQL snapshot for consistent restore verification.');
     }
     const counts = await queryTableRowCountsWithClient(sourceClient, KEY_ROW_COUNT_TABLES);
-    await runSnapshotPgDumpToFile({
+    await runPgDumpToFile({
       runner: dumpRunner,
       connectionString,
-      snapshotId,
       outputPath: dumpPath,
+      snapshotId,
+      serverVersionNum,
     });
     await sourceClient.query('COMMIT');
     return counts;
@@ -491,8 +407,14 @@ export async function runDbRestoreVerify(options = {}) {
     }
   }
 
-  const dumpRunner = createdTempDump ? resolvePgToolRunner('pg_dump') : null;
-  const psqlRunner = resolvePgToolRunner('psql');
+  const serverVersionNum = await queryServerVersionNum(connectionString);
+  const preferredMajorVersion = serverVersionNum
+    ? Math.floor(serverVersionNum / 10_000)
+    : null;
+  const dumpRunner = createdTempDump
+    ? resolvePgToolRunner('pg_dump', { preferredMajorVersion })
+    : null;
+  const psqlRunner = resolvePgToolRunner('psql', { preferredMajorVersion });
   let sourceCounts = null;
 
   try {
@@ -501,6 +423,7 @@ export async function runDbRestoreVerify(options = {}) {
         dumpRunner,
         connectionString,
         dumpPath,
+        serverVersionNum,
       });
     }
 
@@ -509,6 +432,7 @@ export async function runDbRestoreVerify(options = {}) {
       runner: psqlRunner,
       connectionString: tempDbUrl,
       inputPath: dumpPath,
+      serverVersionNum,
     });
 
     const { tables, counts } = await inspectRestoredDatabase(tempDbUrl, sourceCounts);

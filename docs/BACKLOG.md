@@ -23,7 +23,7 @@
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done |
 | **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done |
-| **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Chờ duyệt danh sách item |
+| **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | In Progress (đã duyệt) |
 
 ---
 
@@ -643,9 +643,27 @@
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
 - **Trạng thái:** `Done` (đã duyệt & merge vào `main`)
 
+### E9-04
+- **ID:** `E9-04`
+- **Tiêu đề:** Hotfix CI GitHub Actions — Tương thích khôi phục `pg_dump 17+` vào `PostgreSQL 16` (`transaction_timeout`) & đồng bộ seed danh mục kiểm thử `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `Coordinator` + `backend-db` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `NFR-06`, `E9-01`, `.github/workflows/ci.yml`
+- **Phụ thuộc:** `E9-03` (`Done`, merged `main`)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§0, §3, §6A, §8), `.github/workflows/ci.yml`, `scripts/db-cli.mjs`, `scripts/db-backup.mjs`, `scripts/db-restore-verify.mjs`, `tests/integration/db/backup-restore.test.ts`
+- **Phạm vi file được sửa:** `.github/workflows/ci.yml`, `scripts/db-cli.mjs`, `scripts/db-backup.mjs`, `scripts/db-restore-verify.mjs`, `tests/unit/shared/db-cli.test.ts`, `tests/integration/db/backup-restore.test.ts`, `tests/integration/auth/auth-routes.test.ts`, `docs/BACKLOG.md`, `docs/STATUS.md`
+- **Tiêu chí chấp nhận:**
+  1. `resolvePgToolRunner` ưu tiên binary `pg_dump`/`psql` khớp major version của PostgreSQL server đích khi máy host có cài sẵn (`/usr/lib/postgresql/<major>/bin`, Homebrew `postgresql@<major>`).
+  2. Khi `pg_dump` mới hơn (`17+`) xuất ra `SET transaction_timeout = 0;` nhưng PostgreSQL đích là `< 17` (`server_version_num < 170000`), cả luồng xuất backup lẫn luồng `runPsqlFromFile` đều chuẩn hóa/bỏ qua an toàn tham số GUC chưa hỗ trợ ở phần preamble mà không làm hỏng dữ liệu `COPY` hay chuỗi người dùng.
+  3. `.github/workflows/ci.yml` chạy `npm run db:seed -- --test` sau `db:migrate -- --test` (kiểm chứng luôn `db/seed.sql` trên CI), đồng thời `backup-restore.test.ts` tự đảm bảo idempotent `18` `permissions` & `3` `permission_presets` để chạy độc lập kể cả trên DB mới chỉ `db:migrate`.
+  4. Có unit test & integration test tái hiện trực tiếp file dump chứa `SET transaction_timeout = 0;` khôi phục sạch trên PostgreSQL 16 với `ON_ERROR_STOP=1`; vượt đủ cổng CI và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** `tests/unit/shared/db-cli.test.ts`, `tests/integration/db/backup-restore.test.ts`, toàn bộ `typecheck`, `lint`, `arch:check`, `openapi:check`, `test:unit`, `test:integration`, `build`.
+- **Ngoài phạm vi:** Chạm môi trường production hoặc tự merge khi chưa được chủ dự án duyệt.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Done` (đã duyệt & merge vào `main` — `58/58` unit tệp / `312` test, `19/19` integration tệp / `33` test, `next build` `42/42` route, `qa-reviewer` ngữ cảnh sạch `VERDICT: PASS` `13/13` mục `6A.8`)
+
 ---
 
-## Epic E10 — Triển khai Production Miễn phí & Tự động hóa Email Nhắc hạn (`HANDOFF §7, §9, §10`) *(Chờ chủ dự án duyệt danh sách item)*
+## Epic E10 — Triển khai Production Miễn phí & Tự động hóa Email Nhắc hạn (`HANDOFF §7, §9, §10`) *(In Progress — đã được chủ dự án duyệt triển khai)*
 
 ### E10-01
 - **ID:** `E10-01`
@@ -663,7 +681,7 @@
 - **Kiểm thử bắt buộc:** Integration test kiểm chứng migration `0007` trên DB sạch, unit/integration test cho logic `db-bootstrap-admin` & `smtp-verify` trên mock SMTP / `beam_test` (cấm chạm production).
 - **Ngoài phạm vi:** Agent tự kết nối hoặc chạy lệnh lên Neon Production / Gmail thật của CLB (`AGENTS.md §0 #4`).
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `In Progress` (đã duyệt triển khai)
 
 ### E10-02
 - **ID:** `E10-02`
@@ -680,4 +698,4 @@
 - **Kiểm thử bắt buộc:** `lint`, `typecheck`, kiểm tra cú pháp JSON/YAML của `vercel.json` & `.github/workflows/daily-cron.yml`, `build`.
 - **Ngoài phạm vi:** Thao tác trực tiếp trên dashboard Vercel/Neon/GitHub của CLB.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Chờ chủ dự án duyệt`
+- **Trạng thái:** `Ready` (đã duyệt triển khai)

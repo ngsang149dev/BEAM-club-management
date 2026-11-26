@@ -6,6 +6,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  PERMISSIONS,
+  PERMISSION_PRESETS,
+  type PermissionPresetCode,
+} from '@/lib/permissions';
 
 interface DbBackupResult {
   readonly outputPath: string;
@@ -47,6 +52,30 @@ interface DbRestoreVerifyModule {
   }): Promise<DbRestoreVerifyResult>;
 }
 
+const CANONICAL_PRESET_SEED_METADATA: Record<
+  PermissionPresetCode,
+  { readonly id: string; readonly name: string; readonly description: string }
+> = {
+  basic_member: {
+    id: '30000000-0000-4000-8000-000000000001',
+    name: 'Thành viên cơ bản',
+    description:
+      'Default member permissions for viewing members, updating assigned tasks, and commenting',
+  },
+  department_lead: {
+    id: '30000000-0000-4000-8000-000000000002',
+    name: 'Trưởng ban',
+    description:
+      'Basic member permissions plus member detail viewing, board management, and full task editing/assignment',
+  },
+  hr_manager: {
+    id: '30000000-0000-4000-8000-000000000003',
+    name: 'Quản lý nhân sự',
+    description:
+      'Basic member permissions plus member detail viewing, creation, profile updates, and deactivation',
+  },
+};
+
 function loadEnvLocalIfMissing(): void {
   if (process.env.TEST_DATABASE_URL) return;
   const envPath = path.resolve(process.cwd(), '.env.local');
@@ -81,6 +110,69 @@ function buildMaintenanceUrl(connectionString: string): string {
   return parsed.toString();
 }
 
+async function ensureSystemCatalogSeeded(connectionString: string): Promise<void> {
+  const client = new pg.Client({ connectionString });
+  await client.connect();
+  try {
+    await client.query('BEGIN');
+    for (const permission of PERMISSIONS) {
+      await client.query(
+        `INSERT INTO "public"."permissions" (code, group_name, description, scopable)
+         VALUES ($1, $2, $3, false)
+         ON CONFLICT (code) DO NOTHING`,
+        [permission.code, permission.group, permission.descriptionKey],
+      );
+    }
+
+    for (const preset of PERMISSION_PRESETS) {
+      const meta = CANONICAL_PRESET_SEED_METADATA[preset.code];
+      await client.query(
+        `INSERT INTO "public"."permission_presets" (id, code, name, description)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT DO NOTHING`,
+        [meta.id, preset.code, meta.name, meta.description],
+      );
+
+      const presetRow = await client.query<{ id: string }>(
+        'SELECT id FROM "public"."permission_presets" WHERE code = $1',
+        [preset.code],
+      );
+      const presetId = presetRow.rows[0]?.id;
+      if (!presetId) {
+        throw new Error(`Missing permission_preset row for code "${preset.code}".`);
+      }
+
+      for (const permissionCode of preset.permissions) {
+        await client.query(
+          `INSERT INTO "public"."preset_permissions" (preset_id, permission_code)
+           VALUES ($1, $2)
+           ON CONFLICT (preset_id, permission_code) DO NOTHING`,
+          [presetId, permissionCode],
+        );
+      }
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
+function injectPg17TransactionTimeoutPreamble(sqlContent: string): string {
+  const anchor = 'SET statement_timeout = 0;';
+  const anchorIdx = sqlContent.indexOf(anchor);
+  if (anchorIdx === -1) {
+    return `SET transaction_timeout = 0;\n${sqlContent}`;
+  }
+  const lineEndIdx = sqlContent.indexOf('\n', anchorIdx);
+  if (lineEndIdx === -1) {
+    return `${sqlContent}\nSET transaction_timeout = 0;\n`;
+  }
+  return `${sqlContent.slice(0, lineEndIdx + 1)}SET transaction_timeout = 0;\n${sqlContent.slice(lineEndIdx + 1)}`;
+}
+
 describe('Database backup & restore verification scripts (NFR-06)', () => {
   let testDbUrl: string;
   let backupModule: DbBackupModule;
@@ -93,6 +185,7 @@ describe('Database backup & restore verification scripts (NFR-06)', () => {
       throw new Error('TEST_DATABASE_URL is required for backup/restore integration tests');
     }
     testDbUrl = configured;
+    await ensureSystemCatalogSeeded(testDbUrl);
     backupModule = await importScriptModule<DbBackupModule>('scripts/db-backup.mjs');
     restoreVerifyModule = await importScriptModule<DbRestoreVerifyModule>(
       'scripts/db-restore-verify.mjs',
@@ -243,6 +336,66 @@ describe('Database backup & restore verification scripts (NFR-06)', () => {
       }
     } finally {
       fs.rmSync(tempManualDumpPath, { force: true });
+    }
+  }, 60_000);
+
+  it('restores a simulated pg_dump 17+ dump containing SET transaction_timeout = 0; cleanly onto PostgreSQL 16 without mutating the caller file', async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const baseDumpPath = path.join(os.tmpdir(), `beam-test-base-${suffix}.sql`);
+    const pg17SimulatedDumpPath = path.join(
+      os.tmpdir(),
+      `beam-test-pg17-sim-${suffix}.sql`,
+    );
+
+    try {
+      await backupModule.runDbBackup({
+        useTest: true,
+        outputPath: baseDumpPath,
+        quiet: true,
+      });
+
+      const baseSql = fs.readFileSync(baseDumpPath, 'utf8');
+      expect(baseSql).not.toMatch(/^\s*SET\s+transaction_timeout\s*=\s*0\s*;/im);
+
+      const pg17SimulatedSql = injectPg17TransactionTimeoutPreamble(baseSql);
+      expect(pg17SimulatedSql).toContain('SET transaction_timeout = 0;\n');
+      fs.writeFileSync(pg17SimulatedDumpPath, pg17SimulatedSql, 'utf8');
+
+      const verifyRes = await restoreVerifyModule.runDbRestoreVerify({
+        useTest: true,
+        filePath: pg17SimulatedDumpPath,
+        quiet: true,
+      });
+
+      expect(verifyRes.createdTempDump).toBe(false);
+      expect(verifyRes.tableCount).toBe(
+        restoreVerifyModule.EXPECTED_PUBLIC_TABLES.length,
+      );
+      expect(verifyRes.counts.permissions).toBe(18);
+      expect(verifyRes.counts.permission_presets).toBeGreaterThanOrEqual(3);
+
+      // Caller's dump file on disk must neither be deleted nor mutated
+      expect(fs.existsSync(pg17SimulatedDumpPath)).toBe(true);
+      expect(fs.readFileSync(pg17SimulatedDumpPath, 'utf8')).toBe(
+        pg17SimulatedSql,
+      );
+
+      const adminClient = new pg.Client({
+        connectionString: buildMaintenanceUrl(testDbUrl),
+      });
+      await adminClient.connect();
+      try {
+        const res = await adminClient.query<{ datname: string }>(
+          'SELECT datname FROM pg_database WHERE datname = $1',
+          [verifyRes.tempDbName],
+        );
+        expect(res.rows).toHaveLength(0);
+      } finally {
+        await adminClient.end();
+      }
+    } finally {
+      fs.rmSync(baseDumpPath, { force: true });
+      fs.rmSync(pg17SimulatedDumpPath, { force: true });
     }
   }, 60_000);
 });
