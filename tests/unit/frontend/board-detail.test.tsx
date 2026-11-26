@@ -215,6 +215,7 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     expect(viewerHtml).toContain('Vu Quoc F (đã rời)');
     expect(viewerHtml).not.toContain('Thêm cột');
     expect(viewerHtml).not.toContain('Thùng rác');
+    expect(viewerHtml).not.toContain('board-trash-trigger');
     expect(viewerHtml).not.toContain('Thêm task');
     expect(viewerHtml).not.toContain('Kéo để sắp xếp cột');
     expect(viewerHtml).not.toContain('Kéo task để di chuyển');
@@ -223,6 +224,8 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     const editorHtml = renderWithIntl(<BoardDetailView boardId="b-1" />, { permissions: ['board.update', 'task.create', 'task.delete'], locale: 'en' });
     expect(editorHtml).toContain('Add column');
     expect(editorHtml).toContain('Trash');
+    expect(editorHtml).toContain('board-trash-trigger');
+    expect(editorHtml).toContain('board-trash-trigger-icon');
     expect(editorHtml).toContain('Add task');
     expect(editorHtml).toContain('Urgent');
     expect(editorHtml).toContain('Vu Quoc F (left)');

@@ -27,6 +27,7 @@ import {
   type TaskAssigneeOption,
   type TaskDepartmentOption,
 } from './TaskFormFields';
+import { TrashBinIcon } from '@/components/TrashIcons';
 import { TaskNotificationOptions } from './TaskNotificationOptions';
 
 const editTaskSchema = z.object({
@@ -280,13 +281,13 @@ export function TaskDeleteSection({ task, onDeleted }: { task: TaskDto; onDelete
               {tCommon('cancel')}
             </button>
             <button type="button" className="ui-btn danger is-sm" onClick={handleConfirm} disabled={deleteMutation.isPending}>
-              {deleteMutation.isPending ? tTasks('deleting') : tTasks('deleteConfirmSubmit')}
+              <TrashBinIcon size={14} /> <span>{deleteMutation.isPending ? tTasks('deleting') : tTasks('deleteConfirmSubmit')}</span>
             </button>
           </div>
         </div>
       ) : (
-        <button type="button" className="ui-btn danger is-sm" onClick={() => setConfirming(true)}>
-          {tTasks('deleteTask')}
+        <button type="button" className="ui-btn danger task-trash-btn" onClick={() => setConfirming(true)}>
+          <TrashBinIcon size={15} /> <span>{tTasks('deleteTask')}</span>
         </button>
       )}
     </section>

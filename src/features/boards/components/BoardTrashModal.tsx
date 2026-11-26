@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useId } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
+import { ArchiveBoxIcon, RestoreArrowIcon, TrashBinIcon } from '@/components/TrashIcons';
 import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge';
 import { TaskEventErrorBanner } from '@/features/tasks/components/TaskRevertConflictModal';
@@ -48,6 +49,9 @@ function TrashTaskRow({
     <li className="board-trash-item">
       <div className="board-trash-item-main">
         <div className="board-trash-item-title">
+          <span className="board-trash-row-icon" aria-hidden="true">
+            <TrashBinIcon size={14} />
+          </span>
           <strong>{task.title}</strong>
           {task.isHidden ? <span className="ui-chip task-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
         </div>
@@ -59,8 +63,9 @@ function TrashTaskRow({
         </div>
       </div>
       <div className="board-trash-item-actions">
-        <button type="button" className="ui-btn secondary is-sm" disabled={isBusy} onClick={() => onRestore(task)}>
-          {isRestoringThis ? tBoards('trashRestoring') : tBoards('trashRestoreButton')}
+        <button type="button" className="ui-btn primary is-sm board-trash-restore-btn" disabled={isBusy} onClick={() => onRestore(task)}>
+          <RestoreArrowIcon size={13} />
+          <span>{isRestoringThis ? tBoards('trashRestoring') : tBoards('trashRestoreButton')}</span>
         </button>
       </div>
     </li>
@@ -158,6 +163,9 @@ function BoardTrashBody({
   if (tasks.length === 0) {
     return (
       <div className="board-trash-empty">
+        <span className="board-trash-empty-icon" aria-hidden="true">
+          <TrashBinIcon size={22} />
+        </span>
         <strong>{tBoards('trashEmptyTitle')}</strong>
         <p className="ui-field-hint">{tBoards('trashEmptyDescription')}</p>
       </div>
@@ -219,7 +227,12 @@ export function BoardTrashModal({ boardId, boardName, columns = [], onClose }: B
     <div className="ui-modal-backdrop" role="presentation">
       <div className="ui-modal ui-modal-lg" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="ui-modal-header">
-          <h2 id={titleId} className="ui-modal-title">{tBoards('trashModalTitle', { name: boardName })}</h2>
+          <div className="board-trash-modal-heading">
+            <span className="board-trash-modal-icon" aria-hidden="true">
+              <TrashBinIcon size={17} />
+            </span>
+            <h2 id={titleId} className="ui-modal-title">{tBoards('trashModalTitle', { name: boardName })}</h2>
+          </div>
           <button type="button" className="ui-icon-btn" aria-label={tCommon('close')} onClick={onClose}>✕</button>
         </div>
         <div className="ui-modal-body">
@@ -234,7 +247,10 @@ export function BoardTrashModal({ boardId, boardName, columns = [], onClose }: B
             onRestore={ctrl.handleRestore}
           />
           <div className="board-trash-modal-foot">
-            <Link href="/archive" className="ui-btn ghost is-sm" onClick={onClose}>{tBoards('trashOpenArchiveLink')}</Link>
+            <Link href="/archive" className="ui-btn secondary is-sm board-trash-archive-link" onClick={onClose}>
+              <ArchiveBoxIcon size={14} />
+              <span>{tBoards('trashOpenArchiveLink')}</span>
+            </Link>
             <button type="button" className="ui-btn ghost is-sm" onClick={onClose}>{tCommon('close')}</button>
           </div>
         </div>
