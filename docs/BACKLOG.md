@@ -22,7 +22,7 @@
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Done |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
 | **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done |
-| **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done (chờ duyệt merge PR) |
+| **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Done |
 | **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Chờ duyệt danh sách item |
 
 ---
@@ -588,7 +588,7 @@
 
 ---
 
-## Epic E9 — Hoàn thiện song ngữ, Sao lưu `pg_dump`, Regression `v1.0` & Tài liệu vận hành (`FR-50`, `NFR-06`, `NFR-08`) *(Done trên nhánh `feat/E9-v1-release-and-reminders-ux` — chờ chủ dự án duyệt merge PR)*
+## Epic E9 — Hoàn thiện song ngữ, Sao lưu `pg_dump`, Regression `v1.0` & Tài liệu vận hành (`FR-50`, `NFR-06`, `NFR-08`) *(Done — đã duyệt & merge vào `main`)*
 
 ### E9-01
 - **ID:** `E9-01`
@@ -606,7 +606,7 @@
 - **Kiểm thử bắt buộc:** `tests/integration/db/backup-restore.test.ts` (`2/2`), `tests/integration/auth/auth-repository.test.ts` (`1/1`), `npm run db:backup` & `npm run db:restore:verify -- --test`, `openapi:check`.
 - **Ngoài phạm vi:** Chạm môi trường/CSDL production thật, đọc dữ liệu thật.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done — chờ chủ dự án duyệt merge` (`feat/E9-v1-release-and-reminders-ux`)
+- **Trạng thái:** `Done` (đã duyệt & merge vào `main`)
 
 ### E9-02
 - **ID:** `E9-02`
@@ -623,7 +623,7 @@
 - **Kiểm thử bắt buộc:** `i18n-parity.test.ts` (`6/6`), `reminders-admin.test.tsx` (`6/6`), `lint`, `typecheck`, zero console 404 trên E2E.
 - **Ngoài phạm vi:** Đổi nghiệp vụ hoặc API backend.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Done — chờ chủ dự án duyệt merge` (`feat/E9-v1-release-and-reminders-ux`)
+- **Trạng thái:** `Done` (đã duyệt & merge vào `main`)
 
 ### E9-03
 - **ID:** `E9-03`
@@ -641,7 +641,7 @@
 - **Kiểm thử bắt buộc:** Đủ `8/8` cổng CI + `db:backup` & `db:restore:verify` trên `beam_test`.
 - **Ngoài phạm vi:** Sửa `src/app/forbidden/page.tsx` hoặc chạm production.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done — chờ chủ dự án duyệt merge` (`feat/E9-v1-release-and-reminders-ux`)
+- **Trạng thái:** `Done` (đã duyệt & merge vào `main`)
 
 ---
 
