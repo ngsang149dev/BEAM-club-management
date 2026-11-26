@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { DragOverlay } from '@dnd-kit/core';
 import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
+import { TrashBinIcon } from '@/components/TrashIcons';
 import { Can } from '@/features/shared/permissions/can';
 import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
 import { isDoneColumn } from '../filters';
@@ -139,12 +140,15 @@ export function BoardDetailHeader({
       </div>
       <div className="board-detail-header-actions">
         <Can permission="task.delete">
-          <button type="button" className="ui-btn ghost is-sm" onClick={onOpenTrash}>
-            {t('openTrash')}
+          <button type="button" className="ui-btn secondary board-trash-trigger" onClick={onOpenTrash}>
+            <span className="board-trash-trigger-icon" aria-hidden="true">
+              <TrashBinIcon size={15} />
+            </span>
+            <span>{t('openTrash')}</span>
           </button>
         </Can>
         <Can permission="board.update">
-          <button type="button" className="ui-btn primary is-sm" onClick={onAddColumn}>
+          <button type="button" className="ui-btn primary" onClick={onAddColumn}>
             + {t('addColumn')}
           </button>
         </Can>

@@ -690,6 +690,9 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
       />
     );
     expect(loadedHtml).toContain('Thùng rác · Open Day 2026');
+    expect(loadedHtml).toContain('board-trash-modal-icon');
+    expect(loadedHtml).toContain('board-trash-row-icon');
+    expect(loadedHtml).toContain('board-trash-restore-btn');
     expect(loadedHtml).toContain('Chuẩn bị slide Open Day');
     expect(loadedHtml).toContain('Task ẩn');
     expect(loadedHtml).toContain('Cột cũ: Cần làm');
