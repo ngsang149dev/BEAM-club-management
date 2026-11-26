@@ -4,6 +4,7 @@ import {
   formatUtcFileTimestamp,
   parseCliOptions,
   parsePgConnection,
+  queryServerVersionNum,
   resolveBackupConnectionString,
   resolvePgToolRunner,
   runPgDumpToFile,
@@ -29,11 +30,16 @@ export async function runDbBackup(options = {}) {
     ? path.resolve(cwd, rawOutput)
     : buildDefaultBackupPath(connectionString, cwd);
 
-  const runner = resolvePgToolRunner('pg_dump');
+  const serverVersionNum = await queryServerVersionNum(connectionString);
+  const preferredMajorVersion = serverVersionNum
+    ? Math.floor(serverVersionNum / 10_000)
+    : null;
+  const runner = resolvePgToolRunner('pg_dump', { preferredMajorVersion });
   const bytes = await runPgDumpToFile({
     runner,
     connectionString,
     outputPath,
+    serverVersionNum,
   });
 
   if (!options.quiet) {
