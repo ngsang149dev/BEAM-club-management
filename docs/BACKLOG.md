@@ -21,8 +21,8 @@
 | **CR-07** | Trang Quản trị Giao diện CLB (`/admin/branding`) & Khung treo ảnh Polaroid động trang Login Desktop (`A1`–`A4`, `[RỦI RO CAO]`) | Nâng cấp `S01`/`CR-02` | Done |
 | **E7** | Bình luận, cờ task ẩn (`404`, lọc mọi nơi) | FR-24, FR-07, FR-26 | Done |
 | **E7A** | Lịch sử hoạt động (`task_events`), hoàn tác + toast 10s (phần Thùng rác `S15` nâng cấp thành Kho Archive ở `CR-04`) | FR-60, FR-61, FR-62 | Done |
-| **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done — chờ chủ dự án duyệt merge `main` |
-| **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Backlog |
+| **E8** | Email nhắc deadline, cấu hình `app_settings`, Vercel Cron | FR-02, FR-30, FR-31 | Done |
+| **E9** | Hoàn thiện song ngữ, backup `pg_dump`, regression, UAT, tài liệu vận hành | FR-50, NFR-06, NFR-08 | Chờ duyệt danh sách item |
 
 ---
 
@@ -532,7 +532,7 @@
 
 ---
 
-## Epic E8 — Email nhắc deadline, Cấu hình `app_settings` & Vercel Cron (`FR-02`, `FR-30`, `FR-31`) *(Done — chờ chủ dự án duyệt merge `main`)*
+## Epic E8 — Email nhắc deadline, Cấu hình `app_settings` & Vercel Cron (`FR-02`, `FR-30`, `FR-31`) *(Done, đã duyệt & merge `main`)*
 
 ### E8-01
 - **ID:** `E8-01`
@@ -551,7 +551,7 @@
 - **Kiểm thử bắt buộc:** Unit test policy/service/email-template (`AC-03` không gửi trùng, gộp 1 email/người, loại Done/deleted/inactive, `CR-03` ban, `WQ-27` che tiêu đề task ẩn, `vi`/`en`, lỗi SMTP từng phần, 0 PII) & integration test PostgreSQL trên `beam_test` (`GET/PUT /settings/reminders` `401`/`403`/`200` + `audit_logs`, `POST/GET /internal/cron/reminders` `401`/`200` chạy 2 lần idempotent).
 - **Ngoài phạm vi:** Đổi `docs/openapi.yaml`, thêm thư viện ngoài, chạm cấu hình production.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ chủ dự án duyệt merge)` *(đã hoàn tất trên `feat/E8-deadline-reminders`: `src/lib/reminders.ts`, `src/server/modules/reminders/*`, `composition-workstream.ts`, `GET/PUT /api/v1/settings/reminders`, `POST/GET /api/v1/internal/cron/reminders` & `GET` `/internal/cron/archive-purge`, `vercel.json`, unit `reminders-policy-service.test.ts` + integration `reminders-routes.test.ts` xanh)*
+- **Trạng thái:** `Done` *(đã duyệt & merge `main` — `src/lib/reminders.ts`, `src/server/modules/reminders/*`, `composition-workstream.ts`, `GET/PUT /api/v1/settings/reminders`, `POST/GET /api/v1/internal/cron/reminders` & `GET` `/internal/cron/archive-purge`, `vercel.json`, unit `reminders-policy-service.test.ts` + integration `reminders-routes.test.ts` xanh)*
 
 ### E8-02
 - **ID:** `E8-02`
@@ -569,7 +569,7 @@
 - **Kiểm thử bắt buộc:** Unit test trang `S12` (quyền `403`, bật/tắt mốc, cảnh báo tắt hết, preview `VI`/`EN` che task ẩn & 0 PII), audit formatter `settings.reminders_updated`, `i18n-parity`.
 - **Ngoài phạm vi:** Đổi API, thêm nút gửi thử ngoài `openapi.yaml`, sửa mã backend `src/server/*`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Done (chờ chủ dự án duyệt merge)` *(đã hoàn tất trên `feat/E8-deadline-reminders`: `/admin/reminders`, `useReminderSettings.ts`, `preview-helpers.ts` dùng chung `@/lib/reminders`, `ReminderMilestonesCard.tsx`, `RemindersAdminView.tsx`, `ReminderEmailPreview.tsx` + `ReminderEmailPreviewParts.tsx`, `settings.reminders_updated` trên `S13`, `vi`/`en` `100%`, unit `reminders-admin.test.tsx` & `audit-logs.test.tsx` xanh)*
+- **Trạng thái:** `Done` *(đã duyệt & merge `main` — `/admin/reminders`, `useReminderSettings.ts`, `preview-helpers.ts` dùng chung `@/lib/reminders`, `ReminderMilestonesCard.tsx`, `RemindersAdminView.tsx`, `ReminderEmailPreview.tsx` + `ReminderEmailPreviewParts.tsx`, `settings.reminders_updated` trên `S13`, `vi`/`en` `100%`, unit `reminders-admin.test.tsx` & `audit-logs.test.tsx` xanh)*
 
 ### E8-03
 - **ID:** `E8-03`
@@ -583,4 +583,61 @@
 - **Kiểm thử bắt buộc:** Đủ 8 cổng CI + Chrome E2E.
 - **Ngoài phạm vi:** Sửa mã sản phẩm trong `src/` hoặc `db/`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (chờ chủ dự án duyệt merge)` *(vượt `8/8` cổng CI sau sửa: `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `345` module / `1,677` phụ thuộc, `57` unit / `301` test, `18` integration PostgreSQL / `30` test, `next build` `41/41` route, `44/44` Chrome E2E `2.7m` gồm `reminders.spec.ts` `2/2`, và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` với `0` Blocker, `0` Major)*
+- **Trạng thái:** `Done` *(đã duyệt & merge `main`; vượt `8/8` cổng CI sau sửa: `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `345` module / `1,677` phụ thuộc, `57` unit / `301` test, `18` integration PostgreSQL / `30` test, `next build` `41/41` route, `44/44` Chrome E2E `2.7m` gồm `reminders.spec.ts` `2/2`, và `qa-reviewer` ngữ cảnh sạch đạt `VERDICT: PASS` với `0` Blocker, `0` Major)*
+
+---
+
+## Epic E9 — Hoàn thiện song ngữ, Sao lưu `pg_dump`, Regression `v1.0` & Tài liệu vận hành (`FR-50`, `NFR-06`, `NFR-08`) *(Chờ chủ dự án duyệt danh sách item)*
+
+### E9-01
+- **ID:** `E9-01`
+- **Tiêu đề:** Script sao lưu & kiểm chứng khôi phục `pg_dump`, đồng bộ `GET` cron OpenAPI (nếu duyệt) & Tài liệu vận hành/bàn giao (`NFR-06`, `NFR-08`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `NFR-06`, `NFR-08`, `HANDOFF` (mục 10), `MINOR-1` (`E8` audit)
+- **Phụ thuộc:** `E8` (`Done`, merged `main`), nhánh dọn dẹp `chore/repo-cleanup` (nếu duyệt)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§0.4, §6A, §7, §8), `HANDOFF` (mục 7, 10, 11.5), `docs/openapi.yaml`, `README.md`
+- **Phạm vi file được sửa:** `scripts/db-backup.mjs`, `scripts/db-restore-verify.mjs`, `package.json` (thêm `db:backup` & `db:restore:verify`), `docs/OPERATIONS.md`, `README.md`, và (nếu chủ dự án duyệt `MINOR-1`) `docs/DECISIONS.md` + `docs/openapi.yaml` + `src/features/shared/api/schema.d.ts` + `tests/integration/system/`
+- **Tiêu chí chấp nhận:**
+  1. `npm run db:backup` chạy `pg_dump` an toàn ra tệp `.sql`/`.dump` cục bộ (không lưu mật khẩu/connection string vào file hoặc log, **cấm chạy lên production** theo `AGENTS.md §0 #4`).
+  2. `npm run db:restore:verify` kiểm chứng khôi phục bản backup trên CSDL test cô lập (`beam_test`) hoặc schema tạm, xác nhận đủ 22 bảng, trigger append-only (`task_events`, `audit_logs`), trigger `LAST_ACTIVE_ADMIN` và dữ liệu khớp.
+  3. Hoàn thiện `docs/OPERATIONS.md` + cập nhật `README.md`: quy trình deploy Vercel + Neon + biến môi trường (`DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `SMTP_*`), lịch Vercel Cron `07:00`/`07:05 UTC+7`, sao lưu hàng tuần (`NFR-06`) & thử khôi phục định kỳ, bàn giao tài khoản chung CLB bật xác minh 2 bước (`NFR-08`).
+  4. (Nếu chủ dự án duyệt `MINOR-1`) Đồng bộ `GET` handler cho `/internal/cron/reminders` và `/internal/cron/archive-purge` trong `docs/openapi.yaml` & `schema.d.ts`.
+- **Kiểm thử bắt buộc:** Unit/integration test kiểm chứng script sao lưu & khôi phục trên `beam_test` + `openapi:check`.
+- **Ngoài phạm vi:** Chạm môi trường/CSDL production thật, đọc dữ liệu thật.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Chờ chủ dự án duyệt`
+
+### E9-02
+- **ID:** `E9-02`
+- **Tiêu đề:** Rà soát song ngữ `vi`/`en`, responsive & bổ sung `app/icon.svg` triệt tiêu `404 /favicon.ico` (`FR-50`, `NFR-07`, `NFR-10`)
+- **Sub-agent phụ trách:** `frontend`
+- **Liên quan:** `FR-50`, `NFR-07`, `NFR-10`, `MINOR-2` (`E8` audit)
+- **Phụ thuộc:** `E8` (`Done`, merged `main`)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6, §6A, §8), `HANDOFF` (mục 5 `NFR-07`/`NFR-10`), `messages/vi.json`, `messages/en.json`
+- **Phạm vi file được sửa:** `src/app/icon.svg`, `messages/vi.json`, `messages/en.json`, `src/features/*` (nếu phát hiện chuỗi cứng hoặc lệch responsive nhỏ), `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:**
+  1. Bổ sung `src/app/icon.svg` (biểu tượng BEAM chuẩn thương hiệu) loại bỏ hoàn toàn lỗi `404 /favicon.ico` trên console trình duyệt.
+  2. Rà soát `100%` chuỗi UI/email giữa `vi.json` & `en.json`: không còn chuỗi cứng ngoài `messages/`, tự nhiên đúng văn phong CLB, kiểm tra không vỡ layout ở `375px` Mobile và `1440px` Desktop.
+  3. Cập nhật `reminders.milestoneOverdueDesc` nếu chủ dự án chốt theo `MINOR-2`.
+- **Kiểm thử bắt buộc:** `i18n-parity.test.ts`, `lint`, `typecheck`, kiểm tra zero console 404 trên E2E.
+- **Ngoài phạm vi:** Đổi nghiệp vụ hoặc API backend.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Chờ chủ dự án duyệt`
+
+### E9-03
+- **ID:** `E9-03`
+- **Tiêu đề:** Kiểm thử hồi quy toàn diện `v1.0`, đối chiếu `TRACEABILITY.md`, Checklist UAT & kiểm định độc lập cuối (`AC-01`..`AC-22`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-engineer` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `AC-01`..`AC-22`, `AGENTS.md` (§6A.8, §7, §8), `HANDOFF` (mục 9)
+- **Phụ thuộc:** `E9-01`, `E9-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `HANDOFF` (mục 4, 5, 9), `docs/TRACEABILITY.md`, `docs/openapi.yaml`
+- **Phạm vi file được sửa:** `docs/TRACEABILITY.md`, `docs/UAT-CHECKLIST.md`, `tests/*` (chỉ bổ sung nếu phát hiện lỗ hổng độ phủ AC/quyền)
+- **Tiêu chí chấp nhận:**
+  1. Vượt toàn bộ **`8/8` cổng CI** (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `build`, toàn bộ Playwright Chrome E2E không skip/hạ assertion).
+  2. Đối chiếu lại đủ `18` mã quyền `PERMISSIONS` (1 allow + 1 deny mỗi mã), `AC-01`..`AC-22`, che PII/task ẩn `404`, sao lưu & khôi phục trên `beam_test`.
+  3. Cập nhật `docs/TRACEABILITY.md` phản ánh `100%` FR/AC/bảng/endpoint hiện tại và xuất `docs/UAT-CHECKLIST.md` phục vụ 5–10 thành viên dùng thử (`HANDOFF §9`).
+  4. `qa-reviewer` ngữ cảnh sạch thẩm định độc lập toàn bộ chốt **`VERDICT: PASS`** (`0` Blocker, `0` Major).
+- **Kiểm thử bắt buộc:** Đủ `8/8` cổng CI + `db:backup` & `db:restore:verify` trên `beam_test`.
+- **Ngoài phạm vi:** Tự ý xóa `wireframes/` nếu chủ dự án chưa duyệt; sửa mã production không có lỗi.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Chờ chủ dự án duyệt`
