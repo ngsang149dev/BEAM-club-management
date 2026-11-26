@@ -611,4 +611,39 @@ describe('PostgreSQL schema & trigger invariants', () => {
       expect(afterTaskDel.rows).toHaveLength(0);
     });
   });
+
+  it('seeds 0007_system_catalog_defaults idempotently (>= 7 migrations, 18 permissions, 3 presets, default reminders setting)', async () => {
+    await withRollbackTransaction(pool, async (client) => {
+      const migRes = await client.query<{ version: string }>(
+        `SELECT version FROM schema_migrations ORDER BY version ASC`,
+      );
+      const versions = migRes.rows.map((row) => row.version);
+      expect(versions.length).toBeGreaterThanOrEqual(7);
+      expect(versions).toContain('0007_system_catalog_defaults');
+
+      const permCountRes = await client.query<{ cnt: number }>(
+        `SELECT count(*)::int AS cnt FROM permissions`,
+      );
+      expect(permCountRes.rows[0]?.cnt).toBe(18);
+
+      const presetCountsRes = await client.query<{ code: string; cnt: number }>(
+        `SELECT p.code, count(pp.permission_code)::int AS cnt
+         FROM permission_presets p
+         LEFT JOIN preset_permissions pp ON pp.preset_id = p.id
+         WHERE p.code IN ('basic_member', 'department_lead', 'hr_manager')
+         GROUP BY p.code
+         ORDER BY p.code ASC`,
+      );
+      expect(presetCountsRes.rows).toEqual([
+        { code: 'basic_member', cnt: 3 },
+        { code: 'department_lead', cnt: 9 },
+        { code: 'hr_manager', cnt: 7 },
+      ]);
+
+      const remindersSettingRes = await client.query<{ key: string }>(
+        `SELECT key FROM app_settings WHERE key = 'reminders'`,
+      );
+      expect(remindersSettingRes.rows[0]?.key).toBe('reminders');
+    });
+  });
 });

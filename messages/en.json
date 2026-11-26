@@ -603,6 +603,7 @@
       "purgeModePhysicalDelete": "Physically deleted"
     },
     "actions": {
+      "memberBootstrapAdmin": "Bootstrapped system admin",
       "memberCreated": "Created member",
       "memberUpdated": "Edited member",
       "memberPasswordReset": "Reset member password",

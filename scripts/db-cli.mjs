@@ -163,7 +163,13 @@ export async function queryServerVersionNum(connectionString) {
     const ver = res.rows[0]?.ver;
     return typeof ver === 'number' && Number.isInteger(ver) && ver > 0 ? ver : null;
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const rawMsg =
+      error instanceof Error ? error.message.trim() : String(error ?? '').trim();
+    const errCode =
+      error && typeof error === 'object' && 'code' in error && error.code
+        ? String(error.code)
+        : '';
+    const detail = rawMsg || errCode || 'connection error';
     throw new Error(
       `Failed querying PostgreSQL server version for ${formatSafeDbTarget(connectionString)}: ${detail}`,
     );

@@ -1,6 +1,7 @@
 export type AuditDateRange = '7d' | '30d' | '90d' | 'all';
 
 export type AuditActionMessageKey =
+  | 'memberBootstrapAdmin'
   | 'memberCreated'
   | 'memberUpdated'
   | 'memberPasswordReset'
@@ -36,6 +37,7 @@ export type AuditActionMessageKey =
   | 'archiveRetentionUpdated';
 
 const ACTION_TO_KEY: Record<string, AuditActionMessageKey> = {
+  'member.bootstrap_admin': 'memberBootstrapAdmin',
   'member.created': 'memberCreated',
   'member.updated': 'memberUpdated',
   'member.password_reset': 'memberPasswordReset',
@@ -84,6 +86,7 @@ export const AUDIT_FILTER_ACTION_OPTIONS: readonly {
   { value: 'permissions.preset_applied', key: 'presetApplied' },
   { value: 'admin.granted', key: 'adminGranted' },
   { value: 'admin.revoked', key: 'adminRevoked' },
+  { value: 'member.bootstrap_admin', key: 'memberBootstrapAdmin' },
   { value: 'member.created', key: 'memberCreated' },
   { value: 'member.updated', key: 'memberUpdated' },
   { value: 'member.password_reset', key: 'memberPasswordReset' },

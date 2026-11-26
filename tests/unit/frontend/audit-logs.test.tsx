@@ -520,4 +520,46 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(enOnHtml).toContain('Remind overdue tasks');
     expect(enOnHtml).toContain('>Yes<');
   });
+
+  it('localizes member.bootstrap_admin action and filter option in vi and en', () => {
+    expect(resolveAuditActionKey('member.bootstrap_admin')).toBe('memberBootstrapAdmin');
+    expect(AUDIT_FILTER_ACTION_OPTIONS).toContainEqual({
+      value: 'member.bootstrap_admin',
+      key: 'memberBootstrapAdmin',
+    });
+
+    const bootstrapEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      action: 'member.bootstrap_admin',
+      detail: { isAdmin: true },
+    };
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [bootstrapEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const viHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(viHtml).toContain('value="member.bootstrap_admin"');
+    expect(viHtml).toContain('Khởi tạo Admin hệ thống');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [bootstrapEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const enHtml = renderAudit({ permissions: ['audit.view'], locale: 'en' });
+    expect(enHtml).toContain('value="member.bootstrap_admin"');
+    expect(enHtml).toContain('Bootstrapped system admin');
+  });
 });
