@@ -38,6 +38,7 @@ export const EXPECTED_PUBLIC_TABLES = [
   'schema_migrations',
   'sessions',
   'task_assignees',
+  'task_deliverables',
   'task_departments',
   'task_events',
   'tasks',

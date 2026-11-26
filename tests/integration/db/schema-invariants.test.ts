@@ -20,6 +20,7 @@ import {
   reminders,
   sessions,
   taskAssignees,
+  taskDeliverables,
   taskDepartments,
   taskEvents,
   tasks,
@@ -131,6 +132,7 @@ describe('PostgreSQL schema & trigger invariants', () => {
       tasks,
       taskAssignees,
       taskDepartments,
+      taskDeliverables,
       comments,
       taskEvents,
       reminders,
@@ -144,8 +146,8 @@ describe('PostgreSQL schema & trigger invariants', () => {
       }),
     );
 
-    expect(tableNames).toHaveLength(21);
-    expect(new Set(tableNames).size).toBe(21);
+    expect(tableNames).toHaveLength(22);
+    expect(new Set(tableNames).size).toBe(22);
   });
 
   it('enforces APPEND_ONLY_TABLE, STUDENT_ID_IMMUTABLE, LAST_ACTIVE_ADMIN, and unique/check constraints', async () => {
@@ -612,14 +614,15 @@ describe('PostgreSQL schema & trigger invariants', () => {
     });
   });
 
-  it('seeds 0007_system_catalog_defaults idempotently (>= 7 migrations, 18 permissions, 3 presets, default reminders setting)', async () => {
+  it('seeds 0007_system_catalog_defaults and 0008_calendar_tasks_leads_deliverables constraints idempotently', async () => {
     await withRollbackTransaction(pool, async (client) => {
       const migRes = await client.query<{ version: string }>(
         `SELECT version FROM schema_migrations ORDER BY version ASC`,
       );
       const versions = migRes.rows.map((row) => row.version);
-      expect(versions.length).toBeGreaterThanOrEqual(7);
+      expect(versions.length).toBeGreaterThanOrEqual(8);
       expect(versions).toContain('0007_system_catalog_defaults');
+      expect(versions).toContain('0008_calendar_tasks_leads_deliverables');
 
       const permCountRes = await client.query<{ cnt: number }>(
         `SELECT count(*)::int AS cnt FROM permissions`,
@@ -644,6 +647,112 @@ describe('PostgreSQL schema & trigger invariants', () => {
         `SELECT key FROM app_settings WHERE key = 'reminders'`,
       );
       expect(remindersSettingRes.rows[0]?.key).toBe('reminders');
+
+      // 0008 DDL constraints: departments.lead_user_id ON DELETE SET NULL, tasks_start_before_due_chk, task_deliverables CHECKs & FKs, notifications types
+      const leadId = '98000000-0000-4000-8000-000000000001';
+      const deptId = '98000000-0000-4000-8000-000000000002';
+      const boardId = '98000000-0000-4000-8000-000000000003';
+      const colId = '98000000-0000-4000-8000-000000000004';
+      const taskId = '98000000-0000-4000-8000-000000000005';
+      await client.query(
+        `INSERT INTO profiles (id, student_id, email, full_name, is_admin, is_active)
+         VALUES ($1, 'INV08-LEAD', 'inv08-lead@eiu.edu.vn', 'Lead Eight', false, true)`,
+        [leadId],
+      );
+      await client.query(
+        `INSERT INTO departments (id, name, lead_user_id) VALUES ($1, 'Dept Inv08', $2)`,
+        [deptId, leadId],
+      );
+      await client.query(
+        `INSERT INTO boards (id, name, created_by) VALUES ($1, 'Board Inv08', $2)`,
+        [boardId, leadId],
+      );
+      await client.query(
+        `INSERT INTO columns (id, board_id, name, order_index) VALUES ($1, $2, 'Todo', 0)`,
+        [colId, boardId],
+      );
+
+      // tasks_start_before_due_chk rejects start_at > due_at
+      await expectPgError(
+        client,
+        'sp_0008_date_range',
+        () =>
+          client.query(
+            `INSERT INTO tasks (id, board_id, column_id, title, position, start_at, due_at, created_by)
+             VALUES ($1, $2, $3, 'Bad Range', '1000', '2026-12-05T00:00:00Z', '2026-12-01T00:00:00Z', $4)`,
+            [taskId, boardId, colId, leadId],
+          ),
+        { code: '23514' },
+      );
+
+      await client.query(
+        `INSERT INTO tasks (id, board_id, column_id, title, position, start_at, due_at, is_completed, created_by)
+         VALUES ($1, $2, $3, 'Valid Range', '1000', '2026-12-01T00:00:00Z', '2026-12-05T00:00:00Z', false, $4)`,
+        [taskId, boardId, colId, leadId],
+      );
+      await client.query(
+        `INSERT INTO task_assignees (task_id, user_id, accepted_at) VALUES ($1, $2, now())`,
+        [taskId, leadId],
+      );
+
+      // task_deliverables CHECKs (blank title, javascript: url) and submitted_by RESTRICT
+      await expectPgError(
+        client,
+        'sp_0008_deliv_title',
+        () =>
+          client.query(
+            `INSERT INTO task_deliverables (task_id, title, url, submitted_by)
+             VALUES ($1, '   ', 'https://example.com/ok', $2)`,
+            [taskId, leadId],
+          ),
+        { code: '23514' },
+      );
+      await expectPgError(
+        client,
+        'sp_0008_deliv_url',
+        () =>
+          client.query(
+            `INSERT INTO task_deliverables (task_id, title, url, submitted_by)
+             VALUES ($1, 'Valid Title', 'javascript:alert(1)', $2)`,
+            [taskId, leadId],
+          ),
+        { code: '23514' },
+      );
+      await client.query(
+        `INSERT INTO task_deliverables (task_id, title, url, submitted_by)
+         VALUES ($1, 'Valid Deck', 'https://example.com/deck', $2)`,
+        [taskId, leadId],
+      );
+      await expectPgError(
+        client,
+        'sp_0008_deliv_submitter_restrict',
+        () => client.query(`DELETE FROM profiles WHERE id = $1`, [leadId]),
+        { code: '23503' },
+      );
+
+      // notifications accepts CR-09 types
+      await client.query(
+        `INSERT INTO notifications (user_id, type, task_id, board_id, actor_id, is_hidden_task)
+         VALUES ($1, 'task.accepted', $2, $3, $1, false),
+                ($1, 'task.deliverable_submitted', $2, $3, $1, false)`,
+        [leadId, taskId, boardId],
+      );
+
+      // Deleting task cascades task_deliverables; deleting lead profile sets departments.lead_user_id = NULL when unblocked
+      await client.query(`DELETE FROM tasks WHERE id = $1`, [taskId]);
+      const delivCount = await client.query<{ cnt: number }>(
+        `SELECT count(*)::int AS cnt FROM task_deliverables WHERE task_id = $1`,
+        [taskId],
+      );
+      expect(delivCount.rows[0]?.cnt).toBe(0);
+
+      await client.query(`DELETE FROM boards WHERE id = $1`, [boardId]);
+      await client.query(`DELETE FROM profiles WHERE id = $1`, [leadId]);
+      const deptAfter = await client.query<{ lead_user_id: string | null }>(
+        `SELECT lead_user_id FROM departments WHERE id = $1`,
+        [deptId],
+      );
+      expect(deptAfter.rows[0]?.lead_user_id).toBeNull();
     });
   });
 });

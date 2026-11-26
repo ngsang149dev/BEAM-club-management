@@ -58,6 +58,7 @@ type MemberPublicSummary = components['schemas']['MemberPublicSummary'];
 const DEPT_MEDIA: DepartmentDto = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'Truyền thông',
+  lead: null,
   memberCount: 4,
   boardCount: 1,
   createdAt: '2026-01-01T00:00:00Z',
@@ -67,6 +68,7 @@ const DEPT_MEDIA: DepartmentDto = {
 const DEPT_TECH: DepartmentDto = {
   id: '22222222-2222-4222-8222-222222222222',
   name: 'Kỹ thuật',
+  lead: null,
   memberCount: 2,
   boardCount: 1,
   createdAt: '2026-01-01T00:00:00Z',

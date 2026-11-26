@@ -12,6 +12,7 @@ import type { TransactionContext } from '@/server/shared/transaction';
 import {
   assertCanEditTask,
   assertCanViewTask,
+  assertValidDateRange,
   buildTaskUpdateChanges,
   canToggleTaskHidden,
   hasTaskChanges,
@@ -61,20 +62,18 @@ export async function runTaskUpdateInTx(params: {
   if (target.version !== params.input.version) {
     throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
   }
+  const nextStartAt = params.input.startAt !== undefined ? params.input.startAt : target.startAt;
+  const nextDueAt = params.input.dueAt !== undefined ? params.input.dueAt : target.dueAt;
+  assertValidDateRange(nextStartAt, nextDueAt);
+
   const changes = buildTaskUpdateChanges(target, params.input);
-  if (!hasTaskChanges(changes)) {
-    return { task: target, eventId: null };
-  }
+  if (!hasTaskChanges(changes)) return { task: target, eventId: null };
   return params.tasksRepo.updateTaskWithEvent(
     {
+      ...params.input,
       id: params.taskId,
       boardId: target.boardId,
       actorId: params.actor.id,
-      version: params.input.version,
-      title: params.input.title,
-      description: params.input.description,
-      dueAt: params.input.dueAt,
-      priority: params.input.priority,
       changes,
       now: params.now,
     },

@@ -54,6 +54,11 @@ function EyeIcon({ open }: { open: boolean }) {
   );
 }
 
+export function preventPasswordToggleBlur(event: { preventDefault: () => void }): void {
+  // Keep input focused on tap so iOS Safari does not dismiss the keyboard before onClick fires.
+  event.preventDefault();
+}
+
 export function PasswordInput({
   ref,
   className,
@@ -106,6 +111,7 @@ export function PasswordInput({
         aria-pressed={isVisible}
         aria-controls={id}
         disabled={disabled}
+        onMouseDown={preventPasswordToggleBlur}
         onClick={handleToggle}
       >
         <EyeIcon open={isVisible} />

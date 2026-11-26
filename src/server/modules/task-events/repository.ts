@@ -1,8 +1,8 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from 'drizzle-orm';
-import { boards, columns, comments, departments, memberDepartments, profiles, taskAssignees, taskDepartments, taskEvents, tasks } from '@db/schema';
+import { boards, columns, comments, departments, memberDepartments, profiles, taskAssignees, taskDeliverables, taskDepartments, taskEvents, tasks } from '@db/schema';
 import { conflict } from '@/lib/errors';
 import { dedupeSortedUuids } from '@/lib/tasks';
-import { assembleTaskRecords, buildUserSummariesMap, type RawTaskRow, taskAccessSqlCondition, type TaskMemberSummaryRecord, type TaskRecord } from '@/server/modules/tasks';
+import { assembleTaskRecords, buildUserSummariesMap, computeAssigneeSyncPlan, type RawTaskRow, taskAccessSqlCondition, type TaskMemberSummaryRecord, type TaskRecord } from '@/server/modules/tasks';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import type { ApplyRevertRepoParams, ListBoardTrashRepoParams, ListTaskEventsRepoParams, RevertColumnLookup, RevertResolvedColumn, RevertResolvedTargets, RevertTargetIntent, TaskEventContext, TaskEventRecord, TaskEventsRepository } from './types';
@@ -151,9 +151,13 @@ export class DrizzleTaskEventsRepository implements TaskEventsRepository {
 
   private async syncRevertedAssignments(params: ApplyRevertRepoParams, tx: TransactionContext): Promise<void> {
     if (params.plan.replaceAssigneeIds !== undefined) {
-      await tx.delete(taskAssignees).where(eq(taskAssignees.taskId, params.taskId));
-      if (params.plan.replaceAssigneeIds.length > 0) {
-        await tx.insert(taskAssignees).values(params.plan.replaceAssigneeIds.map((userId) => ({ taskId: params.taskId, userId, createdAt: params.now })));
+      const existingRows = await tx.select({ userId: taskAssignees.userId }).from(taskAssignees).where(eq(taskAssignees.taskId, params.taskId));
+      const { toRemove, toAdd } = computeAssigneeSyncPlan(existingRows.map((row) => row.userId), params.plan.replaceAssigneeIds);
+      if (toRemove.length > 0) {
+        await tx.delete(taskAssignees).where(and(eq(taskAssignees.taskId, params.taskId), inArray(taskAssignees.userId, toRemove)));
+      }
+      if (toAdd.length > 0) {
+        await tx.insert(taskAssignees).values(toAdd.map((userId) => ({ taskId: params.taskId, userId, acceptedAt: null, createdAt: params.now })));
       }
     }
     if (params.plan.replaceDepartmentIds !== undefined) {
@@ -177,14 +181,17 @@ export class DrizzleTaskEventsRepository implements TaskEventsRepository {
   private async hydrateTasks(executor: DbExecutor, taskRows: readonly RawTaskRow[]): Promise<TaskRecord[]> {
     if (taskRows.length === 0) return [];
     const taskIds = taskRows.map((row) => row.id);
-    const [assigneeRows, departmentRows, commentCountRows] = await Promise.all([
-      executor.select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId }).from(taskAssignees).where(inArray(taskAssignees.taskId, taskIds)),
+    const [assigneeRows, departmentRows, deliverableRows, commentCountRows] = await Promise.all([
+      executor.select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId, acceptedAt: taskAssignees.acceptedAt }).from(taskAssignees).where(inArray(taskAssignees.taskId, taskIds)),
       executor.select({ taskId: taskDepartments.taskId, id: departments.id, name: departments.name }).from(taskDepartments)
         .innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(inArray(taskDepartments.taskId, taskIds)).orderBy(asc(departments.name), asc(departments.id)),
+      executor.select({ id: taskDeliverables.id, taskId: taskDeliverables.taskId, title: taskDeliverables.title, url: taskDeliverables.url, submittedBy: taskDeliverables.submittedBy, createdAt: taskDeliverables.createdAt })
+        .from(taskDeliverables).where(inArray(taskDeliverables.taskId, taskIds)).orderBy(desc(taskDeliverables.createdAt), desc(taskDeliverables.id)),
       executor.select({ taskId: comments.taskId, total: count() }).from(comments).where(inArray(comments.taskId, taskIds)).groupBy(comments.taskId),
     ]);
-    const userMap = await this.loadUserSummaries(executor, Array.from(new Set([...taskRows.map((r) => r.createdBy), ...assigneeRows.map((a) => a.userId)])));
-    return assembleTaskRecords({ taskRows, assigneeRows, departmentRows, commentCountRows, userMap });
+    const userIds = Array.from(new Set([...taskRows.map((r) => r.createdBy), ...assigneeRows.map((a) => a.userId), ...deliverableRows.map((d) => d.submittedBy)]));
+    const userMap = await this.loadUserSummaries(executor, userIds);
+    return assembleTaskRecords({ taskRows, assigneeRows, departmentRows, deliverableRows, commentCountRows, userMap });
   }
 
   private async loadUserSummaries(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, TaskMemberSummaryRecord>> {

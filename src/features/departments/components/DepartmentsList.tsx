@@ -3,6 +3,21 @@
 import { useTranslations } from 'next-intl';
 import type { DepartmentDto } from '../hooks/useDepartments';
 
+function DepartmentLeadBadge({ lead }: { lead: DepartmentDto['lead'] }) {
+  const t = useTranslations('departmentsAdmin');
+  const tMember = useTranslations('member');
+
+  if (!lead) {
+    return <span className="ui-chip dept-lead-chip is-unassigned">{t('leadUnassignedBadge')}</span>;
+  }
+  return (
+    <span className={lead.isActive ? 'ui-chip dept-lead-chip' : 'ui-chip dept-lead-chip is-inactive'}>
+      {t('leadBadge', { name: lead.fullName })}
+      {!lead.isActive ? <span className="member-left-badge"> {tMember('leftBadge')}</span> : null}
+    </span>
+  );
+}
+
 function DepartmentRow({
   department,
   onRename,
@@ -19,6 +34,7 @@ function DepartmentRow({
       <div className="dept-row-main">
         <span className="dept-row-name">{department.name}</span>
         <div className="dept-row-badges">
+          <DepartmentLeadBadge lead={department.lead} />
           <span className="ui-chip">{t('memberCountBadge', { count: department.memberCount })}</span>
           <span className="ui-chip">{t('boardCountBadge', { count: department.boardCount })}</span>
         </div>

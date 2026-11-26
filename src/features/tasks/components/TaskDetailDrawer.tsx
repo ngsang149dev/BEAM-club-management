@@ -149,7 +149,7 @@ function TaskDrawerLoaded({
   );
 }
 
-function TaskDrawerActiveTabPanel({
+export function TaskDrawerActiveTabPanel({
   activeTab,
   task,
   tabIds,
@@ -169,7 +169,7 @@ function TaskDrawerActiveTabPanel({
   if (activeTab === 'details') {
     return (
       <div id={panelIds.details} role="tabpanel" aria-labelledby={tabIds.details} className="ui-drawer-body task-drawer-tabpanel">
-        <TaskDrawerLoaded key={`${task.id}-v${task.version}`} task={task} onReload={onReload} onClose={onClose} onOpenComments={onOpenComments} />
+        <TaskDrawerLoaded key={task.id} task={task} onReload={onReload} onClose={onClose} onOpenComments={onOpenComments} />
       </div>
     );
   }

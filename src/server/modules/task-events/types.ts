@@ -53,7 +53,9 @@ export interface RevertColumnLookup {
 export interface TaskUpdatedChangesPayload {
   readonly title?: { readonly from: string; readonly to: string };
   readonly description?: { readonly from: string | null; readonly to: string | null };
+  readonly start_at?: { readonly from: string | null; readonly to: string | null };
   readonly due_at?: { readonly from: string | null; readonly to: string | null };
+  readonly is_completed?: { readonly from: boolean; readonly to: boolean };
   readonly priority?: { readonly from: TaskPriority; readonly to: TaskPriority };
 }
 
@@ -79,7 +81,10 @@ export interface RevertResolvedTargets {
 export interface RevertTaskPatch {
   readonly title?: string;
   readonly description?: string | null;
+  readonly startAt?: Date | null;
   readonly dueAt?: Date | null;
+  readonly isCompleted?: boolean;
+  readonly completedAt?: Date | null;
   readonly priority?: TaskPriority;
   readonly columnId?: string | null;
   readonly position?: string;

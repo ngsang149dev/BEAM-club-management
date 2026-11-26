@@ -68,6 +68,43 @@ export interface DepartmentAssignmentContextRecord {
   readonly directAssignees?: readonly DirectAssigneeRecipientRecord[];
 }
 
+export interface LeadRecipientCandidateRecord {
+  readonly userId: string;
+  readonly email: string;
+  readonly fullName: string;
+  readonly locale: 'vi' | 'en';
+  readonly isAdmin: boolean;
+  readonly memberDepartmentIds: readonly string[];
+  readonly leadDepartmentIds: readonly string[];
+  readonly isCreator: boolean;
+}
+
+export interface TaskActivityNotificationContextRecord {
+  readonly task: {
+    readonly id: string;
+    readonly title: string;
+    readonly isHidden: boolean;
+    readonly createdBy: string;
+    readonly assigneeIds: readonly string[];
+    readonly assignedDepartmentIds: readonly string[];
+  };
+  readonly board: {
+    readonly id: string;
+    readonly name: string;
+  };
+  readonly actor: {
+    readonly id: string;
+    readonly fullName: string;
+  };
+  readonly assignedDepartments: readonly NotificationDepartmentSummaryRecord[];
+  readonly deliverable?: {
+    readonly id: string;
+    readonly title: string;
+    readonly url: string;
+  } | null;
+  readonly candidates: readonly LeadRecipientCandidateRecord[];
+}
+
 export interface CreateNotificationRowInput {
   readonly userId: string;
   readonly type: NotificationType;
@@ -98,9 +135,30 @@ export interface NotifyDepartmentAssignmentInput {
   readonly now: Date;
 }
 
+export interface NotifyTaskAcceptedInput {
+  readonly taskId: string;
+  readonly boardId: string;
+  readonly actorId: string;
+  readonly isHiddenTask: boolean;
+  readonly now: Date;
+}
+
+export interface NotifyDeliverableSubmittedInput {
+  readonly taskId: string;
+  readonly boardId: string;
+  readonly actorId: string;
+  readonly deliverableId: string;
+  readonly isHiddenTask: boolean;
+  readonly now: Date;
+}
+
 export interface NotificationsDispatcher {
   notifyDepartmentAssignment(
     input: NotifyDepartmentAssignmentInput,
+  ): Promise<void>;
+  notifyTaskAccepted(input: NotifyTaskAcceptedInput): Promise<void>;
+  notifyDeliverableSubmitted(
+    input: NotifyDeliverableSubmittedInput,
   ): Promise<void>;
 }
 
@@ -112,6 +170,12 @@ export interface NotificationsRepository {
     readonly departmentIds: readonly string[];
     readonly assigneeIds?: readonly string[];
   }): Promise<DepartmentAssignmentContextRecord | null>;
+  loadTaskActivityContext(input: {
+    readonly taskId: string;
+    readonly boardId: string;
+    readonly actorId: string;
+    readonly deliverableId?: string;
+  }): Promise<TaskActivityNotificationContextRecord | null>;
   insertNotifications(
     rows: readonly CreateNotificationRowInput[],
     tx?: TransactionContext,

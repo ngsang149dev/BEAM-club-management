@@ -1290,7 +1290,7 @@ export interface paths {
         put?: never;
         /**
          * Create a department
-         * @description Requires `department.manage` (or admin). Writes `audit_logs`.
+         * @description Requires `department.manage` (or admin). Optional `leadUserId` must reference an active, non-purged member (`400 INVALID_DEPARTMENT_LEAD`). Writes `audit_logs`.
          */
         post: {
             parameters: {
@@ -1371,8 +1371,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename a department
-         * @description Requires `department.manage` (or admin). Writes `audit_logs`.
+         * Update department name and/or lead
+         * @description Requires `department.manage` (or admin). Optional `leadUserId` sets (`uuid`) or clears (`null`) the department lead (`400 INVALID_DEPARTMENT_LEAD` if target profile is missing or inactive); omitting `leadUserId` preserves the existing lead. Writes `audit_logs`.
          */
         patch: {
             parameters: {
@@ -2059,13 +2059,19 @@ export interface paths {
                     assigneeId?: string;
                     departmentId?: string;
                     priority?: number;
-                    /** @description `overdue` excludes tasks in the board's final (`Done`) column. */
+                    /** @description `overdue` excludes tasks completed (`isCompleted=true`) or in the board's final (`Done`) column. */
                     dueStatus?: "overdue" | "upcoming" | "no_due";
+                    /** @description Calendar deadline tier evaluated in `Asia/Ho_Chi_Minh` (`CR-09`). `done` = completed or final Done column; `overdue` < today; `urgent` <= 1 day; `soon` = 2-3 days; `safe` > 3 days. */
+                    deadlineStatus?: "overdue" | "urgent" | "soon" | "safe" | "done";
+                    /** @description Lower bound of calendar window overlap filter (ISO 8601). */
+                    from?: string;
+                    /** @description Upper bound of calendar window overlap filter (ISO 8601). */
+                    to?: string;
                     q?: string;
                     sortBy?: "position" | "priority" | "dueAt" | "createdAt";
                     sortOrder?: "asc" | "desc";
                     cursor?: components["parameters"]["CursorParam"];
-                    limit?: components["parameters"]["LimitParam"];
+                    limit?: number;
                 };
                 header?: never;
                 path?: never;
@@ -2090,6 +2096,7 @@ export interface paths {
         /**
          * Create a new task
          * @description Requires `task.create` (or admin). Supplying non-empty `assigneeIds` or `departmentIds` also requires `task.assign` (or admin).
+         *     Omitting both `boardId` and `columnId` attaches the task to an auto-provisioned default `'BEAM Workspace'` board (`CR-09`); supplying only one returns `400`. Validates `startAt <= dueAt`.
          *     Creates the task and records a `task.created` event in `task_events` inside the same transaction, returning `eventId`.
          *     Post-commit, dispatches notifications to active members of newly assigned departments (`task.department_assigned`) and newly assigned individual members (`task.assigned`), deduplicated per user (excluding `actorId`), controlled independently by `notifyInApp` and `notifyEmail` (inheriting `notifyDepartmentMembers`, default `true`), with `WQ-27` hidden-task title redaction.
          */
@@ -2200,10 +2207,10 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Update task fields (title, description, dueAt, priority)
+         * Update task fields (title, description, startAt, dueAt, isCompleted, priority)
          * @description Requires `task.update_any`, OR `task.update_assigned` when caller is assigned to the task, OR admin.
          *     Enforces `taskVisibilityPolicy` first: hidden tasks return `404` to non-viewers even if caller holds `task.update_any`.
-         *     Uses optimistic locking via `version` (`409` if stale). Writes `task.updated` to `task_events` when actual field changes occur and returns `eventId`.
+         *     Validates effective `startAt <= dueAt` (`400 INVALID_DATE_RANGE`). Uses optimistic locking via `version` (`409` if stale). Writes `task.updated` to `task_events` when actual field changes occur and returns `eventId`.
          */
         patch: {
             parameters: {
@@ -2395,6 +2402,183 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tasks/{id}/acceptance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Toggle assignee task acceptance ("Đã nhận task")
+         * @description Enforces `taskVisibilityPolicy` first (`404` if hidden and caller cannot view).
+         *     Caller MUST be assigned to the task directly or via an assigned department (`403` otherwise, including unassigned admins).
+         *     Upserts `(task_id, actor.id)` in `task_assignees` with `accepted_at` and records `task.accepted` in `task_events` (non-revertable, IDs only).
+         *     On `false -> true`, dispatches `task.accepted` (in-app + email) to active Department Leads of assigned departments and the task creator (excluding `actor.id`, honoring `canViewTask` & `WQ-27`).
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateTaskAcceptanceRequest"];
+                };
+            };
+            responses: {
+                /** @description Task acceptance updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskMutationResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{id}/deliverables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List task deliverable links
+         * @description Requires active viewer via `taskVisibilityPolicy` (`404` if hidden & non-viewer).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deliverable links ordered newest first */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskDeliverablesResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Submit a product link deliverable to a task
+         * @description Enforces `taskVisibilityPolicy` (`404` if hidden & non-viewer). Requires caller to be assigned (directly or via department) or hold task edit rights (`403` otherwise).
+         *     Validates safe `http:`/`https:` URL (`8..2048` chars), enforces max `30` deliverables per task (`409 DELIVERABLE_LIMIT_REACHED`), records `task.deliverable_added` (ID only), and dispatches `task.deliverable_submitted` (in-app + email) to active Department Leads and the task creator (excluding `actor.id`, honoring `canViewTask` & `WQ-27`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateTaskDeliverableRequest"];
+                };
+            };
+            responses: {
+                /** @description Deliverable added */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskDeliverableMutationResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{id}/deliverables/{deliverableId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a task deliverable link
+         * @description Enforces `taskVisibilityPolicy` (`404` if hidden & non-viewer). Allowed for the original submitter, `task.update_any`, or admin (`403` otherwise). Records `task.deliverable_removed`.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["ResourceIdParam"];
+                    deliverableId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deliverable removed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeleteTaskDeliverableResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tasks/{id}/events": {
         parameters: {
             query?: never;
@@ -2456,7 +2640,7 @@ export interface paths {
         /**
          * Revert a task event (undo)
          * @description Requires permission matching the original operation (`403` otherwise, AC-19) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
-         *     Non-revertable events (`task.created`, `comment.added`, `comment.deleted`) return `400`.
+         *     Non-revertable events (`task.created`, `task.accepted`, `task.deliverable_added`, `task.deliverable_removed`, `comment.added`, `comment.deleted`) return `400`.
          *     Checks whether current task values still match the event's `to` values; if modified since, returns `409` with `details.conflictingFields` unless `force=true` (AC-18).
          *     Appends a new `task_events` row with `reverts_event_id` and `forced` (AC-17, AC-22).
          */
@@ -3464,6 +3648,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+            lead: components["schemas"]["MemberPublicSummary"] | null;
             memberCount: number;
             boardCount: number;
             /** Format: date-time */
@@ -3479,6 +3664,11 @@ export interface components {
         };
         DepartmentUpsertRequest: {
             name: string;
+            /**
+             * Format: uuid
+             * @description Optional active member UUID for Department Lead (`CR-09`). Omit on `PATCH` to preserve existing lead; pass `null` to clear.
+             */
+            leadUserId?: string | null;
         };
         /** @description Public member projection — NEVER includes `studentId` or `email`. */
         MemberPublicSummary: {
@@ -3753,6 +3943,29 @@ export interface components {
         ReorderColumnsRequest: {
             columnIds: string[];
         };
+        /** @description Public task assignee projection including `acceptedAt` timestamp (`CR-09`) — NEVER includes `studentId` or `email`. */
+        TaskAssigneeDto: {
+            /** Format: uuid */
+            id: string;
+            fullName: string;
+            isActive: boolean;
+            /** Format: date-time */
+            leftAt: string | null;
+            departments: components["schemas"]["DepartmentSummary"][];
+            avatarUrl?: string | null;
+            /** Format: date-time */
+            acceptedAt: string | null;
+        };
+        TaskDeliverableDto: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: uri */
+            url: string;
+            submittedBy: components["schemas"]["MemberPublicSummary"];
+            /** Format: date-time */
+            createdAt: string;
+        };
         TaskDto: {
             /** Format: uuid */
             id: string;
@@ -3766,8 +3979,16 @@ export interface components {
             title: string;
             description: string | null;
             /** Format: date-time */
+            startAt: string | null;
+            /** Format: date-time */
             dueAt: string | null;
-            /** @description 1 = Low, 2 = Medium, 3 = High, 4 = Urgent */
+            isCompleted: boolean;
+            /** Format: date-time */
+            completedAt: string | null;
+            /**
+             * @deprecated
+             * @description Legacy priority (`1..4`, deprecated under CR-09/CR-10 in favor of deadline status).
+             */
             priority: number;
             /** @description Continuous ordering position within column (`numeric`) */
             position: number | string;
@@ -3775,8 +3996,10 @@ export interface components {
             version: number;
             /** Format: date-time */
             deletedAt: string | null;
-            assignees: components["schemas"]["MemberPublicSummary"][];
+            assignees: components["schemas"]["TaskAssigneeDto"][];
             assignedDepartments: components["schemas"]["DepartmentSummary"][];
+            deliverables: components["schemas"]["TaskDeliverableDto"][];
+            deliverableCount: number;
             creator: components["schemas"]["MemberPublicSummary"];
             commentCount: number;
             /** Format: date-time */
@@ -3800,15 +4023,26 @@ export interface components {
             eventId: string | null;
         };
         CreateTaskRequest: {
-            /** Format: uuid */
-            boardId: string;
-            /** Format: uuid */
-            columnId: string;
+            /**
+             * Format: uuid
+             * @description Optional when creating workspace/calendar tasks (`CR-09`); must be paired with `columnId` if provided.
+             */
+            boardId?: string;
+            /**
+             * Format: uuid
+             * @description Optional when creating workspace/calendar tasks (`CR-09`); must be paired with `boardId` if provided.
+             */
+            columnId?: string;
             title: string;
             description?: string | null;
             /** Format: date-time */
+            startAt?: string | null;
+            /** Format: date-time */
             dueAt?: string | null;
-            /** @default 2 */
+            /**
+             * @deprecated
+             * @default 2
+             */
             priority: number;
             /** @default [] */
             assigneeIds: string[];
@@ -3827,9 +4061,38 @@ export interface components {
             title?: string;
             description?: string | null;
             /** Format: date-time */
+            startAt?: string | null;
+            /** Format: date-time */
             dueAt?: string | null;
+            isCompleted?: boolean;
+            /** @deprecated */
             priority?: number;
             version: number;
+        };
+        UpdateTaskAcceptanceRequest: {
+            accepted: boolean;
+        };
+        CreateTaskDeliverableRequest: {
+            title: string;
+            /** Format: uri */
+            url: string;
+        };
+        TaskDeliverablesResponse: {
+            items: components["schemas"]["TaskDeliverableDto"][];
+        };
+        TaskDeliverableMutationResponse: {
+            deliverable: components["schemas"]["TaskDeliverableDto"];
+            task: components["schemas"]["TaskDto"];
+            /** Format: uuid */
+            eventId: string | null;
+        };
+        DeleteTaskDeliverableResponse: {
+            deleted: boolean;
+            /** Format: uuid */
+            id: string;
+            task: components["schemas"]["TaskDto"];
+            /** Format: uuid */
+            eventId: string | null;
         };
         MoveTaskRequest: {
             /** Format: uuid */
@@ -3864,7 +4127,10 @@ export interface components {
             /** Format: uuid */
             boardId: string;
             actor: components["schemas"]["MemberPublicSummary"];
-            /** @example task.updated */
+            /**
+             * @description Task event type (`task.created`, `task.updated`, `task.moved`, `task.assignees_changed`, `task.hidden_changed`, `task.deleted`, `task.restored`, `task.accepted`, `task.deliverable_added`, `task.deliverable_removed`, `comment.added`, `comment.deleted`).
+             * @example task.updated
+             */
             type: string;
             /** @description Stores IDs and before/after domain field values ONLY — never names, `studentId`, or `email`. */
             changes: {
@@ -4010,7 +4276,7 @@ export interface components {
             purgedMembers: number;
         };
         /** @enum {string} */
-        NotificationType: "task.department_assigned" | "task.assigned";
+        NotificationType: "task.department_assigned" | "task.assigned" | "task.accepted" | "task.deliverable_submitted";
         NotificationDto: {
             /** Format: uuid */
             id: string;
@@ -4023,7 +4289,7 @@ export interface components {
             departmentId: string | null;
             departmentName: string | null;
             boardName: string;
-            /** @description Task title when public or visible; strictly `null` when `isHiddenTask=true` (`WQ-27`). */
+            /** @description Task title when public or visible; strictly `null` when `isHiddenTask=true` (`WQ-27`), and deliverable URLs/titles are never exposed on hidden-task notifications. */
             taskTitle: string | null;
             isHiddenTask: boolean;
             actor: components["schemas"]["MemberPublicSummary"];

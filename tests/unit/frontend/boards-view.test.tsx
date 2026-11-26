@@ -89,7 +89,7 @@ describe('BoardsListView (S03)', () => {
     departmentsHookMock.useDepartmentsQuery.mockReturnValue({
       isPending: false,
       isError: false,
-      data: { items: [{ id: 'dept-1', name: 'Sự kiện', memberCount: 5, boardCount: 1, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }] },
+      data: { items: [{ id: 'dept-1', name: 'Sự kiện', lead: null, memberCount: 5, boardCount: 1, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }] },
       error: null,
     });
     boardsHooksMock.useBoardsInfiniteQuery.mockReturnValue({

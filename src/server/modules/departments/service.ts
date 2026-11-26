@@ -1,10 +1,10 @@
-import { notFound, unauthorized } from '@/lib/errors';
+import { badRequest, notFound, unauthorized } from '@/lib/errors';
 import type { DepartmentUpsertRequestInput } from '@/lib/members';
 import type { AuditLogWriter } from '@/server/modules/audit';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Logger } from '@/server/shared/logger';
-import type { TransactionRunner } from '@/server/shared/transaction';
+import type { TransactionContext, TransactionRunner } from '@/server/shared/transaction';
 import {
   type DeleteDepartmentResponseDto,
   type DepartmentListResponseDto,
@@ -43,17 +43,20 @@ export class DepartmentsService {
     const now = this.deps.clock.now();
 
     const created = await this.deps.transactionRunner.runInTransaction(async (tx) => {
+      await this.assertValidLeadIfPresent(input.leadUserId, tx);
       const department = await this.deps.departmentsRepo.create(
-        { name: input.name, now },
+        { name: input.name, leadUserId: input.leadUserId, now },
         tx,
       );
+      const detail: Record<string, unknown> = {
+        departmentId: department.id,
+        name: department.name,
+      };
+      if (input.leadUserId) {
+        detail.leadUserId = input.leadUserId;
+      }
       await this.deps.auditWriter.record(
-        {
-          actorId: actor.id,
-          action: 'department.created',
-          detail: { departmentId: department.id, name: department.name },
-          createdAt: now,
-        },
+        { actorId: actor.id, action: 'department.created', detail, createdAt: now },
         tx,
       );
       return department;
@@ -75,20 +78,25 @@ export class DepartmentsService {
     const now = this.deps.clock.now();
 
     const updated = await this.deps.transactionRunner.runInTransaction(async (tx) => {
+      const existing = await this.deps.departmentsRepo.lockAndFindByIdWithCounts(id, tx);
+      if (!existing) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+      await this.assertValidLeadIfPresent(input.leadUserId, tx);
       const department = await this.deps.departmentsRepo.rename(
-        { id, name: input.name, now },
+        { id, name: input.name, leadUserId: input.leadUserId, now },
         tx,
       );
-      if (!department) {
-        throw notFound('errors.notFound', {}, 'NOT_FOUND');
+      if (!department) throw notFound('errors.notFound', {}, 'NOT_FOUND');
+      const previousLeadId = existing.lead?.id ?? null;
+      const nextLeadId = department.lead?.id ?? null;
+      const detail: Record<string, unknown> = {
+        departmentId: department.id,
+        name: department.name,
+      };
+      if (input.leadUserId !== undefined && nextLeadId !== previousLeadId) {
+        detail.leadUserId = nextLeadId;
       }
       await this.deps.auditWriter.record(
-        {
-          actorId: actor.id,
-          action: 'department.updated',
-          detail: { departmentId: department.id, name: department.name },
-          createdAt: now,
-        },
+        { actorId: actor.id, action: 'department.updated', detail, createdAt: now },
         tx,
       );
       return department;
@@ -137,5 +145,19 @@ export class DepartmentsService {
       departmentId: id,
     });
     return toDeleteDepartmentResponseDto(id);
+  }
+
+  private async assertValidLeadIfPresent(
+    leadUserId: string | null | undefined,
+    tx: TransactionContext,
+  ): Promise<void> {
+    if (typeof leadUserId !== 'string') return;
+    const isActiveMember = await this.deps.departmentsRepo.isActiveLeadCandidate(
+      leadUserId,
+      tx,
+    );
+    if (!isActiveMember) {
+      throw badRequest('errors.invalidDepartmentLead', {}, 'INVALID_DEPARTMENT_LEAD');
+    }
   }
 }

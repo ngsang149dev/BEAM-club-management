@@ -5,9 +5,60 @@ import { useEffect, useId } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
-import { departmentUpsertRequestSchema, type DepartmentUpsertRequestInput } from '@/lib/members';
+import { z } from 'zod';
+import { departmentNameSchema, uuidSchema } from '@/lib/members';
 import { describeDepartmentError } from '../error-mapping';
-import type { DepartmentDto } from '../hooks/useDepartments';
+import type {
+  DepartmentDto,
+  DepartmentLeadCandidate,
+  DepartmentUpsertRequest,
+} from '../hooks/useDepartments';
+
+const departmentUpsertFormSchema = z.object({
+  name: departmentNameSchema,
+  leadUserId: z.union([z.literal(''), uuidSchema]),
+});
+
+export type DepartmentUpsertFormValues = z.infer<typeof departmentUpsertFormSchema>;
+
+export interface LeadSelectOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+export function buildLeadSelectOptions(
+  candidates: readonly DepartmentLeadCandidate[],
+  currentLead: DepartmentDto['lead'] | undefined,
+  leftBadgeText: string
+): LeadSelectOption[] {
+  const options: LeadSelectOption[] = candidates.map((member) => ({
+    id: member.id,
+    label: member.isActive ? member.fullName : `${member.fullName} ${leftBadgeText}`,
+  }));
+  if (currentLead && !candidates.some((member) => member.id === currentLead.id)) {
+    options.unshift({
+      id: currentLead.id,
+      label: currentLead.isActive
+        ? currentLead.fullName
+        : `${currentLead.fullName} ${leftBadgeText}`,
+    });
+  }
+  return options;
+}
+
+export function buildDepartmentUpsertPayload(
+  values: DepartmentUpsertFormValues,
+  includeLeadUserId: boolean
+): DepartmentUpsertRequest {
+  const name = values.name.trim();
+  if (!includeLeadUserId) {
+    return { name };
+  }
+  const rawLead = values.leadUserId.trim();
+  const normalizedLead = rawLead === '' ? null : rawLead;
+  uuidSchema.nullable().parse(normalizedLead);
+  return { name, leadUserId: normalizedLead };
+}
 
 export function useEscapeClose(isOpen: boolean, onClose: () => void) {
   useEffect(() => {
@@ -62,15 +113,65 @@ function DepartmentModalFrame({
 export interface DepartmentUpsertModalProps {
   mode: 'create' | 'rename';
   department?: DepartmentDto;
+  leadCandidates?: readonly DepartmentLeadCandidate[];
+  showLeadSelector?: boolean;
   isSubmitting: boolean;
   error: unknown;
   onClose: () => void;
-  onSubmit: (values: DepartmentUpsertRequestInput) => void;
+  onSubmit: (values: DepartmentUpsertRequest) => void;
+}
+
+function DepartmentLeadSelectField({
+  options,
+  defaultValue,
+  registration,
+}: {
+  options: readonly LeadSelectOption[];
+  defaultValue: string;
+  registration: ReturnType<ReturnType<typeof useForm<DepartmentUpsertFormValues>>['register']>;
+}) {
+  const t = useTranslations('departmentsAdmin');
+  const selectId = useId();
+
+  return (
+    <div className="ui-field">
+      <label className="ui-label" htmlFor={selectId}>{t('leadLabel')}</label>
+      <select id={selectId} className="ui-select" defaultValue={defaultValue} {...registration}>
+        <option value="">{t('leadUnassigned')}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function DepartmentErrorAlert({ error }: { error: unknown }) {
+  const tErr = useTranslations('errors');
+  const message = getDepartmentErrorText(error, tErr);
+  if (!message) return null;
+
+  return (
+    <div className="ui-banner is-danger" role="alert">
+      <div className="ui-banner-body">
+        <span className="ui-banner-text">{message}</span>
+      </div>
+    </div>
+  );
+}
+
+function getUpsertFormDefaults(department?: DepartmentDto): DepartmentUpsertFormValues {
+  return {
+    name: department?.name ?? '',
+    leadUserId: department?.lead?.id ?? '',
+  };
 }
 
 export function DepartmentUpsertModal({
   mode,
   department,
+  leadCandidates = [],
+  showLeadSelector = false,
   isSubmitting,
   error,
   onClose,
@@ -78,29 +179,42 @@ export function DepartmentUpsertModal({
 }: DepartmentUpsertModalProps) {
   const t = useTranslations('departmentsAdmin');
   const tCommon = useTranslations('common');
-  const tErr = useTranslations('errors');
+  const tMember = useTranslations('member');
   const inputId = useId();
-  const { register, handleSubmit, formState: { errors } } = useForm<DepartmentUpsertRequestInput>({
-    resolver: zodResolver(departmentUpsertRequestSchema),
-    defaultValues: { name: department?.name ?? '' },
+  const defaults = getUpsertFormDefaults(department);
+  const { register, handleSubmit, formState: { errors } } = useForm<DepartmentUpsertFormValues>({
+    resolver: zodResolver(departmentUpsertFormSchema),
+    defaultValues: defaults,
   });
 
-  const serverError = getDepartmentErrorText(error, tErr);
-  const titleText = mode === 'create' ? t('createModalTitle') : t('renameModalTitle');
-  const submitText = mode === 'create' ? t('createSubmit') : t('renameSubmit');
+  const isCreate = mode === 'create';
+  const leadOptions = buildLeadSelectOptions(leadCandidates, department?.lead, tMember('leftBadge'));
+  const submitLabel = isSubmitting ? t('saving') : t(isCreate ? 'createSubmit' : 'renameSubmit');
 
   return (
-    <DepartmentModalFrame title={titleText} onClose={onClose}>
-      <form className="ui-modal-body" method="post" onSubmit={handleSubmit(onSubmit)} noValidate>
-        {serverError ? <div className="ui-banner is-danger" role="alert"><div className="ui-banner-body"><span className="ui-banner-text">{serverError}</span></div></div> : null}
+    <DepartmentModalFrame title={t(isCreate ? 'createModalTitle' : 'renameModalTitle')} onClose={onClose}>
+      <form
+        className="ui-modal-body"
+        method="post"
+        onSubmit={handleSubmit((values) => onSubmit(buildDepartmentUpsertPayload(values, showLeadSelector)))}
+        noValidate
+      >
+        <DepartmentErrorAlert error={error} />
         <div className="ui-field">
           <label className="ui-label" htmlFor={inputId}>{t('nameLabel')}</label>
           <input id={inputId} className="ui-input" type="text" placeholder={t('namePlaceholder')} aria-invalid={Boolean(errors.name)} {...register('name')} />
           {errors.name ? <p className="ui-field-error" role="alert">{t('validationNameRequired')}</p> : null}
         </div>
+        {showLeadSelector ? (
+          <DepartmentLeadSelectField
+            options={leadOptions}
+            defaultValue={defaults.leadUserId}
+            registration={register('leadUserId')}
+          />
+        ) : null}
         <div className="ui-modal-actions">
           <button type="button" className="ui-btn ghost" onClick={onClose} disabled={isSubmitting}>{tCommon('cancel')}</button>
-          <button type="submit" className="ui-btn primary" disabled={isSubmitting}>{isSubmitting ? t('saving') : submitText}</button>
+          <button type="submit" className="ui-btn primary" disabled={isSubmitting}>{submitLabel}</button>
         </div>
       </form>
     </DepartmentModalFrame>

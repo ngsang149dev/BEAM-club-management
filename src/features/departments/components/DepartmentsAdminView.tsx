@@ -6,14 +6,15 @@ import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
 import { isApiClientError } from '@/features/shared/api/client';
 import { usePermissions } from '@/features/shared/permissions/can';
-import type { DepartmentUpsertRequestInput } from '@/lib/members';
 import { describeDepartmentError } from '../error-mapping';
 import {
   useCreateDepartmentMutation,
   useDeleteDepartmentMutation,
+  useDepartmentLeadCandidatesQuery,
   useDepartmentsQuery,
   useUpdateDepartmentMutation,
   type DepartmentDto,
+  type DepartmentUpsertRequest,
 } from '../hooks/useDepartments';
 import { DepartmentsLoadedList } from './DepartmentsList';
 import { DepartmentDeleteModal, DepartmentUpsertModal } from './DepartmentModals';
@@ -24,13 +25,14 @@ type ModalState =
   | { kind: 'rename'; department: DepartmentDto }
   | { kind: 'delete'; department: DepartmentDto };
 
-function useDepartmentsAdminState(canManage: boolean) {
+function useDepartmentsAdminState(canManage: boolean, canViewMembers: boolean) {
   const t = useTranslations('departmentsAdmin');
   const [searchQuery, setSearchQuery] = useState('');
   const [modalState, setModalState] = useState<ModalState>({ kind: 'closed' });
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   const departmentsQuery = useDepartmentsQuery(canManage);
+  const leadCandidatesQuery = useDepartmentLeadCandidatesQuery(canManage && canViewMembers);
   const createMutation = useCreateDepartmentMutation();
   const updateMutation = useUpdateDepartmentMutation();
   const deleteMutation = useDeleteDepartmentMutation();
@@ -42,7 +44,7 @@ function useDepartmentsAdminState(canManage: boolean) {
     setModalState({ kind: 'closed' });
   };
 
-  const handleUpsertSubmit = (values: DepartmentUpsertRequestInput) => {
+  const handleUpsertSubmit = (values: DepartmentUpsertRequest) => {
     if (modalState.kind === 'create') {
       createMutation.mutate(values, {
         onSuccess: (result) => {
@@ -76,8 +78,9 @@ function useDepartmentsAdminState(canManage: boolean) {
   };
 
   return {
+    canViewMembers,
     searchQuery, setSearchQuery, modalState, setModalState, feedbackMessage,
-    departmentsQuery, createMutation, updateMutation, deleteMutation,
+    departmentsQuery, leadCandidatesQuery, createMutation, updateMutation, deleteMutation,
     closeModal, handleUpsertSubmit, handleDeleteConfirm,
   };
 }
@@ -91,6 +94,8 @@ function DepartmentsModalHost({ state }: { state: ReturnType<typeof useDepartmen
         key={modalState.kind === 'rename' ? modalState.department.id : 'create'}
         mode={modalState.kind}
         department={modalState.kind === 'rename' ? modalState.department : undefined}
+        leadCandidates={state.leadCandidatesQuery.data?.items ?? []}
+        showLeadSelector={state.canViewMembers}
         isSubmitting={createMutation.isPending || updateMutation.isPending}
         error={modalState.kind === 'create' ? createMutation.error : updateMutation.error}
         onClose={closeModal}
@@ -191,9 +196,10 @@ function DepartmentsBody({ state }: { state: ReturnType<typeof useDepartmentsAdm
 export function DepartmentsAdminView() {
   const { can } = usePermissions();
   const canManage = can('department.manage');
+  const canViewMembers = can('member.view');
   const tCommon = useTranslations('common');
   const tErr = useTranslations('errors');
-  const state = useDepartmentsAdminState(canManage);
+  const state = useDepartmentsAdminState(canManage, canViewMembers);
 
   if (!canManage) {
     return (

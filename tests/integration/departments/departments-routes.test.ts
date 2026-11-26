@@ -362,19 +362,81 @@ describe('Departments Route Handlers integration', () => {
       );
 
       const renamedName = `Dept Renamed ${suffix}`;
+      // Invalid / missing leadUserId -> 400 INVALID_DEPARTMENT_LEAD
+      const badLeadRes = await departmentPatch(
+        new Request(`http://localhost:3000/api/v1/departments/${deptId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', cookie: mgrCookie },
+          body: JSON.stringify({ name: renamedName, leadUserId: randomUUID() }),
+        }),
+        { params: Promise.resolve({ id: deptId }) },
+      );
+      expect(badLeadRes.status).toBe(400);
+      expect(((await badLeadRes.json()) as { error: { code: string } }).error.code).toBe(
+        'INVALID_DEPARTMENT_LEAD',
+      );
+
+      // Set active lead -> returns lead summary without PII
+      const setLeadRes = await departmentPatch(
+        new Request(`http://localhost:3000/api/v1/departments/${deptId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', cookie: mgrCookie },
+          body: JSON.stringify({ name: renamedName, leadUserId: basicUserId }),
+        }),
+        { params: Promise.resolve({ id: deptId }) },
+      );
+      expect(setLeadRes.status).toBe(200);
+      const setLeadJson = (await setLeadRes.json()) as {
+        department: { name: string; memberCount: number; lead: Record<string, unknown> | null };
+      };
+      expect(setLeadJson.department).toMatchObject({
+        name: renamedName,
+        memberCount: 2,
+        lead: { id: basicUserId, fullName: `Dept Basic ${suffix}`, isActive: true },
+      });
+      expect(setLeadJson.department.lead).not.toHaveProperty('studentId');
+      expect(setLeadJson.department.lead).not.toHaveProperty('email');
+      expect(JSON.stringify(setLeadJson)).not.toContain(basicSid);
+
+      // GET /departments reflects hydrated lead without PII
+      const listWithLeadRes = await departmentsGet(
+        new Request('http://localhost:3000/api/v1/departments', {
+          headers: { cookie: basicCookie },
+        }),
+      );
+      expect(listWithLeadRes.status).toBe(200);
+      const listWithLeadBody = (await listWithLeadRes.json()) as {
+        items: Array<{ id: string; lead: { id: string } | null }>;
+      };
+      expect(listWithLeadBody.items.find((d) => d.id === deptId)?.lead?.id).toBe(basicUserId);
+
+      // Omitting leadUserId preserves lead; passing null clears lead
+      const preserveLeadRes = await departmentPatch(
+        new Request(`http://localhost:3000/api/v1/departments/${deptId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', cookie: mgrCookie },
+          body: JSON.stringify({ name: `${renamedName} B` }),
+        }),
+        { params: Promise.resolve({ id: deptId }) },
+      );
+      expect(preserveLeadRes.status).toBe(200);
+      expect(
+        ((await preserveLeadRes.json()) as { department: { lead: { id: string } | null } }).department.lead?.id,
+      ).toBe(basicUserId);
+
       const renameRes = await departmentPatch(
         new Request(`http://localhost:3000/api/v1/departments/${deptId}`, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json', cookie: mgrCookie },
-          body: JSON.stringify({ name: renamedName }),
+          body: JSON.stringify({ name: renamedName, leadUserId: null }),
         }),
         { params: Promise.resolve({ id: deptId }) },
       );
       expect(renameRes.status).toBe(200);
       expect(
-        ((await renameRes.json()) as { department: { name: string; memberCount: number } })
+        ((await renameRes.json()) as { department: { name: string; memberCount: number; lead: unknown } })
           .department,
-      ).toMatchObject({ name: renamedName, memberCount: 2 });
+      ).toMatchObject({ name: renamedName, memberCount: 2, lead: null });
 
       // Delete while non-empty -> 409 DEPARTMENT_IN_USE (WQ-10)
       const deleteBusyRes = await departmentDelete(
@@ -414,7 +476,12 @@ describe('Departments Route Handlers integration', () => {
         'department.created',
         'department.deleted',
         'department.updated',
+        'department.updated',
+        'department.updated',
       ]);
+      const auditSerialized = JSON.stringify(writtenAudits);
+      expect(auditSerialized).not.toContain(basicSid);
+      expect(auditSerialized).not.toContain('@eiu.edu.vn');
       expect(logs.join('\n')).not.toContain(mgrSid);
     });
   });

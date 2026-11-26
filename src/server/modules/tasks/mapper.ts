@@ -1,6 +1,11 @@
 import { toMemberAvatarUrl } from '@/lib/media';
 import type { TaskPriority } from '@/lib/tasks';
-import type { TaskMemberSummaryRecord, TaskRecord } from './types';
+import type {
+  TaskAssigneeRecord,
+  TaskDeliverableRecord,
+  TaskMemberSummaryRecord,
+  TaskRecord,
+} from './types';
 
 export interface TaskDepartmentSummaryDto {
   readonly id: string;
@@ -16,20 +21,37 @@ export interface TaskMemberPublicSummaryDto {
   readonly avatarUrl: string | null;
 }
 
+export interface TaskAssigneePublicSummaryDto extends TaskMemberPublicSummaryDto {
+  readonly acceptedAt: string | null;
+}
+
+export interface TaskDeliverableDto {
+  readonly id: string;
+  readonly title: string;
+  readonly url: string;
+  readonly submittedBy: TaskMemberPublicSummaryDto;
+  readonly createdAt: string;
+}
+
 export interface TaskDto {
   readonly id: string;
   readonly boardId: string;
   readonly columnId: string | null;
   readonly title: string;
   readonly description: string | null;
+  readonly startAt: string | null;
   readonly dueAt: string | null;
+  readonly isCompleted: boolean;
+  readonly completedAt: string | null;
   readonly priority: TaskPriority;
   readonly position: number;
   readonly isHidden: boolean;
   readonly version: number;
   readonly deletedAt: string | null;
-  readonly assignees: TaskMemberPublicSummaryDto[];
+  readonly assignees: TaskAssigneePublicSummaryDto[];
   readonly assignedDepartments: TaskDepartmentSummaryDto[];
+  readonly deliverables: TaskDeliverableDto[];
+  readonly deliverableCount: number;
   readonly creator: TaskMemberPublicSummaryDto;
   readonly commentCount: number;
   readonly createdAt: string;
@@ -55,6 +77,23 @@ export interface TaskMutationResponseDto {
   readonly eventId: string | null;
 }
 
+export interface TaskDeliverablesResponseDto {
+  readonly items: TaskDeliverableDto[];
+}
+
+export interface TaskDeliverableMutationResponseDto {
+  readonly deliverable: TaskDeliverableDto;
+  readonly task: TaskDto;
+  readonly eventId: string | null;
+}
+
+export interface DeleteTaskDeliverableResponseDto {
+  readonly deleted: boolean;
+  readonly id: string;
+  readonly task: TaskDto;
+  readonly eventId: string | null;
+}
+
 export function toTaskMemberPublicSummaryDto(
   record: TaskMemberSummaryRecord,
 ): TaskMemberPublicSummaryDto {
@@ -68,6 +107,27 @@ export function toTaskMemberPublicSummaryDto(
   };
 }
 
+export function toTaskAssigneePublicSummaryDto(
+  record: TaskAssigneeRecord,
+): TaskAssigneePublicSummaryDto {
+  return {
+    ...toTaskMemberPublicSummaryDto(record),
+    acceptedAt: record.acceptedAt ? record.acceptedAt.toISOString() : null,
+  };
+}
+
+export function toTaskDeliverableDto(
+  record: TaskDeliverableRecord,
+): TaskDeliverableDto {
+  return {
+    id: record.id,
+    title: record.title,
+    url: record.url,
+    submittedBy: toTaskMemberPublicSummaryDto(record.submittedBy),
+    createdAt: record.createdAt.toISOString(),
+  };
+}
+
 export function toTaskDto(record: TaskRecord): TaskDto {
   return {
     id: record.id,
@@ -75,17 +135,22 @@ export function toTaskDto(record: TaskRecord): TaskDto {
     columnId: record.columnId,
     title: record.title,
     description: record.description,
+    startAt: record.startAt ? record.startAt.toISOString() : null,
     dueAt: record.dueAt ? record.dueAt.toISOString() : null,
+    isCompleted: record.isCompleted,
+    completedAt: record.completedAt ? record.completedAt.toISOString() : null,
     priority: record.priority,
     position: Number(record.position),
     isHidden: record.isHidden,
     version: record.version,
     deletedAt: record.deletedAt ? record.deletedAt.toISOString() : null,
-    assignees: record.assignees.map(toTaskMemberPublicSummaryDto),
+    assignees: record.assignees.map(toTaskAssigneePublicSummaryDto),
     assignedDepartments: record.assignedDepartments.map((dept) => ({
       id: dept.id,
       name: dept.name,
     })),
+    deliverables: record.deliverables.map(toTaskDeliverableDto),
+    deliverableCount: record.deliverableCount,
     creator: toTaskMemberPublicSummaryDto(record.creator),
     commentCount: record.commentCount,
     createdAt: record.createdAt.toISOString(),
@@ -113,4 +178,35 @@ export function toTaskMutationResponseDto(input: {
   readonly eventId: string | null;
 }): TaskMutationResponseDto {
   return { task: toTaskDto(input.task), eventId: input.eventId };
+}
+
+export function toTaskDeliverablesResponseDto(
+  deliverables: readonly TaskDeliverableRecord[],
+): TaskDeliverablesResponseDto {
+  return { items: deliverables.map(toTaskDeliverableDto) };
+}
+
+export function toTaskDeliverableMutationResponseDto(input: {
+  readonly deliverable: TaskDeliverableRecord;
+  readonly task: TaskRecord;
+  readonly eventId: string | null;
+}): TaskDeliverableMutationResponseDto {
+  return {
+    deliverable: toTaskDeliverableDto(input.deliverable),
+    task: toTaskDto(input.task),
+    eventId: input.eventId,
+  };
+}
+
+export function toDeleteTaskDeliverableResponseDto(input: {
+  readonly id: string;
+  readonly task: TaskRecord;
+  readonly eventId: string | null;
+}): DeleteTaskDeliverableResponseDto {
+  return {
+    deleted: true,
+    id: input.id,
+    task: toTaskDto(input.task),
+    eventId: input.eventId,
+  };
 }

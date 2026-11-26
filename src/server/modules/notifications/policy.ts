@@ -2,12 +2,15 @@ import { z } from 'zod';
 import { badRequest } from '@/lib/errors';
 import { uuidSchema } from '@/lib/members';
 import type { NotificationType } from '@/lib/notifications';
+import { canViewTask, type TaskVisibilitySubject } from '@/server/modules/tasks';
+import type { AuthActor } from '@/server/shared/authorize';
 import type {
   DepartmentRecipientRecord,
   DirectAssigneeRecipientRecord,
   NotificationCursor,
   NotificationDepartmentSummaryRecord,
   NotificationPayloadRecord,
+  TaskActivityNotificationContextRecord,
 } from './types';
 
 export interface DeduplicatedDepartmentRecipient {
@@ -16,6 +19,16 @@ export interface DeduplicatedDepartmentRecipient {
   readonly fullName: string;
   readonly locale: 'vi' | 'en';
   readonly type: NotificationType;
+  readonly representativeDepartmentId: string | null;
+  readonly departmentNames: readonly string[];
+  readonly departmentName: string | null;
+}
+
+export interface DeduplicatedLeadRecipient {
+  readonly userId: string;
+  readonly email: string;
+  readonly fullName: string;
+  readonly locale: 'vi' | 'en';
   readonly representativeDepartmentId: string | null;
   readonly departmentNames: readonly string[];
   readonly departmentName: string | null;
@@ -159,4 +172,56 @@ export function dedupeDepartmentRecipients(params: {
   return Array.from(byUser.values())
     .sort((a, b) => a.userId.localeCompare(b.userId))
     .map((entry) => toDeduplicatedRecipient(entry, orderedDepts));
+}
+
+function buildLeadRecipientEntry(
+  candidate: TaskActivityNotificationContextRecord['candidates'][number],
+  subject: TaskVisibilitySubject,
+  orderedDepts: ReadonlyArray<{ readonly id: string; readonly name: string }>,
+): DeduplicatedLeadRecipient | null {
+  const recipientActor: AuthActor = {
+    id: candidate.userId,
+    isActive: true,
+    isAdmin: candidate.isAdmin,
+    permissions: [],
+    departmentIds: candidate.memberDepartmentIds,
+  };
+  if (!canViewTask(recipientActor, subject)) return null;
+  const matched = orderedDepts.filter((d) => candidate.leadDepartmentIds.includes(d.id));
+  const departmentNames = matched.map((d) => d.name);
+  return {
+    userId: candidate.userId,
+    email: candidate.email,
+    fullName: candidate.fullName,
+    locale: candidate.locale,
+    representativeDepartmentId: matched[0]?.id ?? null,
+    departmentNames,
+    departmentName: departmentNames.length > 0 ? departmentNames.join(', ') : null,
+  };
+}
+
+export function selectLeadAndCreatorRecipients(params: {
+  readonly context: TaskActivityNotificationContextRecord;
+  readonly actorId: string;
+}): DeduplicatedLeadRecipient[] {
+  const { task } = params.context;
+  const subject: TaskVisibilitySubject = {
+    isHidden: task.isHidden,
+    createdBy: task.createdBy,
+    assigneeIds: task.assigneeIds,
+    assignedDepartmentIds: task.assignedDepartmentIds,
+  };
+  const orderedDepts = [...params.context.assignedDepartments].sort(
+    (a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
+  );
+  const seen = new Set<string>();
+  const results: DeduplicatedLeadRecipient[] = [];
+  for (const candidate of params.context.candidates) {
+    if (candidate.userId === params.actorId || seen.has(candidate.userId)) continue;
+    const entry = buildLeadRecipientEntry(candidate, subject, orderedDepts);
+    if (!entry) continue;
+    seen.add(candidate.userId);
+    results.push(entry);
+  }
+  return results.sort((a, b) => a.userId.localeCompare(b.userId));
 }

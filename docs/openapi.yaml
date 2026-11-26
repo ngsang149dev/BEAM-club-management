@@ -878,7 +878,7 @@ paths:
     post:
       tags: [Departments]
       summary: Create a department
-      description: Requires `department.manage` (or admin). Writes `audit_logs`.
+      description: Requires `department.manage` (or admin). Optional `leadUserId` must reference an active, non-purged member (`400 INVALID_DEPARTMENT_LEAD`). Writes `audit_logs`.
       requestBody:
         required: true
         content:
@@ -904,8 +904,8 @@ paths:
   /departments/{id}:
     patch:
       tags: [Departments]
-      summary: Rename a department
-      description: Requires `department.manage` (or admin). Writes `audit_logs`.
+      summary: Update department name and/or lead
+      description: Requires `department.manage` (or admin). Optional `leadUserId` sets (`uuid`) or clears (`null`) the department lead (`400 INVALID_DEPARTMENT_LEAD` if target profile is missing or inactive); omitting `leadUserId` preserves the existing lead. Writes `audit_logs`.
       parameters:
         - $ref: "#/components/parameters/ResourceIdParam"
       requestBody:
@@ -1411,10 +1411,28 @@ paths:
             maximum: 4
         - name: dueStatus
           in: query
-          description: "`overdue` excludes tasks in the board's final (`Done`) column."
+          description: "`overdue` excludes tasks completed (`isCompleted=true`) or in the board's final (`Done`) column."
           schema:
             type: string
             enum: [overdue, upcoming, no_due]
+        - name: deadlineStatus
+          in: query
+          description: Calendar deadline tier evaluated in `Asia/Ho_Chi_Minh` (`CR-09`). `done` = completed or final Done column; `overdue` < today; `urgent` <= 1 day; `soon` = 2-3 days; `safe` > 3 days.
+          schema:
+            type: string
+            enum: [overdue, urgent, soon, safe, done]
+        - name: from
+          in: query
+          description: Lower bound of calendar window overlap filter (ISO 8601).
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Upper bound of calendar window overlap filter (ISO 8601).
+          schema:
+            type: string
+            format: date-time
         - name: q
           in: query
           schema:
@@ -1432,7 +1450,13 @@ paths:
             enum: [asc, desc]
             default: asc
         - $ref: "#/components/parameters/CursorParam"
-        - $ref: "#/components/parameters/LimitParam"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
       responses:
         "200":
           description: Paginated list of matching visible tasks
@@ -1450,6 +1474,7 @@ paths:
       summary: Create a new task
       description: |
         Requires `task.create` (or admin). Supplying non-empty `assigneeIds` or `departmentIds` also requires `task.assign` (or admin).
+        Omitting both `boardId` and `columnId` attaches the task to an auto-provisioned default `'BEAM Workspace'` board (`CR-09`); supplying only one returns `400`. Validates `startAt <= dueAt`.
         Creates the task and records a `task.created` event in `task_events` inside the same transaction, returning `eventId`.
         Post-commit, dispatches notifications to active members of newly assigned departments (`task.department_assigned`) and newly assigned individual members (`task.assigned`), deduplicated per user (excluding `actorId`), controlled independently by `notifyInApp` and `notifyEmail` (inheriting `notifyDepartmentMembers`, default `true`), with `WQ-27` hidden-task title redaction.
       requestBody:
@@ -1499,11 +1524,11 @@ paths:
 
     patch:
       tags: [Tasks]
-      summary: Update task fields (title, description, dueAt, priority)
+      summary: Update task fields (title, description, startAt, dueAt, isCompleted, priority)
       description: |
         Requires `task.update_any`, OR `task.update_assigned` when caller is assigned to the task, OR admin.
         Enforces `taskVisibilityPolicy` first: hidden tasks return `404` to non-viewers even if caller holds `task.update_any`.
-        Uses optimistic locking via `version` (`409` if stale). Writes `task.updated` to `task_events` when actual field changes occur and returns `eventId`.
+        Validates effective `startAt <= dueAt` (`400 INVALID_DATE_RANGE`). Uses optimistic locking via `version` (`409` if stale). Writes `task.updated` to `task_events` when actual field changes occur and returns `eventId`.
       parameters:
         - $ref: "#/components/parameters/ResourceIdParam"
       requestBody:
@@ -1657,6 +1682,122 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /tasks/{id}/acceptance:
+    put:
+      tags: [Tasks]
+      summary: Toggle assignee task acceptance ("Đã nhận task")
+      description: |
+        Enforces `taskVisibilityPolicy` first (`404` if hidden and caller cannot view).
+        Caller MUST be assigned to the task directly or via an assigned department (`403` otherwise, including unassigned admins).
+        Upserts `(task_id, actor.id)` in `task_assignees` with `accepted_at` and records `task.accepted` in `task_events` (non-revertable, IDs only).
+        On `false -> true`, dispatches `task.accepted` (in-app + email) to active Department Leads of assigned departments and the task creator (excluding `actor.id`, honoring `canViewTask` & `WQ-27`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskAcceptanceRequest"
+      responses:
+        "200":
+          description: Task acceptance updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tasks/{id}/deliverables:
+    get:
+      tags: [Tasks]
+      summary: List task deliverable links
+      description: Requires active viewer via `taskVisibilityPolicy` (`404` if hidden & non-viewer).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      responses:
+        "200":
+          description: Deliverable links ordered newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDeliverablesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      tags: [Tasks]
+      summary: Submit a product link deliverable to a task
+      description: |
+        Enforces `taskVisibilityPolicy` (`404` if hidden & non-viewer). Requires caller to be assigned (directly or via department) or hold task edit rights (`403` otherwise).
+        Validates safe `http:`/`https:` URL (`8..2048` chars), enforces max `30` deliverables per task (`409 DELIVERABLE_LIMIT_REACHED`), records `task.deliverable_added` (ID only), and dispatches `task.deliverable_submitted` (in-app + email) to active Department Leads and the task creator (excluding `actor.id`, honoring `canViewTask` & `WQ-27`).
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskDeliverableRequest"
+      responses:
+        "201":
+          description: Deliverable added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDeliverableMutationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /tasks/{id}/deliverables/{deliverableId}:
+    delete:
+      tags: [Tasks]
+      summary: Remove a task deliverable link
+      description: |
+        Enforces `taskVisibilityPolicy` (`404` if hidden & non-viewer). Allowed for the original submitter, `task.update_any`, or admin (`403` otherwise). Records `task.deliverable_removed`.
+      parameters:
+        - $ref: "#/components/parameters/ResourceIdParam"
+        - name: deliverableId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Deliverable removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteTaskDeliverableResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ---------------------------------------------------------------------------
   # History, Undo & Trash
   # ---------------------------------------------------------------------------
@@ -1692,7 +1833,7 @@ paths:
       summary: Revert a task event (undo)
       description: |
         Requires permission matching the original operation (`403` otherwise, AC-19) and `taskVisibilityPolicy` (`404` if hidden & non-viewer).
-        Non-revertable events (`task.created`, `comment.added`, `comment.deleted`) return `400`.
+        Non-revertable events (`task.created`, `task.accepted`, `task.deliverable_added`, `task.deliverable_removed`, `comment.added`, `comment.deleted`) return `400`.
         Checks whether current task values still match the event's `to` values; if modified since, returns `409` with `details.conflictingFields` unless `force=true` (AC-18).
         Appends a new `task_events` row with `reverts_event_id` and `forced` (AC-17, AC-22).
       parameters:
@@ -2462,13 +2603,17 @@ components:
 
     DepartmentDto:
       type: object
-      required: [id, name, memberCount, boardCount, createdAt, updatedAt]
+      required: [id, name, lead, memberCount, boardCount, createdAt, updatedAt]
       properties:
         id:
           type: string
           format: uuid
         name:
           type: string
+        lead:
+          oneOf:
+            - $ref: "#/components/schemas/MemberPublicSummary"
+            - type: "null"
         memberCount:
           type: integer
           minimum: 0
@@ -2506,6 +2651,10 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        leadUserId:
+          type: ["string", "null"]
+          format: uuid
+          description: Optional active member UUID for Department Lead (`CR-09`). Omit on `PATCH` to preserve existing lead; pass `null` to clear.
 
     MemberPublicSummary:
       type: object
@@ -3177,6 +3326,51 @@ components:
     # -------------------------------------------------------------------------
     # Tasks, Events, Comments
     # -------------------------------------------------------------------------
+    TaskAssigneeDto:
+      type: object
+      description: Public task assignee projection including `acceptedAt` timestamp (`CR-09`) — NEVER includes `studentId` or `email`.
+      required: [id, fullName, isActive, leftAt, departments, acceptedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        isActive:
+          type: boolean
+        leftAt:
+          type: ["string", "null"]
+          format: date-time
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/DepartmentSummary"
+        avatarUrl:
+          type: ["string", "null"]
+        acceptedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    TaskDeliverableDto:
+      type: object
+      additionalProperties: false
+      required: [id, title, url, submittedBy, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        submittedBy:
+          $ref: "#/components/schemas/MemberPublicSummary"
+        createdAt:
+          type: string
+          format: date-time
+
     TaskDto:
       type: object
       required:
@@ -3185,7 +3379,10 @@ components:
         - columnId
         - title
         - description
+        - startAt
         - dueAt
+        - isCompleted
+        - completedAt
         - priority
         - position
         - isHidden
@@ -3193,6 +3390,8 @@ components:
         - deletedAt
         - assignees
         - assignedDepartments
+        - deliverables
+        - deliverableCount
         - creator
         - commentCount
         - createdAt
@@ -3212,14 +3411,23 @@ components:
           type: string
         description:
           type: ["string", "null"]
+        startAt:
+          type: ["string", "null"]
+          format: date-time
         dueAt:
+          type: ["string", "null"]
+          format: date-time
+        isCompleted:
+          type: boolean
+        completedAt:
           type: ["string", "null"]
           format: date-time
         priority:
           type: integer
           minimum: 1
           maximum: 4
-          description: "1 = Low, 2 = Medium, 3 = High, 4 = Urgent"
+          deprecated: true
+          description: "Legacy priority (`1..4`, deprecated under CR-09/CR-10 in favor of deadline status)."
         position:
           type: ["number", "string"]
           description: Continuous ordering position within column (`numeric`)
@@ -3234,11 +3442,18 @@ components:
         assignees:
           type: array
           items:
-            $ref: "#/components/schemas/MemberPublicSummary"
+            $ref: "#/components/schemas/TaskAssigneeDto"
         assignedDepartments:
           type: array
           items:
             $ref: "#/components/schemas/DepartmentSummary"
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDeliverableDto"
+        deliverableCount:
+          type: integer
+          minimum: 0
         creator:
           $ref: "#/components/schemas/MemberPublicSummary"
         commentCount:
@@ -3282,20 +3497,25 @@ components:
 
     CreateTaskRequest:
       type: object
-      required: [boardId, columnId, title]
+      required: [title]
       properties:
         boardId:
           type: string
           format: uuid
+          description: Optional when creating workspace/calendar tasks (`CR-09`); must be paired with `columnId` if provided.
         columnId:
           type: string
           format: uuid
+          description: Optional when creating workspace/calendar tasks (`CR-09`); must be paired with `boardId` if provided.
         title:
           type: string
           minLength: 1
           maxLength: 200
         description:
           type: ["string", "null"]
+        startAt:
+          type: ["string", "null"]
+          format: date-time
         dueAt:
           type: ["string", "null"]
           format: date-time
@@ -3304,6 +3524,7 @@ components:
           minimum: 1
           maximum: 4
           default: 2
+          deprecated: true
         assigneeIds:
           type: array
           items:
@@ -3339,16 +3560,79 @@ components:
           maxLength: 200
         description:
           type: ["string", "null"]
+        startAt:
+          type: ["string", "null"]
+          format: date-time
         dueAt:
           type: ["string", "null"]
           format: date-time
+        isCompleted:
+          type: boolean
         priority:
           type: integer
           minimum: 1
           maximum: 4
+          deprecated: true
         version:
           type: integer
           minimum: 1
+
+    UpdateTaskAcceptanceRequest:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+
+    CreateTaskDeliverableRequest:
+      type: object
+      required: [title, url]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        url:
+          type: string
+          format: uri
+          minLength: 8
+          maxLength: 2048
+
+    TaskDeliverablesResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskDeliverableDto"
+
+    TaskDeliverableMutationResponse:
+      type: object
+      required: [deliverable, task, eventId]
+      properties:
+        deliverable:
+          $ref: "#/components/schemas/TaskDeliverableDto"
+        task:
+          $ref: "#/components/schemas/TaskDto"
+        eventId:
+          type: ["string", "null"]
+          format: uuid
+
+    DeleteTaskDeliverableResponse:
+      type: object
+      required: [deleted, id, task, eventId]
+      properties:
+        deleted:
+          type: boolean
+        id:
+          type: string
+          format: uuid
+        task:
+          $ref: "#/components/schemas/TaskDto"
+        eventId:
+          type: ["string", "null"]
+          format: uuid
 
     MoveTaskRequest:
       type: object
@@ -3421,6 +3705,7 @@ components:
           $ref: "#/components/schemas/MemberPublicSummary"
         type:
           type: string
+          description: "Task event type (`task.created`, `task.updated`, `task.moved`, `task.assignees_changed`, `task.hidden_changed`, `task.deleted`, `task.restored`, `task.accepted`, `task.deliverable_added`, `task.deliverable_removed`, `comment.added`, `comment.deleted`)."
           example: task.updated
         changes:
           type: object
@@ -3748,13 +4033,15 @@ components:
           minimum: 0
 
     # -------------------------------------------------------------------------
-    # Notifications (CR-03)
+    # Notifications (CR-03, CR-09)
     # -------------------------------------------------------------------------
     NotificationType:
       type: string
       enum:
         - task.department_assigned
         - task.assigned
+        - task.accepted
+        - task.deliverable_submitted
 
     NotificationDto:
       type: object
@@ -3792,7 +4079,7 @@ components:
           type: string
         taskTitle:
           type: ["string", "null"]
-          description: Task title when public or visible; strictly `null` when `isHiddenTask=true` (`WQ-27`).
+          description: Task title when public or visible; strictly `null` when `isHiddenTask=true` (`WQ-27`), and deliverable URLs/titles are never exposed on hidden-task notifications.
         isHiddenTask:
           type: boolean
         actor:

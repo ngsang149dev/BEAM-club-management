@@ -127,7 +127,7 @@ export function computeBoardTaskCounts(
   const nowMs = now.getTime();
   let overdueTaskCount = 0;
   for (const task of visibleTasks) {
-    if (!task.dueAt || task.dueAt.getTime() >= nowMs) continue;
+    if (task.isCompleted || !task.dueAt || task.dueAt.getTime() >= nowMs) continue;
     if (task.columnId && doneColumnIds.has(task.columnId)) continue;
     overdueTaskCount += 1;
   }

@@ -39,7 +39,9 @@ export interface TaskFieldDiff<T> {
 export interface TaskUpdateChanges {
   readonly title?: TaskFieldDiff<string>;
   readonly description?: TaskFieldDiff<string | null>;
+  readonly start_at?: TaskFieldDiff<string | null>;
   readonly due_at?: TaskFieldDiff<string | null>;
+  readonly is_completed?: TaskFieldDiff<boolean>;
   readonly priority?: TaskFieldDiff<TaskPriority>;
 }
 
@@ -96,6 +98,35 @@ export function canToggleTaskHidden(
   task: { readonly createdBy: string },
 ): boolean {
   return actor.isActive && (actor.isAdmin || task.createdBy === actor.id);
+}
+
+export function canSubmitTaskDeliverable(
+  actor: AuthActor,
+  task: TaskVisibilitySubject,
+): boolean {
+  if (!canViewTask(actor, task)) return false;
+  return isActorAssignedToTask(actor, task) || canEditTask(actor, task);
+}
+
+export function canRemoveTaskDeliverable(
+  actor: AuthActor,
+  submittedById: string,
+): boolean {
+  return (
+    actor.isActive &&
+    (submittedById === actor.id ||
+      actor.isAdmin ||
+      hasPermission(actor, 'task.update_any'))
+  );
+}
+
+export function assertValidDateRange(
+  startAt: Date | null | undefined,
+  dueAt: Date | null | undefined,
+): void {
+  if (startAt && dueAt && startAt.getTime() > dueAt.getTime()) {
+    throw badRequest('errors.invalidDateRange', {}, 'INVALID_DATE_RANGE');
+  }
 }
 
 export function encodeTaskCursor(cursor: TaskListCursor): string {
@@ -195,45 +226,62 @@ export function decodeMyTasksCursor(raw: string): MyTasksCursor {
   }
 }
 
-function computeDueAtDiff(
-  currentDueAt: Date | null,
-  nextDueAt: Date | null,
+function computeNullableDateDiff(
+  currentDate: Date | null,
+  nextDate: Date | null,
 ): TaskFieldDiff<string | null> | undefined {
-  const currentIso = currentDueAt ? currentDueAt.toISOString() : null;
-  const nextIso = nextDueAt ? nextDueAt.toISOString() : null;
+  const currentIso = currentDate ? currentDate.toISOString() : null;
+  const nextIso = nextDate ? nextDate.toISOString() : null;
   return nextIso !== currentIso ? { from: currentIso, to: nextIso } : undefined;
 }
 
-export function buildTaskUpdateChanges(
-  current: {
-    readonly title: string;
-    readonly description: string | null;
-    readonly dueAt: Date | null;
-    readonly priority: TaskPriority;
-  },
+export interface TaskUpdateDiffSubject {
+  readonly title: string;
+  readonly description: string | null;
+  readonly startAt?: Date | null;
+  readonly dueAt: Date | null;
+  readonly isCompleted?: boolean;
+  readonly priority: TaskPriority;
+}
+
+function buildBasicTaskChanges(
+  current: TaskUpdateDiffSubject,
   input: UpdateTaskRequestInput,
 ): TaskUpdateChanges {
-  const changes: {
-    title?: TaskFieldDiff<string>;
-    description?: TaskFieldDiff<string | null>;
-    due_at?: TaskFieldDiff<string | null>;
-    priority?: TaskFieldDiff<TaskPriority>;
-  } = {};
+  return {
+    ...(input.title !== undefined && input.title !== current.title
+      ? { title: { from: current.title, to: input.title } }
+      : {}),
+    ...(input.description !== undefined && input.description !== current.description
+      ? { description: { from: current.description, to: input.description } }
+      : {}),
+    ...(input.priority !== undefined && input.priority !== current.priority
+      ? { priority: { from: current.priority, to: input.priority } }
+      : {}),
+  };
+}
 
-  if (input.title !== undefined && input.title !== current.title) {
-    changes.title = { from: current.title, to: input.title };
-  }
-  if (input.description !== undefined && input.description !== current.description) {
-    changes.description = { from: current.description, to: input.description };
-  }
-  if (input.dueAt !== undefined) {
-    const dueDiff = computeDueAtDiff(current.dueAt, input.dueAt);
-    if (dueDiff) changes.due_at = dueDiff;
-  }
-  if (input.priority !== undefined && input.priority !== current.priority) {
-    changes.priority = { from: current.priority, to: input.priority };
-  }
-  return changes;
+export function buildTaskUpdateChanges(
+  current: TaskUpdateDiffSubject,
+  input: UpdateTaskRequestInput,
+): TaskUpdateChanges {
+  const startDiff =
+    input.startAt !== undefined
+      ? computeNullableDateDiff(current.startAt ?? null, input.startAt)
+      : undefined;
+  const dueDiff =
+    input.dueAt !== undefined
+      ? computeNullableDateDiff(current.dueAt, input.dueAt)
+      : undefined;
+  const currentCompleted = current.isCompleted ?? false;
+  return {
+    ...buildBasicTaskChanges(current, input),
+    ...(startDiff ? { start_at: startDiff } : {}),
+    ...(dueDiff ? { due_at: dueDiff } : {}),
+    ...(input.isCompleted !== undefined && input.isCompleted !== currentCompleted
+      ? { is_completed: { from: currentCompleted, to: input.isCompleted } }
+      : {}),
+  };
 }
 
 export function hasTaskChanges(changes: TaskUpdateChanges): boolean {

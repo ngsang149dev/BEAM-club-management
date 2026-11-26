@@ -1,6 +1,7 @@
 import type { TransactionContext } from '@/server/shared/transaction';
 import { canViewTask } from './policy';
 import { computeTaskMovePlan, type OrderedMoveSibling } from './positioning';
+import { groupTaskIdStrings } from './repository-helpers';
 import type {
   MoveTaskRepoParams,
   TaskOptionalEventMutationResult,
@@ -97,4 +98,26 @@ export async function executeMoveTaskWithEvent(
     },
     tx,
   );
+}
+
+export function assembleMoveSiblings(params: {
+  readonly rows: ReadonlyArray<{
+    readonly id: string;
+    readonly position: string;
+    readonly isHidden: boolean;
+    readonly createdBy: string;
+  }>;
+  readonly assignRows: ReadonlyArray<{ readonly taskId: string; readonly value: string }>;
+  readonly deptRows: ReadonlyArray<{ readonly taskId: string; readonly value: string }>;
+}): RawMoveSibling[] {
+  const assignMap = groupTaskIdStrings(params.assignRows);
+  const deptMap = groupTaskIdStrings(params.deptRows);
+  return params.rows.map((r) => ({
+    id: r.id,
+    position: Number(r.position),
+    isHidden: r.isHidden,
+    createdBy: r.createdBy,
+    assigneeIds: assignMap.get(r.id) ?? [],
+    assignedDepartmentIds: deptMap.get(r.id) ?? [],
+  }));
 }

@@ -4,10 +4,13 @@ import type { AuthActor } from '@/server/shared/authorize';
 import { FakeClock } from '@/server/shared/clock';
 import { StructuredLogger } from '@/server/shared/logger';
 import type { TransactionContext, TransactionRunner } from '@/server/shared/transaction';
-import type { NotificationsDispatcher, NotifyDepartmentAssignmentInput } from '@/server/modules/notifications';
+import type { NotificationsDispatcher, NotifyDeliverableSubmittedInput, NotifyDepartmentAssignmentInput, NotifyTaskAcceptedInput } from '@/server/modules/notifications';
 import {
+  type AddTaskDeliverableRepoParams,
+  type AddTaskDeliverableResult,
   assertCanEditTask,
   assertCanViewTask,
+  assertValidDateRange,
   buildTaskUpdateChanges,
   canEditTask,
   canToggleTaskHidden,
@@ -21,7 +24,10 @@ import {
   type ListMyTasksParams,
   type ListVisibleTasksParams,
   type MoveTaskRepoParams,
+  type RemoveTaskDeliverableRepoParams,
+  type RemoveTaskDeliverableResult,
   type ReplaceAssigneesRepoParams,
+  type SetTaskAcceptanceRepoParams,
   type SoftDeleteTaskRepoParams,
   type TaskMutationResult,
   type TaskOptionalEventMutationResult,
@@ -116,19 +122,24 @@ class InMemoryTasksRepository implements TasksRepository {
     const id = `60000000-0000-4000-8000-${String(this.eventSeq + 10).padStart(12, '0')}`;
     const task: TaskRecord = {
       id,
-      boardId: input.boardId,
-      columnId: input.columnId,
+      boardId: input.boardId ?? '40000000-0000-4000-8000-000000000099',
+      columnId: input.columnId ?? '50000000-0000-4000-8000-000000000099',
       title: input.title,
       description: input.description ?? null,
+      startAt: input.startAt ?? null,
       dueAt: input.dueAt ?? null,
+      isCompleted: false,
+      completedAt: null,
       priority: input.priority,
       position: '1000',
       isHidden: input.isHidden,
       version: 1,
       deletedAt: null,
       createdBy: input.actorId,
-      assignees: input.assigneeIds.map((aid) => makeUser(aid, `User ${aid.slice(-2)}`)),
+      assignees: input.assigneeIds.map((aid) => ({ ...makeUser(aid, `User ${aid.slice(-2)}`), acceptedAt: null })),
       assignedDepartments: input.departmentIds.map((did) => ({ id: did, name: `Dept ${did.slice(-2)}` })),
+      deliverables: [],
+      deliverableCount: 0,
       creator: makeUser(input.actorId, 'Creator'),
       commentCount: 0,
       createdAt: input.now,
@@ -144,11 +155,20 @@ class InMemoryTasksRepository implements TasksRepository {
       throw new AppError('TASK_VERSION_CONFLICT', 'errors.taskVersionConflict', 409);
     }
     this.eventSeq += 1;
+    const nextIsCompleted =
+      input.isCompleted !== undefined && input.changes.is_completed ? input.isCompleted : current.isCompleted;
+    const nextCompletedAt =
+      input.isCompleted !== undefined && input.changes.is_completed
+        ? (input.isCompleted ? input.now : null)
+        : current.completedAt;
     const next: TaskRecord = {
       ...current,
       title: input.title ?? current.title,
       description: input.description !== undefined ? input.description : current.description,
+      startAt: input.startAt !== undefined ? input.startAt : current.startAt,
       dueAt: input.dueAt !== undefined ? input.dueAt : current.dueAt,
+      isCompleted: nextIsCompleted,
+      completedAt: nextCompletedAt,
       priority: input.priority ?? current.priority,
       version: current.version + 1,
       updatedAt: input.now,
@@ -160,10 +180,14 @@ class InMemoryTasksRepository implements TasksRepository {
   async replaceAssigneesWithEvent(input: ReplaceAssigneesRepoParams): Promise<TaskMutationResult> {
     const current = this.records.get(input.id)!;
     this.eventSeq += 1;
+    const prevAccepted = new Map(current.assignees.map((a) => [a.id, a.acceptedAt]));
     const next: TaskRecord = {
       ...current,
       version: current.version + 1,
-      assignees: input.nextAssigneeIds.map((aid) => makeUser(aid, `User ${aid.slice(-2)}`)),
+      assignees: input.nextAssigneeIds.map((aid) => ({
+        ...makeUser(aid, `User ${aid.slice(-2)}`),
+        acceptedAt: prevAccepted.get(aid) ?? null,
+      })),
       assignedDepartments: input.nextDepartmentIds.map((did) => ({ id: did, name: `Dept ${did.slice(-2)}` })),
       updatedAt: input.now,
     };
@@ -208,6 +232,64 @@ class InMemoryTasksRepository implements TasksRepository {
     });
     return { task: next, eventId: `80000000-0000-4000-8000-${String(this.eventSeq).padStart(12, '0')}` };
   }
+
+  async setAcceptanceWithEvent(input: SetTaskAcceptanceRepoParams): Promise<TaskMutationResult> {
+    const current = this.records.get(input.id)!;
+    this.eventSeq += 1;
+    const exists = current.assignees.some((a) => a.id === input.actorId);
+    const nextAssignees = exists
+      ? current.assignees.map((a) => (a.id === input.actorId ? { ...a, acceptedAt: input.nextAccepted ? input.now : null } : a))
+      : [...current.assignees, { ...makeUser(input.actorId, 'Dept Member'), acceptedAt: input.nextAccepted ? input.now : null }];
+    const next: TaskRecord = {
+      ...current,
+      assignees: nextAssignees,
+      version: current.version + 1,
+      updatedAt: input.now,
+    };
+    this.records.set(input.id, next);
+    return { task: next, eventId: `80000000-0000-4000-8000-${String(this.eventSeq).padStart(12, '0')}` };
+  }
+
+  async addDeliverableWithEvent(input: AddTaskDeliverableRepoParams): Promise<AddTaskDeliverableResult> {
+    const current = this.records.get(input.taskId)!;
+    if (current.deliverables.length >= 30) {
+      throw new AppError('DELIVERABLE_LIMIT_REACHED', 'errors.deliverableLimitReached', 409);
+    }
+    this.eventSeq += 1;
+    const deliv = {
+      id: `70000000-0000-4000-8000-${String(this.eventSeq).padStart(12, '0')}`,
+      taskId: input.taskId,
+      title: input.title,
+      url: input.url,
+      submittedBy: makeUser(input.actorId, 'Submitter'),
+      createdAt: input.now,
+    };
+    const deliverables = [deliv, ...current.deliverables];
+    const next: TaskRecord = {
+      ...current,
+      deliverables,
+      deliverableCount: deliverables.length,
+      version: current.version + 1,
+      updatedAt: input.now,
+    };
+    this.records.set(input.taskId, next);
+    return { deliverable: deliv, task: next, eventId: `80000000-0000-4000-8000-${String(this.eventSeq).padStart(12, '0')}` };
+  }
+
+  async removeDeliverableWithEvent(input: RemoveTaskDeliverableRepoParams): Promise<RemoveTaskDeliverableResult> {
+    const current = this.records.get(input.taskId)!;
+    this.eventSeq += 1;
+    const deliverables = current.deliverables.filter((d) => d.id !== input.deliverableId);
+    const next: TaskRecord = {
+      ...current,
+      deliverables,
+      deliverableCount: deliverables.length,
+      version: current.version + 1,
+      updatedAt: input.now,
+    };
+    this.records.set(input.taskId, next);
+    return { id: input.deliverableId, task: next, eventId: `80000000-0000-4000-8000-${String(this.eventSeq).padStart(12, '0')}` };
+  }
 }
 
 const MOCK_TX_RUNNER: TransactionRunner = {
@@ -224,10 +306,20 @@ function createHarness(options: { failDispatch?: boolean } = {}) {
     writeErr: (line) => logs.push(line),
   });
   const dispatches: NotifyDepartmentAssignmentInput[] = [];
+  const acceptedDispatches: NotifyTaskAcceptedInput[] = [];
+  const deliverableDispatches: NotifyDeliverableSubmittedInput[] = [];
   const notificationsDispatcher: NotificationsDispatcher = {
     notifyDepartmentAssignment: async (input) => {
       if (options.failDispatch) throw new Error('SMTP down');
       dispatches.push(input);
+    },
+    notifyTaskAccepted: async (input) => {
+      if (options.failDispatch) throw new Error('SMTP down');
+      acceptedDispatches.push(input);
+    },
+    notifyDeliverableSubmitted: async (input) => {
+      if (options.failDispatch) throw new Error('SMTP down');
+      deliverableDispatches.push(input);
     },
   };
   const now = clock.now();
@@ -238,15 +330,20 @@ function createHarness(options: { failDispatch?: boolean } = {}) {
     columnId: COL_TODO,
     title: 'Public Task',
     description: 'Initial',
+    startAt: null,
     dueAt: new Date('2026-11-25T00:00:00.000Z'),
+    isCompleted: false,
+    completedAt: null,
     priority: 2,
     position: '1000',
     isHidden: false,
     version: 1,
     deletedAt: null,
     createdBy: CREATOR_ID,
-    assignees: [makeUser(ASSIGNEE_ID, 'Assignee')],
+    assignees: [{ ...makeUser(ASSIGNEE_ID, 'Assignee'), acceptedAt: null }],
     assignedDepartments: [{ id: DEPT_1, name: 'Dept 1' }],
+    deliverables: [],
+    deliverableCount: 0,
     creator: makeUser(CREATOR_ID, 'Creator'),
     commentCount: 2,
     createdAt: now,
@@ -259,15 +356,20 @@ function createHarness(options: { failDispatch?: boolean } = {}) {
     columnId: COL_TODO,
     title: 'Hidden Task',
     description: null,
+    startAt: null,
     dueAt: null,
+    isCompleted: false,
+    completedAt: null,
     priority: 3,
     position: '2000',
     isHidden: true,
     version: 1,
     deletedAt: null,
     createdBy: CREATOR_ID,
-    assignees: [makeUser(ASSIGNEE_ID, 'Assignee')],
+    assignees: [{ ...makeUser(ASSIGNEE_ID, 'Assignee'), acceptedAt: null }],
     assignedDepartments: [{ id: DEPT_1, name: 'Dept 1' }],
+    deliverables: [],
+    deliverableCount: 0,
     creator: makeUser(CREATOR_ID, 'Creator'),
     commentCount: 0,
     createdAt: now,
@@ -281,7 +383,7 @@ function createHarness(options: { failDispatch?: boolean } = {}) {
     logger,
     notificationsDispatcher,
   });
-  return { repo, service, dispatches, logs };
+  return { repo, service, dispatches, acceptedDispatches, deliverableDispatches, logs };
 }
 
 const ADMIN: AuthActor = { id: ADMIN_ID, isActive: true, isAdmin: true, permissions: [] };
@@ -624,5 +726,117 @@ describe('tasks policy & TasksService', () => {
       { taskId: TASK_1, from: false, to: true },
       { taskId: TASK_1, from: true, to: false },
     ]);
+  });
+
+  it('supports boardless createTask, startAt <= dueAt validation, and isCompleted lifecycle', async () => {
+    const { service } = createHarness();
+    expect(() =>
+      assertValidDateRange(new Date('2026-12-05T00:00:00.000Z'), new Date('2026-12-01T00:00:00.000Z')),
+    ).toThrowError(expect.objectContaining({ httpStatus: 400, code: 'INVALID_DATE_RANGE' }));
+
+    const boardless = await service.createTask(ADMIN, {
+      title: 'Workspace Event',
+      startAt: new Date('2026-11-24T00:00:00.000Z'),
+      dueAt: new Date('2026-11-25T00:00:00.000Z'),
+      priority: 3,
+      assigneeIds: [],
+      departmentIds: [],
+      notifyDepartmentMembers: false,
+      isHidden: false,
+    });
+    expect(boardless.task.startAt).toBe('2026-11-24T00:00:00.000Z');
+    expect(boardless.task.isCompleted).toBe(false);
+    expect(boardless.task.completedAt).toBeNull();
+
+    // Updating startAt after existing dueAt fails 400 INVALID_DATE_RANGE
+    await expect(
+      service.updateTask(ADMIN, TASK_1, {
+        startAt: new Date('2026-11-26T00:00:00.000Z'),
+        version: 1,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_DATE_RANGE' });
+
+    const doneRes = await service.updateTask(ADMIN, TASK_1, { isCompleted: true, version: 1 });
+    expect(doneRes.eventId).toBeTruthy();
+    expect(doneRes.task.isCompleted).toBe(true);
+    expect(doneRes.task.completedAt).toBe('2026-11-24T05:00:00.000Z');
+  });
+
+  it('enforces setTaskAcceptance 404/403 rules, idempotent no-op, and Lead dispatch only on acceptance', async () => {
+    const { service, acceptedDispatches } = createHarness();
+    const deptActor: AuthActor = { id: DEPT_MEMBER_ID, isActive: true, isAdmin: false, permissions: [], departmentIds: [DEPT_1] };
+    const plainOutsider: AuthActor = { id: OTHER_USER_ID, isActive: true, isAdmin: false, permissions: [] };
+
+    // Hidden 404 before 403; unassigned admin receives 403
+    await expect(service.setTaskAcceptance(plainOutsider, TASK_HIDDEN, { accepted: true })).rejects.toMatchObject({ httpStatus: 404 });
+    await expect(service.setTaskAcceptance(ADMIN, TASK_1, { accepted: true })).rejects.toMatchObject({ httpStatus: 403 });
+    await expect(service.setTaskAcceptance(plainOutsider, TASK_1, { accepted: true })).rejects.toMatchObject({ httpStatus: 403 });
+
+    // Assigned user accepts -> eventId + Lead notification
+    const acc1 = await service.setTaskAcceptance(ASSIGNED_ONLY, TASK_1, { accepted: true });
+    expect(acc1.eventId).toBeTruthy();
+    expect(acc1.task.assignees.find((a) => a.id === ASSIGNEE_ID)?.acceptedAt).toBe('2026-11-24T05:00:00.000Z');
+    expect(acceptedDispatches).toHaveLength(1);
+
+    // Repeat accept -> idempotent no-op (no new event or notification)
+    const noop = await service.setTaskAcceptance(ASSIGNED_ONLY, TASK_1, { accepted: true });
+    expect(noop.eventId).toBeNull();
+    expect(acceptedDispatches).toHaveLength(1);
+
+    // Unaccept -> clears acceptedAt & records event, does NOT send accepted notification
+    const unacc = await service.setTaskAcceptance(ASSIGNED_ONLY, TASK_1, { accepted: false });
+    expect(unacc.eventId).toBeTruthy();
+    expect(unacc.task.assignees.find((a) => a.id === ASSIGNEE_ID)?.acceptedAt).toBeNull();
+    expect(acceptedDispatches).toHaveLength(1);
+
+    // Department member accepts -> upserts task_assignees row cleanly
+    const deptAcc = await service.setTaskAcceptance(deptActor, TASK_HIDDEN, { accepted: true });
+    expect(deptAcc.task.assignees.some((a) => a.id === DEPT_MEMBER_ID && a.acceptedAt !== null)).toBe(true);
+    expect(acceptedDispatches).toHaveLength(2);
+  });
+
+  it('enforces deliverables CRUD permissions, 404 hidden, URL validation, cap=30 409, and resilient Lead notifications', async () => {
+    const { service, deliverableDispatches } = createHarness();
+    const deptMember: AuthActor = { id: DEPT_MEMBER_ID, isActive: true, isAdmin: false, permissions: [], departmentIds: [DEPT_1] };
+    const plainOutsider: AuthActor = { id: OTHER_USER_ID, isActive: true, isAdmin: false, permissions: [] };
+
+    await expect(service.listDeliverables(plainOutsider, TASK_HIDDEN)).rejects.toMatchObject({ httpStatus: 404 });
+    await expect(service.addDeliverable(plainOutsider, TASK_HIDDEN, { title: 'Deck', url: 'https://a.co/1' })).rejects.toMatchObject({ httpStatus: 404 });
+    await expect(service.addDeliverable(plainOutsider, TASK_1, { title: 'Deck', url: 'https://a.co/1' })).rejects.toMatchObject({ httpStatus: 403 });
+    await expect(service.addDeliverable(ASSIGNED_ONLY, TASK_1, { title: 'Bad', url: 'javascript:alert(1)' })).rejects.toMatchObject({
+      httpStatus: 400,
+      code: 'INVALID_DELIVERABLE_URL',
+    });
+
+    const added = await service.addDeliverable(ASSIGNED_ONLY, TASK_HIDDEN, {
+      title: 'Final Slides',
+      url: 'https://drive.google.com/file/d/abc',
+    });
+    expect(added.eventId).toBeTruthy();
+    expect(added.deliverable.title).toBe('Final Slides');
+    expect(added.task.deliverableCount).toBe(1);
+    expect(deliverableDispatches).toHaveLength(1);
+
+    // Another dept assignee cannot delete someone else's deliverable without task.update_any
+    await expect(service.removeDeliverable(deptMember, TASK_HIDDEN, added.deliverable.id)).rejects.toMatchObject({ httpStatus: 403 });
+    // Submitter can delete their own deliverable
+    const removed = await service.removeDeliverable(ASSIGNED_ONLY, TASK_HIDDEN, added.deliverable.id);
+    expect(removed).toMatchObject({ deleted: true, id: added.deliverable.id });
+    expect(removed.task.deliverableCount).toBe(0);
+
+    // Cap = 30 returns 409 DELIVERABLE_LIMIT_REACHED
+    for (let i = 0; i < 30; i += 1) {
+      await service.addDeliverable(ASSIGNED_ONLY, TASK_1, { title: `Item ${i}`, url: `https://example.com/${i}` });
+    }
+    await expect(
+      service.addDeliverable(ASSIGNED_ONLY, TASK_1, { title: 'Overflow', url: 'https://example.com/31' }),
+    ).rejects.toMatchObject({ httpStatus: 409, code: 'DELIVERABLE_LIMIT_REACHED' });
+
+    // Mail/dispatcher failure never breaks addDeliverable or setTaskAcceptance
+    const failHarness = createHarness({ failDispatch: true });
+    await expect(
+      failHarness.service.addDeliverable(ASSIGNED_ONLY, TASK_1, { title: 'Safe', url: 'https://example.com/ok' }),
+    ).resolves.toMatchObject({ deliverable: { title: 'Safe' } });
+    expect(failHarness.logs.some((l) => l.includes('Failed to dispatch task lead notifications'))).toBe(true);
   });
 });

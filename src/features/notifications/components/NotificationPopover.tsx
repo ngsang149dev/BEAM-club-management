@@ -4,34 +4,60 @@ import { useTranslations } from 'next-intl';
 import { formatTaskDateTime } from '@/features/tasks/formatters';
 import type { NotificationDto } from '../hooks/useNotifications';
 
-export function resolveNotificationMessage(
+type NotificationTranslator = ReturnType<typeof useTranslations<'notifications'>>;
+
+function resolveHiddenNotificationMessage(
   item: NotificationDto,
-  t: ReturnType<typeof useTranslations<'notifications'>>
+  t: NotificationTranslator
 ): string {
-  if (item.isHiddenTask || item.taskTitle === null) {
-    if (item.type === 'task.department_assigned') {
+  switch (item.type) {
+    case 'task.department_assigned':
       return item.departmentName
         ? t('hiddenTaskDepartmentAssigned', { departmentName: item.departmentName })
         : t('hiddenTaskDepartmentAssignedNoDept');
-    }
-    return t('hiddenTaskAssigned');
+    case 'task.accepted':
+      return t('hiddenTaskAccepted');
+    case 'task.deliverable_submitted':
+      return t('hiddenTaskDeliverableSubmitted');
+    case 'task.assigned':
+    default:
+      return t('hiddenTaskAssigned');
   }
-  if (item.type === 'task.department_assigned') {
-    return item.departmentName
-      ? t('taskDepartmentAssigned', {
-          actorName: item.actor.fullName,
-          taskTitle: item.taskTitle,
-          departmentName: item.departmentName,
-        })
-      : t('taskDepartmentAssignedNoDept', {
-          actorName: item.actor.fullName,
-          taskTitle: item.taskTitle,
-        });
+}
+
+function resolveVisibleNotificationMessage(
+  item: NotificationDto,
+  taskTitle: string,
+  t: NotificationTranslator
+): string {
+  const actorName = item.actor.fullName;
+  switch (item.type) {
+    case 'task.department_assigned':
+      return item.departmentName
+        ? t('taskDepartmentAssigned', {
+            actorName,
+            taskTitle,
+            departmentName: item.departmentName,
+          })
+        : t('taskDepartmentAssignedNoDept', { actorName, taskTitle });
+    case 'task.accepted':
+      return t('taskAccepted', { actorName, taskTitle });
+    case 'task.deliverable_submitted':
+      return t('taskDeliverableSubmitted', { actorName, taskTitle });
+    case 'task.assigned':
+    default:
+      return t('taskAssigned', { actorName, taskTitle });
   }
-  return t('taskAssigned', {
-    actorName: item.actor.fullName,
-    taskTitle: item.taskTitle,
-  });
+}
+
+export function resolveNotificationMessage(
+  item: NotificationDto,
+  t: NotificationTranslator
+): string {
+  if (item.isHiddenTask || item.taskTitle === null) {
+    return resolveHiddenNotificationMessage(item, t);
+  }
+  return resolveVisibleNotificationMessage(item, item.taskTitle, t);
 }
 
 function NotificationItemRow({

@@ -96,6 +96,7 @@ describe('MembersDirectoryView (S07)', () => {
           {
             id: 'dept-1',
             name: 'Truyền thông',
+            lead: null,
             memberCount: 3,
             boardCount: 1,
             createdAt: '2026-01-01T00:00:00Z',

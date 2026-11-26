@@ -14,6 +14,9 @@ export type RevertableTaskEventType = (typeof REVERTABLE_TASK_EVENT_TYPES)[numbe
 
 export const NON_REVERTABLE_TASK_EVENT_TYPES = [
   'task.created',
+  'task.accepted',
+  'task.deliverable_added',
+  'task.deliverable_removed',
   'comment.added',
   'comment.deleted',
 ] as const;

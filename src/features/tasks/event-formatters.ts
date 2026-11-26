@@ -30,7 +30,14 @@ export interface CanRevertEventParams {
   readonly task: Pick<TaskDto, 'assignees' | 'assignedDepartments' | 'creator'>;
 }
 
-const NON_REVERTABLE_TYPES = new Set(['task.created', 'comment.added', 'comment.deleted']);
+const NON_REVERTABLE_TYPES = new Set([
+  'task.created',
+  'task.accepted',
+  'task.deliverable_added',
+  'task.deliverable_removed',
+  'comment.added',
+  'comment.deleted',
+]);
 
 function isTaskAssigneeOrDeptMember(
   task: Pick<TaskDto, 'assignees' | 'assignedDepartments'>,
@@ -117,17 +124,33 @@ function resolveEntityListLabel(params: {
   return params.tHistory(params.namedPlusMoreKey, { names: resolved.join(', '), count: unknownCount });
 }
 
-function formatDueAtDiff(diff: { from: unknown; to: unknown }, ctx: EventFormatContext): string {
+const DATE_DIFF_KEYS = {
+  due_at: { set: 'events.dueAtSet', cleared: 'events.dueAtCleared', changed: 'events.dueAtChanged' },
+  start_at: { set: 'events.startAtSet', cleared: 'events.startAtCleared', changed: 'events.startAtChanged' },
+} as const;
+
+function formatDateDiff(
+  diff: { from: unknown; to: unknown },
+  field: 'due_at' | 'start_at',
+  ctx: EventFormatContext
+): string {
+  const keys = DATE_DIFF_KEYS[field];
   const fromIso = readString(diff.from);
   const toIso = readString(diff.to);
-  if (!fromIso && toIso) return ctx.tHistory('events.dueAtSet', { to: formatTaskDueDate(toIso, ctx.locale) });
-  if (fromIso && !toIso) return ctx.tHistory('events.dueAtCleared', { from: formatTaskDueDate(fromIso, ctx.locale) });
+  if (!fromIso && toIso) return ctx.tHistory(keys.set, { to: formatTaskDueDate(toIso, ctx.locale) });
+  if (fromIso && !toIso) return ctx.tHistory(keys.cleared, { from: formatTaskDueDate(fromIso, ctx.locale) });
   if (fromIso && toIso) {
-    return ctx.tHistory('events.dueAtChanged', {
-      from: formatTaskDueDate(fromIso, ctx.locale),
-      to: formatTaskDueDate(toIso, ctx.locale),
-    });
+    return ctx.tHistory(keys.changed, { from: formatTaskDueDate(fromIso, ctx.locale), to: formatTaskDueDate(toIso, ctx.locale) });
   }
+  return ctx.tHistory('events.taskUpdatedGeneric');
+}
+
+function formatCompletedDiff(diff: { from: unknown; to: unknown }, ctx: EventFormatContext): string {
+  const label = (val: boolean) => ctx.tHistory(val ? 'statusDone' : 'statusActive');
+  if (typeof diff.from === 'boolean' && typeof diff.to === 'boolean') {
+    return ctx.tHistory('events.isCompletedChanged', { from: label(diff.from), to: label(diff.to) });
+  }
+  if (typeof diff.to === 'boolean') return ctx.tHistory('events.isCompletedSet', { to: label(diff.to) });
   return ctx.tHistory('events.taskUpdatedGeneric');
 }
 
@@ -162,8 +185,12 @@ function formatPriorityAndTitle(changes: Record<string, unknown>, ctx: EventForm
 function formatTaskUpdatedEvent(changes: Record<string, unknown>, ctx: EventFormatContext): string {
   const parts: string[] = [];
   formatPriorityAndTitle(changes, ctx, parts);
+  const startDiff = readDiffPair(changes, 'start_at');
+  if (startDiff) parts.push(formatDateDiff(startDiff, 'start_at', ctx));
   const dueDiff = readDiffPair(changes, 'due_at');
-  if (dueDiff) parts.push(formatDueAtDiff(dueDiff, ctx));
+  if (dueDiff) parts.push(formatDateDiff(dueDiff, 'due_at', ctx));
+  const completedDiff = readDiffPair(changes, 'is_completed');
+  if (completedDiff) parts.push(formatCompletedDiff(completedDiff, ctx));
   const descDiff = readDiffPair(changes, 'description');
   if (descDiff) parts.push(formatDescriptionDiff(descDiff, ctx));
   return parts.length > 0 ? parts.join(' · ') : ctx.tHistory('events.taskUpdatedGeneric');
@@ -251,6 +278,12 @@ const EVENT_SUMMARY_BUILDERS: Record<string, (changes: Record<string, unknown>, 
     const colName = colId ? ctx.lookup.columnsById.get(colId) : undefined;
     return colName ? ctx.tHistory('events.taskRestoredToColumn', { column: colName }) : ctx.tHistory('events.taskRestored');
   },
+  'task.accepted': (changes, ctx) => {
+    const accepted = readDiffPair(changes, 'accepted')?.to ?? changes.accepted;
+    return ctx.tHistory(accepted === false ? 'events.taskUnaccepted' : 'events.taskAccepted');
+  },
+  'task.deliverable_added': (_changes, ctx) => ctx.tHistory('events.deliverableAdded'),
+  'task.deliverable_removed': (_changes, ctx) => ctx.tHistory('events.deliverableRemoved'),
   'comment.added': (_changes, ctx) => ctx.tHistory('events.commentAdded'),
   'comment.deleted': (_changes, ctx) => ctx.tHistory('events.commentDeleted'),
 };
@@ -277,7 +310,9 @@ const CONFLICT_FIELD_KEYS = {
   title: 'title',
   description: 'description',
   priority: 'priority',
+  start_at: 'start_at',
   due_at: 'due_at',
+  is_completed: 'is_completed',
   column_id: 'column_id',
   position: 'position',
   assignee_ids: 'assignee_ids',

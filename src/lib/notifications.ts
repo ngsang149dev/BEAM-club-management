@@ -8,6 +8,8 @@ import {
 export const NOTIFICATION_TYPES = [
   'task.department_assigned',
   'task.assigned',
+  'task.accepted',
+  'task.deliverable_submitted',
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

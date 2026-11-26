@@ -1,13 +1,24 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
-import { z } from 'zod';
+import { TrashBinIcon } from '@/components/TrashIcons';
 import { usePermissions } from '@/features/shared/permissions/can';
-import { taskPrioritySchema, taskTitleSchema } from '@/lib/tasks';
-import { hoChiMinhInputToUtcIso, utcIsoToHoChiMinhInput } from '../formatters';
+import {
+  applyAssigneeSelectionToggle,
+  buildReplaceTaskAssigneesPayload,
+  editTaskSchema,
+  hasTaskVersionChanged,
+  mergeAssigneeOptions,
+  mergeDepartmentOptions,
+  resolveAssigneeSelection,
+  toEditTaskValues,
+  type AssigneeSelectionDraft,
+  type EditTaskValues,
+} from '../drawer-helpers';
+import { hoChiMinhInputToUtcIso } from '../formatters';
 import { useUndoTaskActionToast } from '../hooks/useTaskEvents';
 import {
   useDeleteTaskMutation,
@@ -15,7 +26,6 @@ import {
   useTaskAssigneeMembersQuery,
   useTaskDepartmentsQuery,
   useUpdateTaskMutation,
-  type ReplaceTaskAssigneesRequest,
   type TaskDto,
 } from '../hooks/useTasks';
 import {
@@ -24,35 +34,29 @@ import {
   TaskErrorBanner,
   TaskIndividualAssigneesDetails,
   TaskPrioritySelect,
-  type TaskAssigneeOption,
-  type TaskDepartmentOption,
 } from './TaskFormFields';
-import { TrashBinIcon } from '@/components/TrashIcons';
 import { TaskNotificationOptions } from './TaskNotificationOptions';
 
-const editTaskSchema = z.object({
-  title: taskTitleSchema,
-  description: z.string().max(10000),
-  dueAtInput: z.string(),
-  priority: taskPrioritySchema,
-});
-
-type EditTaskValues = z.infer<typeof editTaskSchema>;
+export { buildReplaceTaskAssigneesPayload };
 
 function useTaskEditFormController(task: TaskDto) {
   const tTasks = useTranslations('tasks');
   const updateMutation = useUpdateTaskMutation();
   const showUndoToast = useUndoTaskActionToast();
-  const initialPrio = task.priority >= 1 && task.priority <= 4 ? (task.priority as 1 | 2 | 3 | 4) : 2;
   const form = useForm<EditTaskValues>({
     resolver: zodResolver(editTaskSchema),
-    defaultValues: {
-      title: task.title,
-      description: task.description ?? '',
-      dueAtInput: utcIsoToHoChiMinhInput(task.dueAt),
-      priority: initialPrio,
-    },
+    defaultValues: toEditTaskValues(task),
   });
+  const { reset } = form;
+  const { isError: isUpdateError, reset: resetMutation } = updateMutation;
+  const syncedRef = useRef({ id: task.id, version: task.version });
+
+  useEffect(() => {
+    if (!hasTaskVersionChanged(syncedRef.current, task.id, task.version)) return;
+    syncedRef.current = { id: task.id, version: task.version };
+    reset(toEditTaskValues(task));
+    if (isUpdateError) resetMutation();
+  }, [task, reset, isUpdateError, resetMutation]);
 
   const handleSave = (values: EditTaskValues) => {
     updateMutation.mutate(
@@ -90,7 +94,13 @@ export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReloa
 
   return (
     <form className="task-edit-form" method="post" onSubmit={ctrl.handleSubmit(ctrl.handleSave)} noValidate>
-      <TaskErrorBanner error={ctrl.updateMutation.error} onReloadConflict={onReload} />
+      <TaskErrorBanner
+        error={ctrl.updateMutation.error}
+        onReloadConflict={() => {
+          ctrl.updateMutation.reset();
+          onReload();
+        }}
+      />
       <div className="ui-field">
         <label className="ui-label" htmlFor={`${baseId}-title`}>{tTasks('titleLabel')}</label>
         <input id={`${baseId}-title`} className="ui-input" type="text" aria-invalid={Boolean(ctrl.formState.errors.title)} {...ctrl.register('title')} />
@@ -113,63 +123,29 @@ export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReloa
   );
 }
 
-function mergeAssigneeOptions(
-  activeMembers: readonly TaskAssigneeOption[],
-  existingAssignees: TaskDto['assignees']
-): TaskAssigneeOption[] {
-  const seen = new Set(activeMembers.map((member) => member.id));
-  const formerAssignees = existingAssignees.filter((assignee) => !seen.has(assignee.id));
-  return [...activeMembers, ...formerAssignees];
-}
-
-function mergeDepartmentOptions(
-  catalog: readonly TaskDepartmentOption[],
-  assignedDepartments: TaskDto['assignedDepartments']
-): TaskDepartmentOption[] {
-  const seen = new Set(catalog.map((dept) => dept.id));
-  const missing = assignedDepartments.filter((dept) => !seen.has(dept.id));
-  return [...catalog, ...missing];
-}
-
-function toggleId(prev: string[], id: string): string[] {
-  return prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
-}
-
-export function buildReplaceTaskAssigneesPayload(params: {
-  readonly departmentIds: readonly string[];
-  readonly assigneeIds?: readonly string[];
-  readonly canViewMembers?: boolean;
-  readonly notifyInApp: boolean;
-  readonly notifyEmail: boolean;
-  readonly version: number;
-}): ReplaceTaskAssigneesRequest {
-  const includeAssignees = params.canViewMembers ?? params.assigneeIds !== undefined;
-  return {
-    departmentIds: [...params.departmentIds],
-    ...(includeAssignees && params.assigneeIds !== undefined
-      ? { assigneeIds: [...params.assigneeIds] }
-      : {}),
-    notifyInApp: params.notifyInApp,
-    notifyEmail: params.notifyEmail,
-    notifyDepartmentMembers: params.notifyInApp || params.notifyEmail,
-    version: params.version,
-  };
-}
-
 function useTaskAssigneesController(task: TaskDto) {
   const tTasks = useTranslations('tasks');
   const { can } = usePermissions();
   const canViewMembers = can('member.view');
-  const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>(() =>
-    task.assignedDepartments.map((dept) => dept.id)
-  );
+  const [selectionDraft, setSelectionDraft] = useState<AssigneeSelectionDraft | null>(null);
   const [notifyInApp, setNotifyInApp] = useState<boolean>(true);
   const [notifyEmail, setNotifyEmail] = useState<boolean>(true);
-  const [selectedIds, setSelectedIds] = useState<string[]>(() => task.assignees.map((a) => a.id));
+  const { deptIds: selectedDeptIds, memberIds: selectedIds } = resolveAssigneeSelection(selectionDraft, task);
   const departmentsQuery = useTaskDepartmentsQuery(true);
   const membersQuery = useTaskAssigneeMembersQuery(canViewMembers);
   const assigneesMutation = useReplaceTaskAssigneesMutation();
+  const { isError: isAssigneesError, reset: resetAssigneesMutation } = assigneesMutation;
+  const syncedVersionRef = useRef({ id: task.id, version: task.version });
   const showUndoToast = useUndoTaskActionToast();
+
+  useEffect(() => {
+    if (!hasTaskVersionChanged(syncedVersionRef.current, task.id, task.version)) return;
+    syncedVersionRef.current = { id: task.id, version: task.version };
+    if (isAssigneesError) resetAssigneesMutation();
+  }, [task.id, task.version, isAssigneesError, resetAssigneesMutation]);
+
+  const toggleSelection = (kind: 'dept' | 'member', id: string) =>
+    setSelectionDraft((prev) => applyAssigneeSelectionToggle(prev, task, kind, id));
 
   const handleSaveAssignees = () => {
     const payload = buildReplaceTaskAssigneesPayload({
@@ -197,13 +173,13 @@ function useTaskAssigneesController(task: TaskDto) {
   return {
     canViewMembers,
     selectedDeptIds,
-    toggleDept: (id: string) => setSelectedDeptIds((prev) => toggleId(prev, id)),
+    toggleDept: (id: string) => toggleSelection('dept', id),
     notifyInApp,
     setNotifyInApp,
     notifyEmail,
     setNotifyEmail,
     selectedIds,
-    toggleMember: (id: string) => setSelectedIds((prev) => toggleId(prev, id)),
+    toggleMember: (id: string) => toggleSelection('member', id),
     pickerDepartments: mergeDepartmentOptions(departmentsQuery.data?.items ?? [], task.assignedDepartments),
     pickerMembers: mergeAssigneeOptions(membersQuery.data?.items ?? [], task.assignees),
     assigneesMutation,
@@ -218,7 +194,13 @@ export function TaskAssigneesSection({ task, onReload }: { task: TaskDto; onRelo
   return (
     <section className="task-drawer-section">
       <h3 className="task-section-title">{tTasks('departmentsLabel')}</h3>
-      <TaskErrorBanner error={ctrl.assigneesMutation.error} onReloadConflict={onReload} />
+      <TaskErrorBanner
+        error={ctrl.assigneesMutation.error}
+        onReloadConflict={() => {
+          ctrl.assigneesMutation.reset();
+          onReload();
+        }}
+      />
       <TaskDepartmentPicker
         departments={ctrl.pickerDepartments}
         selectedIds={ctrl.selectedDeptIds}

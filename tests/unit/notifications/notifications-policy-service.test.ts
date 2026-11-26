@@ -6,6 +6,7 @@ import type { Mailer, MailMessage } from '@/server/shared/mailer';
 import type { TransactionContext, TransactionRunner } from '@/server/shared/transaction';
 import {
   buildDepartmentAssignedEmail,
+  buildLeadActivityEmail,
   buildNotificationPayload,
   type CreateNotificationRowInput,
   decodeNotificationCursor,
@@ -16,6 +17,8 @@ import {
   type NotificationRecord,
   NotificationsService,
   type NotificationsRepository,
+  selectLeadAndCreatorRecipients,
+  type TaskActivityNotificationContextRecord,
   toNotificationDto,
 } from '@/server/modules/notifications';
 
@@ -37,6 +40,7 @@ const MOCK_TX: TransactionRunner = {
 
 class InMemoryNotificationsRepo implements NotificationsRepository {
   context: DepartmentAssignmentContextRecord | null = null;
+  activityContext: TaskActivityNotificationContextRecord | null = null;
   loadCalls = 0;
   insertedRows: CreateNotificationRowInput[] = [];
   records: Array<NotificationRecord & { userId: string; canView?: boolean }> = [];
@@ -44,6 +48,11 @@ class InMemoryNotificationsRepo implements NotificationsRepository {
   async loadDepartmentAssignmentContext(): Promise<DepartmentAssignmentContextRecord | null> {
     this.loadCalls += 1;
     return this.context;
+  }
+
+  async loadTaskActivityContext(): Promise<TaskActivityNotificationContextRecord | null> {
+    this.loadCalls += 1;
+    return this.activityContext;
   }
 
   async insertNotifications(rows: readonly CreateNotificationRowInput[]) {
@@ -510,5 +519,148 @@ describe('notifications policy & NotificationsService', () => {
     expect(joinedLogs).toContain('ECONNREFUSED');
     expect(joinedLogs).not.toContain('agg-fail@eiu.edu.vn');
     expect(joinedLogs).not.toContain('a@eiu.edu.vn');
+  });
+
+  it('selects Lead + Creator recipients enforcing canViewTask and WQ-27 redaction on task.accepted and task.deliverable_submitted', async () => {
+    const CREATOR_ONLY = '10000000-0000-4000-8000-000000000010';
+    const LEAD_VISIBLE = '10000000-0000-4000-8000-000000000011';
+    const LEAD_ADMIN = '10000000-0000-4000-8000-000000000012';
+    const LEAD_OUTSIDER = '10000000-0000-4000-8000-000000000013';
+
+    const hiddenContext: TaskActivityNotificationContextRecord = {
+      task: {
+        id: TASK_ID,
+        title: 'SECRET_HIDDEN_TASK_TITLE',
+        isHidden: true,
+        createdBy: CREATOR_ONLY,
+        assigneeIds: [ACTOR_ID],
+        assignedDepartmentIds: [DEPT_MEDIA],
+      },
+      board: { id: BOARD_ID, name: 'Board Ops' },
+      actor: { id: ACTOR_ID, fullName: 'Assignee Actor' },
+      assignedDepartments: [{ id: DEPT_MEDIA, name: 'Media' }],
+      deliverable: {
+        id: '60000000-0000-4000-8000-000000000001',
+        title: 'SECRET_DELIVERABLE_TITLE',
+        url: 'https://secret.example.com/private-file',
+      },
+      candidates: [
+        // Actor is creator + lead too -> must be excluded (actor never notifies self)
+        {
+          userId: ACTOR_ID, email: 'actor@eiu.edu.vn', fullName: 'Assignee Actor', locale: 'vi',
+          isAdmin: true, memberDepartmentIds: [DEPT_MEDIA], leadDepartmentIds: [DEPT_MEDIA], isCreator: false,
+        },
+        // Creator is non-admin, not in dept -> sees hidden task as creator
+        {
+          userId: CREATOR_ONLY, email: 'creator@eiu.edu.vn', fullName: 'Creator One', locale: 'en',
+          isAdmin: false, memberDepartmentIds: [], leadDepartmentIds: [], isCreator: true,
+        },
+        // Lead who is a member of DEPT_MEDIA -> sees hidden task via department membership
+        {
+          userId: LEAD_VISIBLE, email: 'lead-ok@eiu.edu.vn', fullName: 'Lead Member', locale: 'vi',
+          isAdmin: false, memberDepartmentIds: [DEPT_MEDIA], leadDepartmentIds: [DEPT_MEDIA], isCreator: false,
+        },
+        // Admin lead -> sees hidden task as admin
+        {
+          userId: LEAD_ADMIN, email: 'lead-admin@eiu.edu.vn', fullName: 'Lead Admin', locale: 'en',
+          isAdmin: true, memberDepartmentIds: [], leadDepartmentIds: [DEPT_MEDIA], isCreator: false,
+        },
+        // Lead of DEPT_MEDIA who is neither admin, creator, assignee, nor member of DEPT_MEDIA -> CANNOT view hidden task!
+        {
+          userId: LEAD_OUTSIDER, email: 'lead-blocked@eiu.edu.vn', fullName: 'Lead Outsider', locale: 'vi',
+          isAdmin: false, memberDepartmentIds: [], leadDepartmentIds: [DEPT_MEDIA], isCreator: false,
+        },
+      ],
+    };
+
+    const recipients = selectLeadAndCreatorRecipients({ context: hiddenContext, actorId: ACTOR_ID });
+    expect(recipients.map((r) => r.userId)).toEqual([CREATOR_ONLY, LEAD_VISIBLE, LEAD_ADMIN]);
+    expect(recipients.find((r) => r.userId === LEAD_OUTSIDER)).toBeUndefined();
+
+    // WQ-27 email redaction on hidden deliverable omits BOTH task title and deliverable title/URL
+    const redactedEmail = buildLeadActivityEmail({
+      kind: 'task.deliverable_submitted',
+      locale: 'en',
+      recipientName: 'Creator One',
+      actorName: 'Assignee Actor',
+      boardName: 'Board Ops',
+      departmentNames: [],
+      taskTitle: 'SECRET_HIDDEN_TASK_TITLE',
+      deliverableTitle: 'SECRET_DELIVERABLE_TITLE',
+      deliverableUrl: 'https://secret.example.com/private-file',
+      isHiddenTask: true,
+      appUrl: 'https://beam.example.org',
+      boardId: BOARD_ID,
+      taskId: TASK_ID,
+    });
+    expect(redactedEmail.subject).not.toContain('SECRET_HIDDEN_TASK_TITLE');
+    expect(redactedEmail.text).not.toContain('SECRET_DELIVERABLE_TITLE');
+    expect(redactedEmail.text).not.toContain('secret.example.com');
+    expect(redactedEmail.html).not.toContain('SECRET_DELIVERABLE_TITLE');
+    expect(redactedEmail.html).not.toContain('secret.example.com');
+
+    // Public deliverable email includes both task title and deliverable link
+    const publicEmail = buildLeadActivityEmail({
+      kind: 'task.deliverable_submitted',
+      locale: 'vi',
+      recipientName: 'Lead Member',
+      actorName: 'Assignee Actor',
+      boardName: 'Board Ops',
+      departmentNames: ['Media'],
+      taskTitle: 'Design Poster',
+      deliverableTitle: 'Final PDF',
+      deliverableUrl: 'https://drive.google.com/file/1',
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org',
+      boardId: BOARD_ID,
+      taskId: TASK_ID,
+    });
+    expect(publicEmail.subject).toContain('Design Poster');
+    expect(publicEmail.text).toContain('Final PDF');
+    expect(publicEmail.text).toContain('https://drive.google.com/file/1');
+
+    // End-to-end service calls with in-memory repo & failing SMTP check
+    const repo = new InMemoryNotificationsRepo();
+    repo.activityContext = hiddenContext;
+    const sentMessages: MailMessage[] = [];
+    const logs: string[] = [];
+    const clock = new FakeClock('2026-11-26T00:00:00.000Z');
+    const logger = new StructuredLogger({ writeOut: (l) => logs.push(l), writeErr: (l) => logs.push(l) });
+    const mailer: Mailer = {
+      send: async (msg) => {
+        if (msg.to === 'lead-admin@eiu.edu.vn') {
+          throw Object.assign(new Error(''), { name: 'AggregateError', errors: [new Error('SMTP connect timeout')] });
+        }
+        sentMessages.push(msg);
+      },
+    };
+    const service = new NotificationsService({
+      notificationsRepo: repo, mailer, transactionRunner: MOCK_TX, config: { appUrl: 'https://beam.example.org' }, clock, logger,
+    });
+
+    await service.notifyTaskAccepted({
+      taskId: TASK_ID, boardId: BOARD_ID, actorId: ACTOR_ID, isHiddenTask: true, now: clock.now(),
+    });
+    expect(repo.insertedRows).toHaveLength(3);
+    expect(repo.insertedRows.every((r) => r.type === 'task.accepted' && r.isHiddenTask)).toBe(true);
+    expect(repo.insertedRows.every((r) => !JSON.stringify(r.payload).includes('SECRET_HIDDEN_TASK_TITLE'))).toBe(true);
+    expect(sentMessages).toHaveLength(2);
+    expect(sentMessages.every((m) => !m.text.includes('SECRET_HIDDEN_TASK_TITLE'))).toBe(true);
+
+    repo.insertedRows = [];
+    sentMessages.length = 0;
+    await service.notifyDeliverableSubmitted({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ACTOR_ID,
+      deliverableId: '60000000-0000-4000-8000-000000000001',
+      isHiddenTask: true,
+      now: clock.now(),
+    });
+    expect(repo.insertedRows).toHaveLength(3);
+    expect(repo.insertedRows.every((r) => r.type === 'task.deliverable_submitted')).toBe(true);
+    expect(sentMessages.every((m) => !m.text.includes('secret.example.com'))).toBe(true);
+    expect(logs.join('\n')).toContain('SMTP connect timeout');
+    expect(logs.join('\n')).not.toContain('lead-admin@eiu.edu.vn');
   });
 });

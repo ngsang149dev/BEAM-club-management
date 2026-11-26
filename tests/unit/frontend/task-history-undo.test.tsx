@@ -102,7 +102,10 @@ const SAMPLE_TASK: TaskDto = {
   columnId: '33333333-3333-4333-8333-333333333333',
   title: 'Chuẩn bị slide Open Day',
   description: '8 trang giới thiệu CLB',
+  startAt: null,
   dueAt: '2026-11-28T17:00:00Z',
+  isCompleted: false,
+  completedAt: null,
   priority: 4,
   position: 1,
   isHidden: false,
@@ -116,9 +119,12 @@ const SAMPLE_TASK: TaskDto = {
       leftAt: null,
       avatarUrl: null,
       departments: [],
+      acceptedAt: null,
     },
   ],
   assignedDepartments: [{ id: '55555555-5555-4555-8555-555555555555', name: 'Truyền thông' }],
+  deliverables: [],
+  deliverableCount: 0,
   creator: {
     id: '66666666-6666-4666-8666-666666666666',
     fullName: 'Lê Văn C',
@@ -315,6 +321,64 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
         vi: 'đã xóa một bình luận',
         en: 'deleted a comment',
       },
+      {
+        event: makeEvent({
+          type: 'task.updated',
+          changes: {
+            start_at: { from: null, to: '2026-11-26T00:00:00Z' },
+            is_completed: { from: false, to: true },
+          },
+        }),
+        vi: 'đã đặt ngày bắt đầu là 26/11/2026 · đã đổi trạng thái hoàn thành từ Đang mở sang Hoàn thành',
+        en: 'set start date to 26/11/2026 · changed completion status from Active to Completed',
+      },
+      {
+        event: makeEvent({
+          type: 'task.updated',
+          changes: {
+            start_at: { from: '2026-11-26T00:00:00Z', to: null },
+            is_completed: { from: true, to: false },
+          },
+        }),
+        vi: 'đã xóa ngày bắt đầu (trước đó: 26/11/2026) · đã đổi trạng thái hoàn thành từ Hoàn thành sang Đang mở',
+        en: 'cleared start date (was 26/11/2026) · changed completion status from Completed to Active',
+      },
+      {
+        event: makeEvent({
+          type: 'task.accepted',
+          changes: { user_id: '44444444-4444-4444-8444-444444444444', accepted: { from: false, to: true } },
+          revertable: false,
+        }),
+        vi: 'đã xác nhận nhận task',
+        en: 'accepted the task',
+      },
+      {
+        event: makeEvent({
+          type: 'task.accepted',
+          changes: { user_id: '44444444-4444-4444-8444-444444444444', accepted: { from: true, to: false } },
+          revertable: false,
+        }),
+        vi: 'đã bỏ xác nhận nhận task',
+        en: 'unaccepted the task',
+      },
+      {
+        event: makeEvent({
+          type: 'task.deliverable_added',
+          changes: { deliverable_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+          revertable: false,
+        }),
+        vi: 'đã nộp một đường link sản phẩm',
+        en: 'submitted a deliverable link',
+      },
+      {
+        event: makeEvent({
+          type: 'task.deliverable_removed',
+          changes: { deliverable_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+          revertable: false,
+        }),
+        vi: 'đã gỡ một đường link sản phẩm',
+        en: 'removed a deliverable link',
+      },
     ];
 
     const emptyLookup: TaskHistoryLookup = {
@@ -359,7 +423,7 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     const only = (...allowed: PermissionCode[]) => (perm: PermissionCode) => allowed.includes(perm);
 
     // Non-revertable types always false even for admin
-    for (const type of ['task.created', 'comment.added', 'comment.deleted']) {
+    for (const type of ['task.created', 'task.accepted', 'task.deliverable_added', 'task.deliverable_removed', 'comment.added', 'comment.deleted']) {
       expect(
         canActorRevertEvent({
           event: { type, revertable: false },
@@ -598,12 +662,14 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     expect(editorHtml).not.toMatch(UUID_REGEX);
   });
 
-  it('renders TaskRevertConflictModal with all 10 conflict field labels and force confirm button', () => {
+  it('renders TaskRevertConflictModal with all 12 conflict field labels and force confirm button', () => {
     const allFields = [
       'title',
       'description',
       'priority',
+      'start_at',
       'due_at',
+      'is_completed',
       'column_id',
       'position',
       'assignee_ids',
@@ -624,6 +690,8 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     expect(htmlVi).toContain('Vẫn khôi phục');
     expect(htmlVi).toContain('req-force-403');
     expect(htmlVi).toContain('Tiêu đề');
+    expect(htmlVi).toContain('Ngày bắt đầu');
+    expect(htmlVi).toContain('Trạng thái hoàn thành');
     expect(htmlVi).toContain('Ban được giao');
     expect(htmlVi).toContain('Trạng thái xóa');
 
@@ -638,7 +706,9 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
       { locale: 'en' }
     );
     expect(htmlEn).toContain('Restore anyway');
+    expect(htmlEn).toContain('Start date');
     expect(htmlEn).toContain('Due date');
+    expect(htmlEn).toContain('Completion status');
     expect(htmlEn).toContain('Deletion status');
   });
 

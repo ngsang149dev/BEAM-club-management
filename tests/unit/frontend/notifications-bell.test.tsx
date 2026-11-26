@@ -224,6 +224,73 @@ describe('NotificationBell (CR-03)', () => {
     const fakeT = ((key: string) => key) as unknown as Parameters<typeof resolveNotificationMessage>[1];
     expect(resolveNotificationMessage(leakedGuardItem, fakeT)).toBe('hiddenTaskDepartmentAssigned');
     expect(resolveNotificationMessage({ ...leakedGuardItem, type: 'task.assigned' }, fakeT)).toBe('hiddenTaskAssigned');
+    expect(resolveNotificationMessage({ ...leakedGuardItem, type: 'task.accepted' }, fakeT)).toBe('hiddenTaskAccepted');
+    expect(resolveNotificationMessage({ ...leakedGuardItem, type: 'task.deliverable_submitted' }, fakeT)).toBe(
+      'hiddenTaskDeliverableSubmitted'
+    );
+  });
+
+  it('renders task.accepted and task.deliverable_submitted in vi & en and enforces WQ-27 redaction when hidden', () => {
+    const acceptedVisible: NotificationDto = {
+      ...DIRECT_ASSIGNED_NOTIF,
+      id: 'n-acc-pub',
+      type: 'task.accepted',
+      taskTitle: 'Chốt timeline sự kiện',
+      isHiddenTask: false,
+    };
+    const deliverableVisible: NotificationDto = {
+      ...DIRECT_ASSIGNED_NOTIF,
+      id: 'n-del-pub',
+      type: 'task.deliverable_submitted',
+      taskTitle: 'Thiết kế backdrop',
+      isHiddenTask: false,
+    };
+    const acceptedHiddenLeaked: NotificationDto = {
+      ...acceptedVisible,
+      id: 'n-acc-hid',
+      taskTitle: 'SECRET_ACCEPT_TITLE',
+      isHiddenTask: true,
+    };
+    const deliverableHiddenNull: NotificationDto = {
+      ...deliverableVisible,
+      id: 'n-del-hid',
+      taskTitle: null,
+      isHiddenTask: false,
+    };
+
+    notifHooksMock.useNotificationsQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: {
+        items: [acceptedVisible, deliverableVisible, acceptedHiddenLeaked, deliverableHiddenNull],
+        unreadCount: 4,
+        meta: { nextCursor: null, limit: 20 },
+      },
+    });
+    const viHtml = renderBell(<NotificationBell defaultOpen />, { locale: 'vi' });
+    expect(viHtml).toContain('Tran Thi Lead đã nhận công việc &quot;Chốt timeline sự kiện&quot;');
+    expect(viHtml).toContain('Tran Thi Lead đã nộp sản phẩm cho &quot;Thiết kế backdrop&quot;');
+    expect(viHtml).toContain('Một công việc ẩn vừa được xác nhận đã nhận');
+    expect(viHtml).toContain('Một công việc ẩn vừa có sản phẩm mới được nộp');
+    expect(viHtml).not.toContain('SECRET_ACCEPT_TITLE');
+
+    notifHooksMock.useNotificationsQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: {
+        items: [acceptedVisible, deliverableVisible, acceptedHiddenLeaked, deliverableHiddenNull],
+        unreadCount: 4,
+        meta: { nextCursor: null, limit: 20 },
+      },
+    });
+    const enHtml = renderBell(<NotificationBell defaultOpen />, { locale: 'en' });
+    expect(enHtml).toContain('Tran Thi Lead accepted &quot;Chốt timeline sự kiện&quot;');
+    expect(enHtml).toContain('Tran Thi Lead submitted a deliverable for &quot;Thiết kế backdrop&quot;');
+    expect(enHtml).toContain('A hidden task was accepted');
+    expect(enHtml).toContain('A deliverable was submitted for a hidden task');
+    expect(enHtml).not.toContain('SECRET_ACCEPT_TITLE');
   });
 
   it('renders loading, error retry, and empty popover states cleanly', () => {

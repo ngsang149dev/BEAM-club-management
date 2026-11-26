@@ -47,7 +47,7 @@ export const notifications = pgTable(
   (table) => [
     check(
       'notifications_type_chk',
-      sql`${table.type} IN ('task.department_assigned', 'task.assigned')`,
+      sql`${table.type} IN ('task.department_assigned', 'task.assigned', 'task.accepted', 'task.deliverable_submitted')`,
     ),
     index('notifications_user_created_idx').on(
       table.userId,

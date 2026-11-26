@@ -1,14 +1,16 @@
 export {
   type DeleteDepartmentResponseDto,
   type DepartmentDto,
+  type DepartmentLeadSummaryDto,
   type DepartmentListResponseDto,
   type DepartmentResponseDto,
 } from './mapper';
 export { assertDepartmentCanBeDeleted } from './policy';
 export {
-  DrizzleDepartmentsRepository,
+  type DepartmentLeadSummaryRecord,
   type DepartmentRecord,
   type DepartmentsRepository,
+  DrizzleDepartmentsRepository,
 } from './repository';
 export {
   DepartmentsService,

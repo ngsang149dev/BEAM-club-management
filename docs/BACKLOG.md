@@ -26,7 +26,7 @@
 | **E10** | Chuẩn bị Go-Live Production miễn phí (Vercel + Neon), migration danh mục quyền `0007`, CLI tạo Admin đầu tiên, kiểm chứng SMTP & GitHub Cron dự phòng | HANDOFF §7, §9, §10, NFR-08 | Done |
 | **E11** | Gia cố Bảo mật Production: OWASP Headers, CSRF Origin Guard, Rate limit 2 lớp, CDN Cache branding & Runbook WAF `[RỦI RO CAO]` | NFR-01–NFR-05 | Done |
 | **CR-08** | Đăng nhập 1 thiết bị (tự đăng xuất phiên cũ) & Session trượt 30 phút (bỏ "Ghi nhớ đăng nhập") (`A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-04`, `AC-05`, `AC-13` | Done |
-| **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | In Progress |
+| **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | Ready for PR |
 | **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Ready |
 
 ---
@@ -802,10 +802,60 @@
 
 ---
 
-## Epic CR-09 — Trưởng ban, Tick "Đã nhận task", Nhiều Link sản phẩm & Migration/OpenAPI Lịch Task (`A2`, `A4`, `[RỦI RO CAO]`) *(Ready — sau khi merge CR-08)*
-- Giao ban & gán **Trưởng ban** tại `/admin/departments` (`departments.lead_user_id`).
-- Schema & OpenAPI cho Lịch Task + Giao nhận + Sản phẩm (`tasks.start_at`, `tasks.is_completed`, bỏ `priority` mới, `task_assignees.accepted_at`, bảng `task_deliverables` nhiều link mở tab mới `target="_blank"`).
-- Luồng thông báo 3 bước: Giao task → Người được giao tick switch `Đã nhận task` → Tự báo Chuông + Email Trưởng ban & người tạo; Nộp sản phẩm → Tự báo Trưởng ban & người tạo.
+## Epic CR-09 — Trưởng ban, Tick "Đã nhận task", Nhiều Link sản phẩm & Migration/OpenAPI Lịch Task (`A2`, `A4`, `[RỦI RO CAO]`) *(Ready for PR)*
+
+### CR-09-01
+- **ID:** `CR-09-01`
+- **Tiêu đề:** Migration `0008`, Trưởng ban (`departments.lead_user_id`), Workspace mặc định, `PUT /tasks/{id}/acceptance`, `/tasks/{id}/deliverables*`, Thông báo 3 bước & Bộ lọc Lịch/Deadline `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `A2`, `A4`, `FR-20`–`FR-26`, `WQ-27`, `docs/DECISIONS.md` (`CR-09`), `docs/ERD.md`, `docs/openapi.yaml`
+- **Phụ thuộc:** `CR-08` (`Done`), `docs/openapi.yaml` `CR-09` đã khóa
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A, §7, §8), `.agents/skills/beam-backend-db/SKILL.md`, `docs/DECISIONS.md` (`CR-09`), `docs/openapi.yaml`, `db/migrations/0005_task_departments_and_notifications.sql`, `src/server/modules/{departments,tasks,notifications,task-events,archive}/*`
+- **Phạm vi file được sửa:** `db/migrations/0008_calendar_tasks_leads_deliverables.sql`, `db/schema/{permissions,tasks,notifications,index}.ts`, `scripts/db-restore-verify.mjs`, `src/lib/{members,tasks,notifications,task-events}.ts`, `src/server/modules/{departments,tasks,notifications,task-events,archive,reminders}/*`, `src/server/shared/composition*.ts`, `src/app/api/v1/{departments,tasks}/**`, `tests/unit/{departments,tasks,notifications,task-events,archive,reminders,shared}/*`, `tests/integration/**/*`
+- **Tiêu chí chấp nhận:**
+  1. `0008_calendar_tasks_leads_deliverables.sql` chạy sạch & chạy lại idempotent trên `beam_dev` & `beam_test`; Drizzle schema & `EXPECTED_PUBLIC_TABLES` (`db-restore-verify.mjs`) đồng bộ 24 bảng `public`.
+  2. `POST/PATCH /departments` hỗ trợ `leadUserId` (`null` hoặc user active chưa purged, lỗi `400 INVALID_DEPARTMENT_LEAD`), trả `DepartmentDto.lead` (`MemberPublicSummary | null` 0 PII), ghi UUID vào `audit_logs`.
+  3. `POST /tasks` tự tạo/dùng board `'BEAM Workspace'` (2 cột `Đang thực hiện`, `Done`) khi bỏ `boardId` & `columnId`; hỗ trợ `startAt`, `isCompleted`, `completedAt`, kiểm tra `startAt <= dueAt` (`400 INVALID_DATE_RANGE`), cập nhật `notDoneColumnSqlCondition` xét `isCompleted = false`, hỗ trợ lọc `deadlineStatus` + `[from, to]` + `limit <= 200` và hoàn tác `start_at`/`is_completed`.
+  4. `PUT /tasks/{id}/acceptance` (`404` task ẩn, `403` nếu không phải assignee trực tiếp/qua ban) upsert `accepted_at`, ghi `task.accepted` (UUID only) và gửi Web + Email cho Trưởng ban & người tạo (`WQ-27`).
+  5. `GET/POST/DELETE /tasks/{id}/deliverables*` kiểm tra `http:`/`https:`, giới hạn `30` (`409 DELIVERABLE_LIMIT_REACHED`), phân quyền xóa, ghi `task.deliverable_added`/`removed`, gửi Web + Email cho Trưởng ban & người tạo (`WQ-27` che tiêu đề + URL khi ẩn); `archive` xử lý sạch `lead_user_id` & `task_deliverables`.
+- **Kiểm thử bắt buộc:** `schema-invariants.test.ts` cho `0008`, unit & integration PostgreSQL cho Department Lead, Acceptance (`403`/`404`/thông báo), Deliverables (`400`/`403`/`404`/`409`/thông báo/`WQ-27`), `startAt`/`isCompleted` + revert, `deadlineStatus` + `[from, to]`, boardless `POST /tasks`, Archive purge, và `npm run db:restore:verify -- --test`.
+- **Ngoài phạm vi:** UI Lịch công việc toàn màn (`CR-10`) và sửa UI ngoài phạm vi `CR-09-02`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR`
+
+### CR-09-02
+- **ID:** `CR-09-02`
+- **Tiêu đề:** Giao diện gán Trưởng ban (`/admin/departments`), Định dạng thông báo Nhận task/Nộp sản phẩm (`NotificationPopover`) & Lịch sử task (`CR-09`)
+- **Sub-agent phụ trách:** `frontend` (chạy song song với `CR-09-01` sau khi khóa `docs/openapi.yaml` & `schema.d.ts`)
+- **Liên quan:** `A2`, `A4`, `S11`, `FR-50`, `WQ-27`, `docs/DECISIONS.md` (`CR-09`)
+- **Phụ thuộc:** `docs/openapi.yaml` & `schema.d.ts` `CR-09` đã khóa
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.2, §6A.4, §7), `.agents/skills/beam-frontend/SKILL.md`, `src/features/departments/*`, `src/features/notifications/components/NotificationPopover.tsx`, `src/features/tasks/event-formatters.ts`, `src/features/audit/formatters.ts`
+- **Phạm vi file được sửa:** `src/features/departments/*`, `src/features/notifications/components/NotificationPopover.tsx`, `src/features/tasks/event-formatters.ts`, `src/features/audit/formatters.ts`, `src/app/globals.css`, `messages/{vi,en}.json`, `tests/unit/frontend/*`
+- **Tiêu chí chấp nhận:**
+  1. `/admin/departments`: cho phép chọn **Trưởng ban** trong modal Tạo/Sửa ban (chỉ gọi `/members` khi có `member.view`) và hiển thị badge Trưởng ban (hoặc `(đã rời)` nếu không còn hoạt động) ở danh sách ban.
+  2. `NotificationPopover`: hiển thị thông báo `'task.accepted'` và `'task.deliverable_submitted'` song ngữ `vi`/`en`, giữ che tiêu đề task ẩn `WQ-27` khi `isHiddenTask || taskTitle === null`.
+  3. `event-formatters.ts` & `audit/formatters.ts`: hiển thị `task.accepted`, `task.deliverable_added`, `task.deliverable_removed`, `start_at`, `is_completed` và `leadUserId` mà không lộ UUID thô/PII.
+  4. Cập nhật đầy đủ khóa `messages/{vi,en}.json` (parity `100%`, súc tích) và toàn bộ test/mock trong `tests/unit/frontend/*` (gồm mock `DepartmentDto` & `TaskDto`).
+- **Kiểm thử bắt buộc:** Unit/component test `departments-admin`, `notifications-bell`, `task-history-undo`, `i18n-parity`, `0` lỗi TypeScript trên frontend.
+- **Ngoài phạm vi:** API backend, Lịch công việc toàn màn (`CR-10`).
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Ready for PR`
+
+### CR-09-03
+- **ID:** `CR-09-03`
+- **Tiêu đề:** Kiểm thử E2E luồng Trưởng ban → Giao task → Tick Đã nhận → Nộp Sản phẩm & Audit độc lập ngữ cảnh sạch `CR-09` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `A2`, `A4`, `WQ-27`, `AGENTS.md` (§6A.8, §7, §8)
+- **Phụ thuộc:** `CR-09-01`, `CR-09-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `.agents/skills/beam-qa-reviewer/SKILL.md`, `tests/e2e/department-notifications.spec.ts`
+- **Phạm vi file được sửa:** `tests/e2e/department-lead-deliverables.spec.ts` (và các tệp `tests/e2e/*` cần cập nhật nếu mock/seed liên quan)
+- **Tiêu chí chấp nhận:**
+  1. Có E2E Chrome kiểm chứng gán Trưởng ban trên `/admin/departments`, giao task ban, thành viên tick `PUT /tasks/{id}/acceptance` -> chuông Trưởng ban nhận `'task.accepted'`, nộp nhiều link `POST /tasks/{id}/deliverables` -> chuông Trưởng ban nhận `'task.deliverable_submitted'`, và task ẩn trả `404` / che tiêu đề `WQ-27`.
+  2. Vượt toàn bộ cổng (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `db:migrate -- --test`, `test:integration`, `db:restore:verify -- --test`, `build`, full Chrome `playwright test`) và audit `6A.8` (`13/13`) đạt `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Full Vitest + Restore Verify + Next Build + Full Playwright Chrome E2E.
+- **Ngoài phạm vi:** Sửa code nghiệp vụ trực tiếp hoặc merge `main`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR`
 
 ---
 

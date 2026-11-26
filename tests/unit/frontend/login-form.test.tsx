@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import enMessages from '../../../messages/en.json';
 import viMessages from '../../../messages/vi.json';
+import { PasswordInput, preventPasswordToggleBlur } from '@/components/PasswordInput';
 import {
   LoginForm,
   LoginStatusBanner,
@@ -216,5 +217,26 @@ describe('LoginForm (S01)', () => {
     expect(renderBanner(netErr)).toContain('Không thể kết nối đến máy chủ');
     expect(renderBanner(invalidErr)).toContain('Không thể đăng nhập. Kiểm tra lại MSSV và mật khẩu, hoặc liên hệ admin.');
     expect(renderBanner(null, true)).toContain('Không thể đăng nhập. Kiểm tra lại MSSV và mật khẩu, hoặc liên hệ admin.');
+  });
+
+  it('renders PasswordInput visibility states and prevents blur on toggle mouseDown', () => {
+    const hiddenHtml = renderToStaticMarkup(
+      <PasswordInput id="pwd-field" showLabel="Hiện mật khẩu" hideLabel="Ẩn mật khẩu" visible={false} />
+    );
+    expect(hiddenHtml).toContain('type="password"');
+    expect(hiddenHtml).toContain('aria-label="Hiện mật khẩu"');
+    expect(hiddenHtml).toContain('aria-pressed="false"');
+    expect(hiddenHtml).toContain('aria-controls="pwd-field"');
+
+    const visibleHtml = renderToStaticMarkup(
+      <PasswordInput id="pwd-field" showLabel="Hiện mật khẩu" hideLabel="Ẩn mật khẩu" visible />
+    );
+    expect(visibleHtml).toContain('type="text"');
+    expect(visibleHtml).toContain('aria-label="Ẩn mật khẩu"');
+    expect(visibleHtml).toContain('aria-pressed="true"');
+
+    const preventDefault = vi.fn();
+    preventPasswordToggleBlur({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
   });
 });
