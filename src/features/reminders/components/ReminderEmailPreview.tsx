@@ -66,13 +66,7 @@ export function ReminderEmailPreview(props: ReminderEmailPreviewProps) {
         onSelectLocale={setOverrideLocale}
         onToggleSample={() => setShowSample((prev) => !prev)}
       />
-      {showSample ? (
-        <div className="ui-banner rem-sample-banner" role="status">
-          <span className="ui-banner-text">{t('previewSampleBanner')}</span>
-        </div>
-      ) : null}
       <PreviewEmailCard
-        showSample={showSample}
         sendHourVn={props.sendHourVn}
         referenceMs={referenceMs}
         previewLocale={previewLocale}
@@ -96,7 +90,6 @@ export function ReminderEmailPreview(props: ReminderEmailPreviewProps) {
           )
         }
       />
-      <p className="rem-preview-note">{t('previewPrivacyNote')}</p>
     </aside>
   );
 }

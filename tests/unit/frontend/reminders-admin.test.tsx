@@ -63,6 +63,7 @@ vi.mock('next/link', () => ({
 }));
 
 import { ReminderEmailPreview } from '@/features/reminders/components/ReminderEmailPreview';
+import { PreviewHeader } from '@/features/reminders/components/ReminderEmailPreviewParts';
 import { ReminderMilestonesCard } from '@/features/reminders/components/ReminderMilestonesCard';
 import { RemindersAdminView } from '@/features/reminders/components/RemindersAdminView';
 import {
@@ -253,9 +254,15 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(html).toContain('Còn 2 ngày');
     expect(html).toContain('Còn 1 ngày');
     expect(html).toContain('Đã quá hạn');
-    expect(html).toContain('07:00');
-    expect(html).toContain('Asia/Ho_Chi_Minh (UTC+7)');
+    expect(html).toContain('Nhắc 1 lần khi công việc vừa quá hạn.');
+    expect(html).not.toContain('mỗi ngày cho đến khi xong');
+    expect(html).toContain('data-testid="reminders-schedule-chip"');
+    expect(html).toContain('07:00 · GMT+7');
     expect(html).toContain('Trần Thị B');
+    expect(html).not.toContain('rem-day-chip');
+    expect(html).not.toContain('rem-email-kicker');
+    expect(html).not.toContain('rem-preview-note');
+    expect(html).not.toContain('rem-sample-banner');
     expect(html).toContain('Nguyễn Văn A');
     expect(html).toContain('Public overdue task');
     expect(html).toContain('Công việc ẩn (mở ứng dụng để xem chi tiết)');
@@ -329,6 +336,27 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     );
     expect(allOffEnHtml).toContain('No reminder email will be sent');
     expect(allOffEnHtml).toContain('Restore default milestones');
+    expect(allOffEnHtml).toContain('Sent once when a task becomes overdue.');
+
+    const customHtml = renderWithIntl(
+      <ReminderMilestonesCard
+        daysBefore={[3, 2, 1, 0]}
+        remindOverdue
+        disabled={false}
+        onToggleDay={vi.fn()}
+        onAddDay={vi.fn()}
+        onRemoveDay={vi.fn()}
+        onToggleOverdue={vi.fn()}
+        onRestoreDefaults={vi.fn()}
+      />,
+      'vi'
+    );
+    expect(customHtml).toContain('reminders-custom-chip-3');
+    expect(customHtml).toContain('reminders-custom-chip-0');
+    expect(customHtml).toContain('Còn 3 ngày');
+    expect(customHtml).toContain('Hôm nay (0)');
+    expect(customHtml).not.toContain('reminders-custom-chip-2');
+    expect(customHtml).not.toContain('reminders-custom-chip-1');
   });
 
   it('builds E01 preview matching milestones, priority DESC (WQ-34), WQ-27 redaction, and renders EN/empty states', () => {
@@ -424,9 +452,36 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(enPreviewHtml).toContain('Due today');
     expect(enPreviewHtml).toContain('Coming up');
     expect(enPreviewHtml).toContain('Hidden task (open the app to view details)');
+    expect(enPreviewHtml).not.toContain('rem-email-kicker');
+    expect(enPreviewHtml).not.toContain('rem-preview-note');
+    expect(enPreviewHtml).not.toContain('rem-sample-banner');
     expect(enPreviewHtml).not.toContain('CONFIDENTIAL_TODAY_TASK');
     expect(enPreviewHtml).not.toContain('HiddenDept');
     expect(enPreviewHtml).not.toContain('Unmatched 5 days task');
+
+    const sampleHeaderVi = renderWithIntl(
+      <PreviewHeader
+        previewLocale="vi"
+        showSample
+        onSelectLocale={vi.fn()}
+        onToggleSample={vi.fn()}
+      />,
+      'vi'
+    );
+    expect(sampleHeaderVi).toContain('rem-sample-chip');
+    expect(sampleHeaderVi).toContain('Dữ liệu minh họa');
+
+    const sampleHeaderEn = renderWithIntl(
+      <PreviewHeader
+        previewLocale="en"
+        showSample
+        onSelectLocale={vi.fn()}
+        onToggleSample={vi.fn()}
+      />,
+      'en'
+    );
+    expect(sampleHeaderEn).toContain('rem-sample-chip');
+    expect(sampleHeaderEn).toContain('Sample preview');
 
     const emptyHtml = renderWithIntl(
       <ReminderEmailPreview

@@ -92,10 +92,7 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
       const locUrl = msg.location()?.url ?? '';
-      // Root layout has no favicon.ico asset yet (pre-existing Minor outside E8 scope).
-      if (!locUrl.endsWith('/favicon.ico')) {
-        consoleErrors.push(`${msg.text()} (${locUrl})`);
-      }
+      consoleErrors.push(locUrl ? `${msg.text()} (${locUrl})` : msg.text());
     }
   });
   page.on('response', (res) => {
@@ -639,40 +636,54 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
       }
 
       // 3. Member GRANTED reminder.configure: S12 config, all-off warning + restore defaults, add custom day 3, save, reload, E01 preview
-      const mgrSession = await openSignedInContext(browser, reminderMgrStudentId, '/admin/reminders');
+      const mgrContext = await browser.newContext();
+      const mgrPage = await mgrContext.newPage();
+      const mgrTracker = await attachRuntimeErrorTracker(mgrPage);
       const capturedMgrApiBodies: string[] = [];
-      mgrSession.page.on('response', async (res) => {
-        const url = res.url();
-        if (
-          (url.includes('/api/v1/settings/reminders') || url.includes('/api/v1/me/tasks')) &&
-          (res.headers()['content-type'] ?? '').includes('application/json')
-        ) {
-          try {
-            capturedMgrApiBodies.push(await res.text());
-          } catch {
-            // Ignore aborted responses on reload
-          }
-        }
-      });
 
       try {
-        const page = mgrSession.page;
+        const initialSettingsPromise = mgrPage.waitForResponse(
+          (res) =>
+            res.url().includes('/api/v1/settings/reminders') &&
+            res.request().method() === 'GET' &&
+            res.status() === 200,
+        );
+        const initialPreviewTasksPromise = mgrPage.waitForResponse(
+          (res) =>
+            res.url().includes('/api/v1/me/tasks') &&
+            res.request().method() === 'GET' &&
+            res.status() === 200,
+        );
+        await signInAs(mgrPage, reminderMgrStudentId, '/admin/reminders');
+        const [initialSettingsRes, initialPreviewTasksRes] = await Promise.all([
+          initialSettingsPromise,
+          initialPreviewTasksPromise,
+        ]);
+        capturedMgrApiBodies.push(
+          await initialSettingsRes.text(),
+          await initialPreviewTasksRes.text(),
+        );
+
+        const page = mgrPage;
         await expect(page.locator('.app-side a[href="/admin/reminders"]')).toBeVisible();
         await expect(page.locator('.app-side a[href="/admin/reminders"]')).toHaveAttribute(
           'aria-current',
           'page',
         );
 
-        const scheduleCard = page.locator(
-          `section[aria-label="${viMessages.reminders.scheduleCardTitle}"]`,
-        );
-        await expect(scheduleCard).toBeVisible();
-        await expect(scheduleCard).toContainText('07:00');
-        await expect(scheduleCard).toContainText(viMessages.reminders.timeZoneValue);
-
         const milestonesCard = page.locator(
           `section[aria-label="${viMessages.reminders.milestonesCardTitle}"]`,
         );
+        await expect(milestonesCard).toBeVisible();
+        const scheduleChip = milestonesCard.getByTestId('reminders-schedule-chip');
+        await expect(scheduleChip).toBeVisible();
+        await expect(scheduleChip).toHaveText(
+          viMessages.reminders.scheduleChip.replace('{time}', '07:00'),
+        );
+        await expect(milestonesCard).toContainText(viMessages.reminders.milestonesCardLead);
+        await expect(milestonesCard).toContainText(viMessages.reminders.milestoneOverdueDesc);
+        await expect(milestonesCard.locator('.rem-chip-list')).toHaveCount(0);
+
         const toggle2Days = getMilestoneCheckbox(milestonesCard, viMessages.reminders.milestone2Days);
         const toggle1Day = getMilestoneCheckbox(milestonesCard, viMessages.reminders.milestone1Day);
         const toggleOverdue = getMilestoneCheckbox(
@@ -689,7 +700,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         await toggle1Day.uncheck();
         await toggleOverdue.uncheck();
 
-        await expect(milestonesCard.getByText(viMessages.reminders.noDaysBeforeHint)).toBeVisible();
+        await expect(milestonesCard.locator('.rem-chip-list')).toHaveCount(0);
         const allOffBanner = milestonesCard.locator('.rem-all-off-banner');
         await expect(allOffBanner).toBeVisible();
         await expect(allOffBanner).toContainText(viMessages.reminders.allOffTitle);
@@ -706,7 +717,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         await expect(toggle1Day).toBeChecked();
         await expect(toggleOverdue).toBeChecked();
 
-        // Add custom milestone day 3 -> save -> success toast -> reload persistence
+        // Add custom milestone day 3 -> chipList only shows custom days (!= 2, 1) -> save -> toast -> reload persistence
         await milestonesCard
           .getByLabel(viMessages.reminders.customDayLabel, { exact: true })
           .fill('3');
@@ -718,9 +729,15 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         const day2Chip = viMessages.reminders.dayChipLabel.replace('{days}', '2');
         const day1Chip = viMessages.reminders.dayChipLabel.replace('{days}', '1');
         const chipList = milestonesCard.locator('.rem-chip-list');
+        await expect(chipList).toBeVisible();
         await expect(chipList).toContainText(day3Chip);
-        await expect(chipList).toContainText(day2Chip);
-        await expect(chipList).toContainText(day1Chip);
+        await expect(chipList).not.toContainText(day2Chip);
+        await expect(chipList).not.toContainText(day1Chip);
+        await expect(milestonesCard.getByTestId('reminders-custom-chip-3')).toBeVisible();
+        await expect(milestonesCard.getByTestId('reminders-custom-chip-2')).toHaveCount(0);
+        await expect(milestonesCard.getByTestId('reminders-custom-chip-1')).toHaveCount(0);
+        await expect(toggle2Days).toBeChecked();
+        await expect(toggle1Day).toBeChecked();
 
         const saveBar = page.locator('.rem-save');
         await expect(saveBar).toContainText(viMessages.reminders.unsavedChanges);
@@ -733,7 +750,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         const saveResponse = await saveResponsePromise;
         expect(saveResponse.status()).toBe(200);
         const saveBodyText = await saveResponse.text();
-        assertZeroPiiInStrings([saveBodyText], sensitivePiiValues);
+        capturedMgrApiBodies.push(saveBodyText);
         const saveBody = JSON.parse(saveBodyText) as {
           settings: {
             daysBefore: number[];
@@ -757,29 +774,51 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
             res.request().method() === 'GET' &&
             res.status() === 200,
         );
+        const reloadPreviewTasksPromise = page.waitForResponse(
+          (res) =>
+            res.url().includes('/api/v1/me/tasks') &&
+            res.request().method() === 'GET' &&
+            res.status() === 200,
+        );
         await page.reload();
-        await reloadSettingsPromise;
+        const [reloadSettingsRes, reloadPreviewTasksRes] = await Promise.all([
+          reloadSettingsPromise,
+          reloadPreviewTasksPromise,
+        ]);
+        capturedMgrApiBodies.push(
+          await reloadSettingsRes.text(),
+          await reloadPreviewTasksRes.text(),
+        );
 
         await expect(chipList).toContainText(day3Chip);
-        await expect(chipList).toContainText(day2Chip);
-        await expect(chipList).toContainText(day1Chip);
+        await expect(chipList).not.toContainText(day2Chip);
+        await expect(chipList).not.toContainText(day1Chip);
+        await expect(toggle2Days).toBeChecked();
+        await expect(toggle1Day).toBeChecked();
         await expect(toggleOverdue).toBeChecked();
-        await expect(scheduleCard).toContainText(reminderMgrFullName);
+        const metaNote = milestonesCard.locator('.rem-meta-note');
+        await expect(metaNote).toBeVisible();
+        await expect(metaNote).toContainText(reminderMgrFullName);
         await expect(
           saveBar.getByRole('button', { name: viMessages.reminders.save, exact: true }),
         ).toBeDisabled();
         assertNoRawTranslationKeys(await page.locator('#main-content').innerText());
 
         // 4. Admin views /admin/audit -> sees settings.reminders_updated without PII
-        const adminSession = await openSignedInContext(browser, adminStudentId, '/admin/audit');
-        const capturedAuditBodies: string[] = [];
-        adminSession.page.on('response', async (res) => {
-          if (res.url().includes('/api/v1/audit-logs') && res.status() === 200) {
-            capturedAuditBodies.push(await res.text());
-          }
-        });
+        const adminContext = await browser.newContext();
+        const auditPage = await adminContext.newPage();
+        const adminTracker = await attachRuntimeErrorTracker(auditPage);
         try {
-          const auditPage = adminSession.page;
+          const initialAuditPromise = auditPage.waitForResponse(
+            (res) =>
+              res.url().includes('/api/v1/audit-logs') &&
+              res.request().method() === 'GET' &&
+              res.status() === 200,
+          );
+          await signInAs(auditPage, adminStudentId, '/admin/audit');
+          const initialAuditRes = await initialAuditPromise;
+          const initialAuditBody = await initialAuditRes.text();
+
           const filterPromise = auditPage.waitForResponse(
             (res) =>
               res.url().includes('/api/v1/audit-logs') &&
@@ -788,7 +827,9 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
           await auditPage
             .getByLabel(viMessages.auditLogs.actionFilterLabel)
             .selectOption('settings.reminders_updated');
-          expect((await filterPromise).status()).toBe(200);
+          const filterRes = await filterPromise;
+          expect(filterRes.status()).toBe(200);
+          const filteredAuditBody = await filterRes.text();
 
           const auditRow = auditPage
             .locator('.audit-table tbody tr', { hasText: reminderMgrFullName })
@@ -809,11 +850,14 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
           await expect(detailPane).toContainText(viMessages.auditLogs.detailPrivacyNotice);
 
           const auditMainText = await auditPage.locator('#main-content').innerText();
-          assertZeroPiiInStrings([auditMainText, ...capturedAuditBodies], sensitivePiiValues);
+          assertZeroPiiInStrings(
+            [auditMainText, initialAuditBody, filteredAuditBody],
+            sensitivePiiValues,
+          );
           assertNoRawTranslationKeys(auditMainText);
-          await adminSession.tracker.assertClean();
+          await adminTracker.assertClean();
         } finally {
-          await adminSession.context.close();
+          await adminContext.close();
         }
 
         // 5. E01 Email Preview on /admin/reminders: enable day 0 in preview draft to verify all 3 groups (WQ-34),
@@ -832,6 +876,9 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         await expect(emailCard).toContainText(s1OverdueTitle);
         await expect(emailCard).toContainText(s1TodayTitle);
         await expect(emailCard).toContainText(s1UpcomingPublicTitle);
+        await expect(previewAside.locator('.rem-sample-banner')).toHaveCount(0);
+        await expect(previewAside.locator('.rem-preview-note')).toHaveCount(0);
+        await expect(emailCard.locator('.rem-email-kicker')).toHaveCount(0);
 
         // Verify VI preview groups, hidden redaction, and exclusions
         await expect(emailCard.locator('.rem-email-lang')).toHaveText(
@@ -917,27 +964,40 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         assertZeroPiiInStrings([enPreviewText], sensitivePiiValues);
         assertNoRawTranslationKeys(enPreviewText);
 
-        // Toggle sample layout preview on/off and switch back to VI
+        // Toggle sample layout preview on/off using data-testid="reminders-sample-chip" and switch back to VI
+        await expect(previewAside.getByTestId('reminders-sample-chip')).toHaveCount(0);
         await previewAside
           .getByRole('button', { name: viMessages.reminders.previewSampleToggleOn, exact: true })
           .click();
-        await expect(previewAside.locator('.rem-sample-banner')).toBeVisible();
-        await expect(emailCard.locator('.rem-sample-chip')).toHaveText(
-          enMessages.reminders.emailContent.en.sampleBadge,
-        );
+        const sampleChip = previewAside.getByTestId('reminders-sample-chip');
+        await expect(sampleChip).toBeVisible();
+        await expect(sampleChip).toHaveText(viMessages.reminders.previewSampleChip);
         await previewAside
           .getByRole('button', { name: viMessages.reminders.previewSampleToggleOff, exact: true })
           .click();
-        await expect(previewAside.locator('.rem-sample-banner')).toHaveCount(0);
+        await expect(previewAside.getByTestId('reminders-sample-chip')).toHaveCount(0);
 
         await viBtn.click();
         await expect(viBtn).toHaveAttribute('aria-pressed', 'true');
         await expect(emailCard.locator('.rem-email-lang')).toHaveText('VI');
 
+        // 6. Responsive check on /admin/reminders at 375x812 (zero horizontal overflow)
+        await page.setViewportSize({ width: 375, height: 812 });
+        await expect(milestonesCard).toBeVisible();
+        await expect(previewAside).toBeVisible();
+        const mobileOverflow = await page.evaluate(() => ({
+          doc: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          main:
+            (document.querySelector('#main-content')?.scrollWidth ?? 0) >
+            (document.querySelector('#main-content')?.clientWidth ?? 0),
+        }));
+        expect(mobileOverflow.doc).toBe(false);
+        expect(mobileOverflow.main).toBe(false);
+
         assertZeroPiiInStrings(capturedMgrApiBodies, sensitivePiiValues);
-        await mgrSession.tracker.assertClean();
+        await mgrTracker.assertClean();
       } finally {
-        await mgrSession.context.close();
+        await mgrContext.close();
       }
     } finally {
       const cleanupNow = new Date();

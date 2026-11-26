@@ -3,6 +3,7 @@ import { normalizeTaskPriority } from '@/features/tasks/formatters';
 import {
   DEFAULT_REMINDER_DAYS_BEFORE,
   DEFAULT_REMIND_OVERDUE,
+  DEFAULT_SEND_HOUR_VN,
   MAX_MILESTONE_COUNT,
   MAX_MILESTONE_DAY,
   MIN_MILESTONE_DAY,
@@ -15,6 +16,7 @@ import type { TaskPriority } from '@/lib/tasks';
 export {
   DEFAULT_REMINDER_DAYS_BEFORE,
   DEFAULT_REMIND_OVERDUE,
+  DEFAULT_SEND_HOUR_VN,
   MAX_MILESTONE_COUNT,
   MAX_MILESTONE_DAY,
   MIN_MILESTONE_DAY,
