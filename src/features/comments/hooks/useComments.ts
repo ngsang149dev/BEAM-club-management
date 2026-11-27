@@ -46,6 +46,7 @@ async function invalidateCommentQueries(
       : []),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.boardListRoot }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.myTasksRoot }),
+    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.progressRoot }),
     queryClient.invalidateQueries({ queryKey: ['notifications'] }),
     queryClient.invalidateQueries({ queryKey: ['archive'] }),
   ]);

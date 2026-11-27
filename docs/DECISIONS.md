@@ -272,3 +272,32 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
      - **`deploy-vercel`**: cài cố định `vercel@54`, truyền `VERCEL_TOKEN` qua env (cấm cờ `--token`), chạy `vercel pull --yes --environment=production`, `vercel build --prod`, `vercel deploy --prebuilt --prod --yes`, và smoke check `GET /api/v1/branding`; bỏ qua an toàn khi chưa cấu hình `VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID`.
 - **Ảnh hưởng (`workflows`, tài liệu):** `.github/workflows/{ci,deploy}.yml`, `tests/unit/shared/cicd-workflows.test.ts`, `docs/{OPERATIONS,BACKLOG,STATUS,DECISIONS}.md`. (Không sửa schema CSDL hay `openapi.yaml`).
 - **Trạng thái:** `Done` (đã duyệt & merge `main`).
+
+---
+
+## CR-12 (`[RỦI RO CAO]`): Thiết kế lại toàn bộ Email gửi đi (Auto Light / Soft Dark Card) & Bỏ chú thích thừa (2026-11-27)
+- **Người quyết định:** Chủ dự án (`Sang`) trực tiếp xem và duyệt mẫu tương tác `beam-email-templates-preview.html`.
+- **Quyết định:**
+  1. Dựng helper dùng chung `src/server/shared/email-layout.ts` (`renderBeamEmailHtml`) cho toàn bộ 4 email hệ thống (`task.assigned`, `task.department_assigned`, `task.accepted`, `task.deliverable_submitted`, và digest nhắc hạn `reminders`):
+     - Header gradient Hồng → Cam (`#be185d → #db2777 → #ea580c`, fallback `#db2777`).
+     - Hỗ trợ tự động theo giao diện máy người nhận (`<meta name="color-scheme" content="light dark">` + `<meta name="supported-color-schemes" content="light dark">` + `@media (prefers-color-scheme: dark)`): Light Mode là **White Card** (`#ffffff`, viền `1.5px solid #d4d4d8`, chữ `#18181b`); Dark Mode là **Soft Dark Card dịu mắt giảm tương phản** (`#23252f` trên nền `#181920`, viền `#353846`, chữ `#e4e6eb`).
+     - Bảng chi tiết 2 cột `<table role="presentation">` hiển thị thêm trích đoạn mô tả (`<= 240` ký tự), thời gian bắt đầu, tình trạng hạn pill và `Deadline` (`Asia/Ho_Chi_Minh`) bằng cách nạp `description`, `startAt`, `dueAt`, `isCompleted` trong `NotificationsRepository`.
+     - **Xóa bỏ toàn bộ dòng giải thích dưới nút CTA** trong cả email gửi đi và khung xem trước `/admin/reminders` (`ReminderEmailPreviewParts.tsx`).
+     - **Loại bỏ hoàn toàn cột/nhãn Priority (`[Thấp/Trung bình/Cao/Khẩn]`)** khỏi email nhắc hạn và xem trước `/admin/reminders` (đồng bộ `CR-10`).
+     - Bảo toàn nguyên tắc bảo mật `WQ-27` (che tiêu đề, mô tả, deadline và tên/link sản phẩm khi `isHiddenTask = true`) và `0` PII (`studentId`/`email` của người giao/nhận).
+- **Ảnh hưởng:** `src/server/shared/email-layout.ts`, `src/server/modules/{notifications,reminders}/*`, `src/features/reminders/components/ReminderEmailPreviewParts.tsx`, `src/app/globals.css`, `tests/*`. (`0` migration, `0` đổi `docs/openapi.yaml`).
+- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).
+
+---
+
+## CR-13 (`[RỦI RO CAO]`): Trang Tiến độ cá nhân `/progress` dạng Master–Detail (2026-11-27)
+- **Người quyết định:** Chủ dự án (`Sang`) trực tiếp chốt nghiệp vụ và duyệt wireframe v4 `beam-member-progress-wireframe.html`.
+- **Quyết định:**
+  1. Tạo trang độc lập **`/progress`** ("Tiến độ cá nhân" / "Member Progress", mục điều hướng `WORKSPACE_NAV` ngay dưới `myTasks`); giữ nguyên hoàn toàn `/my-tasks` (`MyTasksView.tsx`) để tránh hồi quy luồng cũ.
+  2. **Phạm vi công việc trên `/progress` (`A4`):** Chỉ hiển thị các công việc được **giao trực tiếp cho cá nhân đó** (`GET /api/v1/tasks?assigneeId=<memberId>&sortBy=dueAt&sortOrder=asc&limit=200` + kiểm tra lại `assignees.some(a => a.id === selectedMemberId)` ở frontend), **không** gộp task chỉ giao cho Ban mà cá nhân chưa được gắn trực tiếp.
+  3. **Phân quyền & Bảo vệ PII (`AGENTS.md §0 #6, §7`):** Mọi tài khoản active đều dùng được tab `Của tôi`; tab `Thành viên CLB` (`GET /api/v1/members?isActive=true&limit=100` + Ban select + Combobox tìm kiếm + lọc `Có việc trễ hạn` + nút `◀ k/N ▶`) **chỉ hiển thị khi có quyền `member.view` hoặc Admin**; `MSSV` & `email` chỉ hiện khi đang xem chính chủ (`/me`) hoặc có quyền `member.view_detail`; công việc ẩn (`isHidden = true`) tự động bị lọc bởi `visibleTaskSqlCondition`.
+  4. **Bố cục Master–Detail v4 đã duyệt:**
+     - Cột trái (`7/12`): Banner thành viên + tab lọc (`Đang làm`, `Quá hạn`, `Chưa nhận`, `Đã xong`, `Tất cả`) + tìm nhanh + danh sách gọn 1 hàng kèm thanh deadline mini.
+     - Cột phải (`5/12`) tách làm **2 card xếp dọc độc lập**: Card trên gồm chi tiết tóm tắt, **thanh Deadline đổi màu động theo thời hạn** (`Xanh lá` → `Vàng` → `Cam` → `Đỏ` → `Xanh ngọc` Hoàn thành), thao tác `Nhận việc` / `Hoàn thành` và nút mở **Modal Bình luận riêng** (`TaskCommentsSection`); Card dưới dành riêng cho **`Link nộp sản phẩm (N)`** (`+ Nộp link`, danh sách link mở tab mới, xóa link).
+- **Ảnh hưởng:** `src/components/AppShellNav.tsx`, `src/app/progress/page.tsx`, `src/features/progress/*`, `src/app/globals.css`, `messages/{vi,en}.json`, `tests/*`. (`0` migration, `0` đổi `docs/openapi.yaml`).
+- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).

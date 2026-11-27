@@ -64,6 +64,7 @@ export const TASKS_QUERY_KEYS = {
   detail: (taskId: string) => ['taskDetail', taskId] as const,
   myTasksRoot: ['myTasks'] as const,
   myTasksList: (filters: MyTasksFiltersState) => ['myTasks', 'list', filters] as const,
+  progressRoot: ['tasks', 'progress'] as const,
   assigneeMembers: ['tasks', 'assigneeMembers'] as const,
   departments: ['tasks', 'departments'] as const,
 };
@@ -79,6 +80,7 @@ export async function invalidateTaskQueries(
     queryClient.invalidateQueries({ queryKey: ['boardDetail', boardId] }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.boardListRoot }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.myTasksRoot }),
+    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.progressRoot }),
     ...(taskId ? [queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.detail(taskId) })] : []),
   ]);
 }

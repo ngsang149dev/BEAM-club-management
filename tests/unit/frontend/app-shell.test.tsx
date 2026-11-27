@@ -50,6 +50,9 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).toContain('href="/tasks" class="app-brand"');
     expect(html).not.toContain('href="/"');
     expect(html).toContain('href="/my-tasks"');
+    expect(html).toContain('href="/progress"');
+    expect(html.indexOf('href="/progress"')).toBeGreaterThan(html.indexOf('href="/my-tasks"'));
+    expect(html).toContain('Tiến độ cá nhân');
     expect(html).toContain('href="/profile"');
     expect(html).not.toContain('href="/members"');
     expect(html).not.toContain('href="/archive"');
@@ -76,6 +79,8 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     );
 
     expect(html).toContain('href="/members"');
+    expect(html).toContain('href="/progress"');
+    expect(html).toContain('Member Progress');
     expect(html).toContain('href="/admin/departments"');
     expect(html).toContain('href="/admin/reminders"');
     expect(html).toContain('href="/admin/audit"');
