@@ -911,3 +911,25 @@
 - **Ngoài phạm vi:** Sửa code nghiệp vụ trực tiếp hoặc merge `main`.
 - **Mức rủi ro:** Trung bình
 - **Trạng thái:** `Done`
+
+---
+
+## Epic CR-11 — CI/CD tự động deploy Neon & Vercel qua GitHub Actions `[RỦI RO CAO]` *(Ready for PR)*
+
+### CR-11-01
+- **ID:** `CR-11-01`
+- **Tiêu đề:** Chuẩn hóa pipeline CI/CD GitHub Actions (`.github/workflows/ci.yml`, `.github/workflows/deploy.yml`) triển khai hai pha Neon Migration → Vercel Prebuilt Production `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `Coordinator` + `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `NFR-06`, `AGENTS.md` (§0 #4, §8), `docs/DECISIONS.md` (`CR-11`), `docs/OPERATIONS.md`
+- **Phụ thuộc:** `CR-10` (`Done`, merged `main`)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§0 #4, §8), `docs/OPERATIONS.md` (§3, §8), `docs/DECISIONS.md` (`CR-11`), `.github/workflows/{ci,deploy,daily-cron}.yml`
+- **Phạm vi file được sửa:** `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `tests/unit/shared/cicd-workflows.test.ts`, `docs/{OPERATIONS,DECISIONS,BACKLOG,STATUS}.md`
+- **Tiêu chí chấp nhận:**
+  1. `ci.yml` hỗ trợ `pull_request` (`main`), `workflow_call`, `workflow_dispatch`, quyền tối thiểu `contents: read`, bổ sung `npm run db:restore:verify -- --test`.
+  2. `deploy.yml` chạy khi `push` vào `main` theo thứ tự tuần tự `verify` → `migrate-neon` → `deploy-vercel` (`cancel-in-progress: false`, `environment: production`).
+  3. `migrate-neon` chỉ chạy `npm run db:migrate` với `NODE_ENV=production` dùng `secrets.NEON_DIRECT_DATABASE_URL`, tuyệt đối không gọi `db:seed`/`db:backup`/`db:restore`, kiểm tra định dạng URI/cảnh báo `-pooler`/`sslmode`, và tự bỏ qua an toàn khi thiếu secret.
+  4. `deploy-vercel` ghim `vercel@54`, đọc `VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` từ env (cấm `--token`), chạy `vercel pull --yes --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod --yes` + smoke check `/api/v1/branding`, và tự bỏ qua an toàn khi thiếu secret.
+  5. Unit test `cicd-workflows.test.ts` + toàn bộ cổng kiểm tra (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`) xanh; audit ngữ cảnh sạch `qa-reviewer` đạt `VERDICT: PASS`.
+- **Ngoài phạm vi:** Chạy migration/deploy trực tiếp lên Neon/Vercel thật từ máy agent (`AGENTS.md §0 #4`).
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR`
