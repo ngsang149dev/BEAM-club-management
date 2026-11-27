@@ -1,7 +1,7 @@
 # STATUS
 
-Cập nhật: 2026-11-27 · Phiên: 22
-Epic hiện tại: **`CR-11` Done (đã duyệt & merge `main`) — Hệ thống đã kích hoạt CI/CD tự động deploy Neon + Vercel**
+Cập nhật: 2026-11-27 · Phiên: 23
+Epic hiện tại: **Toàn bộ `E0..E11` & `CR-01..CR-11` đã hoàn tất (`Done`) trên `main` — Production (Neon + Vercel + SMTP + Auto CI/CD) đang vận hành xanh**
 
 ## Đã xong gần đây
 - **E0 (Done, đã merge `main`):** Wireframe 0A, CSDL 0B (PostgreSQL 16), OpenAPI & truy vết 0C.
@@ -102,10 +102,55 @@ Epic hiện tại: **`CR-11` Done (đã duyệt & merge `main`) — Hệ thống
 
 - **CR-11 (`[RỦI RO CAO]` — Done, đã duyệt & merge `main`):**
   - Pipeline CI/CD (`CR-11-01`): Nâng cấp [.github/workflows/ci.yml](../.github/workflows/ci.yml) thành reusable workflow (`workflow_call` + `pull_request` + `workflow_dispatch`, quyền `contents: read`, bổ sung `npm run db:restore:verify -- --test` & `SESSION_TTL_MINUTES=30`); tạo mới [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) chạy tuần tự **`verify` → `migrate-neon` (`npm run db:migrate`, `NODE_ENV=production`, `NEON_DIRECT_DATABASE_URL`, cấm `db:seed`) → `deploy-vercel` (`vercel@54`, `VERCEL_TOKEN` qua env, `vercel pull --yes --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod --yes` + smoke check `/api/v1/branding`)** với `environment: production` & `cancel-in-progress: false`; tự bỏ qua an toàn khi chưa cấu hình GitHub Secrets.
-  - Kiểm thử, Audit & Vận hành: Thêm [cicd-workflows.test.ts](../tests/unit/shared/cicd-workflows.test.ts); cập nhật [OPERATIONS.md](OPERATIONS.md), [DECISIONS.md](DECISIONS.md), [BACKLOG.md](BACKLOG.md); `qa-reviewer` ngữ cảnh sạch (`c7c55fc3`) đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, Checklist `6A.8` `13/13`); chủ dự án đã thêm đủ GitHub Secrets & ngắt kết nối Git trực tiếp trên Vercel để GitHub Actions tự động triển khai mỗi lần cập nhật `main`.
+  - Kiểm thử, Audit & Vận hành: Thêm [cicd-workflows.test.ts](../tests/unit/shared/cicd-workflows.test.ts); cập nhật [OPERATIONS.md](OPERATIONS.md), [DECISIONS.md](DECISIONS.md), [BACKLOG.md](BACKLOG.md); `qa-reviewer` ngữ cảnh sạch (`c7c55fc3`) đạt **`VERDICT: PASS`** (`0` Blocker, `0` Major, Checklist `6A.8` `13/13`); đã cấu hình GitHub Secrets (`VERCEL_TOKEN` Full Account scope, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `NEON_DIRECT_DATABASE_URL`), ngắt kết nối Git trực tiếp trên Vercel để tránh build trùng, và xác nhận cả 3 bước `verify` → `migrate-neon` → `deploy-vercel` cùng gửi mail SMTP thật (kèm che tiêu đề task ẩn `WQ-27`) hoạt động thành công trên Production.
+
+---
+
+## Tóm tắt Bàn giao Đa máy (Cross-Machine Handoff — 2026-11-27)
+
+### 1. Trạng thái kiến trúc, CSDL & kiểm thử hiện tại trên `main`
+- **Nhánh chuẩn:** `origin/main` (cây thư mục sạch, toàn bộ tính năng đến hết `E11` & `CR-11` đã merge).
+- **CSDL PostgreSQL 16:** `8` bản migration cộng thêm (`db/migrations/0001_initial_schema.sql` .. `0008_calendar_tasks_leads_deliverables.sql`), tổng cộng **`24` bảng `public`** (`23` bảng miền + `schema_migrations`), `18` mã quyền `PERMISSIONS`, `3` mẫu quyền (`basic_member`, `department_lead`, `hr_manager`), `7` trigger bảo toàn dữ liệu (append-only `task_events`/`audit_logs`, chống mất admin hoạt động cuối, khóa sửa `student_id`, khóa unpurge).
+- **Kiến trúc & Chất lượng mã (`AGENTS.md §6A`):** `378` modules / `1,846` dependencies (`0` vi phạm `dependency-cruiser`), TypeScript `strict` (`0` lỗi), ESLint (`0` lỗi / `0` cảnh báo; mọi file `<= 300` dòng, hàm `<= 40` dòng, complexity `<= 10`), song ngữ `messages/{vi,en}.json` khớp `100%`.
+- **Chỉ số bộ kiểm thử gần nhất:**
+  - Unit (`npm run test:unit`): **`66/66` tệp (`368/368` test)**.
+  - Integration PostgreSQL (`npm run test:integration`): **`22/22` tệp (`43/43` test)** trên `beam_test`.
+  - Sao lưu & khôi phục (`npm run db:restore:verify -- --test`): **`24` bảng, `18` quyền, `3` preset, đủ trigger**.
+  - Build (`npm run build`): **`43/43` route** + `ƒ Proxy` (`src/proxy.ts`).
+  - Playwright E2E (`npm run test:e2e`): **`51/51` Chrome E2E**.
+
+### 2. Tổng hợp các cụm chức năng đang chạy
+1. **Xác thực & Phiên (`E2`, `CR-01`, `CR-08`, `E11`):** Đăng nhập `MSSV + Mật khẩu` (`scrypt`), bắt đổi mật khẩu lần đầu (`/profile?changePassword=1`), **1 thiết bị duy nhất · phiên trượt `30` phút** (`SESSION_TTL_MINUTES=30`, polling chuông gửi `x-beam-background: 1` không tự gia hạn phiên nhàn rỗi), OWASP HTTP Security Headers + CSRF `Origin`/`Sec-Fetch-Site`, rate limit 2 lớp, hỗ trợ dev qua IP LAN / iOS Safari.
+2. **Thành viên, Ban, Phân quyền & Thương hiệu (`E3`, `E4`, `CR-02`, `CR-02B`, `CR-05`, `CR-07`):** Quản lý thành viên/avatar (`<= 256 KB`), gán **Trưởng ban** (`departments.lead_user_id`), ẩn `MSSV`/`email` ngoài `member.view_detail` & `/me`, chặn Admin tự gỡ quyền Admin của chính mình (`409 CANNOT_REVOKE_OWN_ADMIN`), trang `/admin/branding` quản lý Logo + Wordmark (`.svg` rasterize) + tối đa `12` ảnh triển lãm Polaroid ở `/login`.
+3. **Lịch Công việc trượt ngang & Phối hợp 3 bước (`E5`–`E7A`, `CR-03`, `CR-06`, `CR-09`, `CR-10`):**
+   - Màn chính **`/tasks`** (mặc định mở ở chế độ **Tuần `INITIAL_ZOOM = 100`** căn giữa Hôm nay; thanh trượt zoom 3 mốc `Năm · Tháng · Tuần` + `Ctrl/Cmd+Wheel`; chọn Ban + tìm kiếm cùng 1 hàng; viền & bộ lọc cảnh báo Deadline thay thế hoàn toàn Priority; khay `Chưa đặt hạn`; `/`, `/boards`, `/boards/[id]` tự redirect sang `/tasks` giữ `?task=`).
+   - Tạo công việc không cần chọn Board (server tự gắn `'BEAM Workspace'` 2 cột `Đang thực hiện` / `Done`).
+   - Cửa sổ chi tiết gần full màn (`96vw × 94vh`): luồng **Giao Ban/Cá nhân → Thành viên bật `Đã nhận công việc` → Nộp/xóa link `Sản phẩm bàn giao` (`<= 30` link `http/https`)**, tự gửi Chuông Web + Email cho Trưởng ban & người tạo (loại trừ `actorId` tự thao tác; công việc ẩn trả `404` và che tiêu đề/URL trên email theo `WQ-27`), tab `Bình luận | Lịch sử`, hoàn tác `task_events` + Thùng rác toàn Workspace.
+4. **Lưu trữ, Nhắc hạn & CI/CD Production (`CR-04`, `E8`–`E10`, `CR-11`):** `/archive` (3 tab + tự dọn `7/30/90` ngày), `/admin/reminders` (`07:00 UTC+7`, Vercel Cron `sin1` + `.github/workflows/daily-cron.yml`), và auto deploy `.github/workflows/deploy.yml` (`verify` → `migrate-neon` → `deploy-vercel`).
+
+### 3. Các bước bắt đầu trên máy mới (`macOS` / `Windows` / `Linux`)
+1. Kéo mã nguồn mới nhất:
+   ```bash
+   git checkout main
+   git pull origin main
+   npm install
+   ```
+2. Bật **Docker Desktop** (hoặc PostgreSQL 16 local) rồi chạy lệnh khởi tạo tự động:
+   ```bash
+   npm run setup
+   ```
+   *(Lệnh này tự tạo `.env.local` với `SESSION_SECRET`/`CRON_SECRET` ngẫu nhiên nếu chưa có, dựng `beam_dev` & `beam_test`, áp đủ migration `0001..0008`, nạp `db/seed.sql` mật khẩu dev `BeamDev@2026`, và chạy `npm run doctor`).*
+3. Nếu cần chạy Playwright E2E trên máy mới chưa có Chrome/Chromium: `npx playwright install chromium`.
+4. Nếu muốn test gửi email SMTP thật ở local trên máy mới: điền 5 biến `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` vào `.env.local` (tuyệt đối không commit).
+5. Chạy server dev: `npm run dev` (đăng nhập thử bằng `MSSV-ADMIN-01` / `BeamDev@2026`).
+
+### 4. Lưu ý quan trọng khi tiếp tục phát triển
+- **Cẩn trọng khi push/merge `main`:** `.github/workflows/deploy.yml` đang bật thật — mọi commit đẩy lên `main` (nếu không có `[skip ci]`) sẽ tự động chạy `db:migrate` vào **Neon Production** và deploy bản mới lên **Vercel Production**. Luôn làm trên nhánh `feat/<ID>-<mo-ta>`, chạy đủ cổng kiểm tra và duyệt trước khi merge (`AGENTS.md §0 #5`).
+- **Không chạm dữ liệu thật từ máy dev (`AGENTS.md §0 #4`):** Không trỏ `.env.local` vào `DATABASE_URL` của Neon Production.
 
 ## Đang bị chặn / câu hỏi cho chủ dự án
 - Không có câu hỏi chặn.
 
-## Việc tiếp theo
-1. Theo dõi lượt chạy workflow **`Deploy Production (Neon & Vercel)`** trên GitHub Actions sau lần push `main` này và kiểm tra trang web production (`/login`, `/tasks`, `/api/v1/branding`), sau đó thực hiện bước tạo Admin đầu tiên (`npm run db:bootstrap-admin`) theo [OPERATIONS.md](OPERATIONS.md#L195-L215) nếu DB Neon chưa có tài khoản Admin.
+## Việc tiếp theo (Tùy chọn khi mở phiên mới)
+1. Thực hiện UAT nội bộ cùng thành viên CLB theo [`docs/UAT-CHECKLIST.md`](UAT-CHECKLIST.md) (`U1`–`U10`) trên môi trường Production và thiết lập lịch sao lưu `pg_dump` hàng tuần (`docs/OPERATIONS.md §5.2`).
+2. *(Tùy chọn dọn dẹp kỹ thuật nhỏ)*: Xử lý cảnh báo `pg@8.23` (`DeprecationWarning` query song song trên cùng client / alias `sslmode=verify-full`) trên runtime log hoặc dọn các nhánh `feat/*` cũ đã merge trên remote.

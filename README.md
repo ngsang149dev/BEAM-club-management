@@ -1,6 +1,8 @@
 # BEAM Club Management
 
-Internal club member management and Trello-style Kanban task board for BEAM (~50 members, 20 departments).
+Internal club management & horizontal calendar task workspace (`/tasks`) for **BEAM Club** (~50 members, 20 departments) — featuring single-device sliding sessions (`30m`), granular 18-permission RBAC, department leads, 3-step task coordination (Assign → Accept → Submit Deliverables) with bilingual `vi`/`en` Web + SMTP notifications, append-only history & undo, Archive Center, Branding/Login Gallery, and automated GitHub Actions CI/CD to Neon PostgreSQL & Vercel (`sin1`).
+
+> **Switching machines?** Run the 3 commands in **Quick Start** below, then read [`AGENTS.md`](AGENTS.md) and the **Cross-Machine Handoff** section at the bottom of [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Prerequisites
 
