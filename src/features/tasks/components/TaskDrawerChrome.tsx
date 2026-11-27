@@ -1,11 +1,102 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
 import { describeTaskError } from '../error-mapping';
+import { formatShortVnDate, formatTaskDateTime } from '../formatters';
 import type { TaskDto } from '../hooks/useTasks';
+import {
+  MemberInlineName,
+  TaskDeadlineBadge,
+  TaskDepartmentChips,
+} from './TaskPriorityBadge';
 
 export type DrawerTab = 'details' | 'comments' | 'history';
+export type ModalSubTab = 'comments' | 'history';
+
+export function formatModalDateRange(startAt: string | null, dueAt: string | null): string | null {
+  const start = formatShortVnDate(startAt);
+  const due = formatShortVnDate(dueAt);
+  if (start && due) return `${start} → ${due}`;
+  if (start) return start;
+  if (due) return due;
+  return null;
+}
+
+export function TaskModalHeader({
+  titleId,
+  task,
+  onClose,
+}: {
+  readonly titleId: string;
+  readonly task: TaskDto | null;
+  readonly onClose: () => void;
+}) {
+  const locale = useLocale();
+  const tTasks = useTranslations('tasks');
+  const tCommon = useTranslations('common');
+  const rangeText = task ? formatModalDateRange(task.startAt, task.dueAt) : null;
+
+  return (
+    <div className="task-modal-header">
+      <div className="task-modal-header-main">
+        {task ? (
+          <div className="task-modal-header-badges">
+            <TaskDepartmentChips departments={task.assignedDepartments} />
+            <TaskDeadlineBadge dueAt={task.dueAt} isCompleted={task.isCompleted} />
+            {task.isHidden ? <span className="ui-chip task-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
+            {rangeText ? <span className="task-modal-range mono">{rangeText}</span> : null}
+            <span className="task-modal-creator">
+              <MemberInlineName member={task.creator} /> · {formatTaskDateTime(task.createdAt, locale)}
+            </span>
+          </div>
+        ) : null}
+        <h2 id={titleId} className="task-modal-title">
+          {task ? task.title : tTasks('drawerTitle')}
+        </h2>
+      </div>
+      <button type="button" className="ui-btn ghost is-sm" aria-label={tCommon('close')} onClick={onClose}>
+        {tCommon('close')} ✕
+      </button>
+    </div>
+  );
+}
+
+export function TaskModalSubTabs({
+  subTab,
+  commentCount,
+  onSelect,
+}: {
+  readonly subTab: ModalSubTab;
+  readonly commentCount: number;
+  readonly onSelect: (tab: ModalSubTab) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+
+  return (
+    <div className="task-subtabs" role="tablist" aria-label={tTasks('tabsAriaLabel')}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={subTab === 'comments'}
+        className={`task-subtab-btn${subTab === 'comments' ? ' is-active' : ''}`}
+        onClick={() => onSelect('comments')}
+      >
+        <span>{tTasks('tabComments')}</span>
+        <span className="task-drawer-tab-count">{commentCount}</span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={subTab === 'history'}
+        className={`task-subtab-btn${subTab === 'history' ? ' is-active' : ''}`}
+        onClick={() => onSelect('history')}
+      >
+        <span>{tTasks('tabHistory')}</span>
+      </button>
+    </div>
+  );
+}
 
 export function TaskDrawerReadOnlyBody({ task }: { task: TaskDto }) {
   const tTasks = useTranslations('tasks');
@@ -91,28 +182,9 @@ export function TaskDrawerTabBar({
 
   return (
     <div className="task-drawer-tabs" role="tablist" aria-label={tTasks('tabsAriaLabel')}>
-      <DrawerTabButton
-        id={detailsTabId}
-        panelId={detailsPanelId}
-        active={activeTab === 'details'}
-        label={tTasks('tabDetails')}
-        onSelect={() => onSelect('details')}
-      />
-      <DrawerTabButton
-        id={commentsTabId}
-        panelId={commentsPanelId}
-        active={activeTab === 'comments'}
-        label={tTasks('tabComments')}
-        count={commentCount}
-        onSelect={() => onSelect('comments')}
-      />
-      <DrawerTabButton
-        id={historyTabId}
-        panelId={historyPanelId}
-        active={activeTab === 'history'}
-        label={tTasks('tabHistory')}
-        onSelect={() => onSelect('history')}
-      />
+      <DrawerTabButton id={detailsTabId} panelId={detailsPanelId} active={activeTab === 'details'} label={tTasks('tabDetails')} onSelect={() => onSelect('details')} />
+      <DrawerTabButton id={commentsTabId} panelId={commentsPanelId} active={activeTab === 'comments'} label={tTasks('tabComments')} count={commentCount} onSelect={() => onSelect('comments')} />
+      <DrawerTabButton id={historyTabId} panelId={historyPanelId} active={activeTab === 'history'} label={tTasks('tabHistory')} onSelect={() => onSelect('history')} />
     </div>
   );
 }
@@ -133,7 +205,7 @@ export function TaskDrawerErrorBody({
   const isNotFound = err?.key === 'notFound';
 
   return (
-    <div className="ui-drawer-body">
+    <div className="task-modal-body">
       <ErrorState
         variant={isNotFound ? '404' : '500'}
         code={isNotFound ? tErr('404.code') : undefined}

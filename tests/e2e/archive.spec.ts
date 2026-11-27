@@ -719,10 +719,12 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
       expect(wq33Events).toHaveLength(1);
       expect(wq33Events[0]?.changes).toMatchObject({ column_id: { from: null, to: todoColId } });
 
-      // Verify restored tasks appear on board UI
+      // Verify legacy /boards/[id] redirects to /tasks and restored unscheduled tasks appear on /tasks
       await taskDelPage.goto(`/boards/${activeBoardId}`);
-      await expect(taskDelPage.locator('article.kanban-card', { hasText: origColTaskTitle })).toBeVisible();
-      await expect(taskDelPage.locator('article.kanban-card', { hasText: wq33TaskTitle })).toBeVisible();
+      await taskDelPage.waitForURL(`${BASE_ORIGIN}/tasks`);
+      await taskDelPage.locator('.hcal-unscheduled-toggle').click();
+      await expect(taskDelPage.locator('.hcal-unscheduled-chip', { hasText: origColTaskTitle })).toBeVisible();
+      await expect(taskDelPage.locator('.hcal-unscheduled-chip', { hasText: wq33TaskTitle })).toBeVisible();
 
       await taskDelTracker.assertClean();
     } finally {
@@ -793,12 +795,19 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
     expect((await restoreMemberPromise).status()).toBe(200);
     await expect(getDesktopRow(page, inactiveRestoreName)).toHaveCount(0);
 
-    // Verify board active on /boards, hidden task restored on activeBoard, and member active on /members
+    // Verify board active via /api/v1/boards, /boards redirects to /tasks, hidden task restored on /tasks, and member active on /members
     await page.goto(`/boards/${activeBoardId}`);
-    await expect(page.locator('article.kanban-card', { hasText: hiddenTaskTitle })).toBeVisible();
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+    await page.locator('.hcal-unscheduled-toggle').click();
+    await expect(page.locator('.hcal-unscheduled-chip', { hasText: hiddenTaskTitle })).toBeVisible();
 
     await page.goto('/boards');
-    await expect(page.locator('article.board-tile', { hasText: archivedBoardName })).toBeVisible();
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+    const activeBoardsRes = await page.request.get('/api/v1/boards');
+    expect(activeBoardsRes.status()).toBe(200);
+    expect(
+      ((await activeBoardsRes.json()) as { items: Array<{ id: string; name: string }> }).items,
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ id: archivedBoardId, name: archivedBoardName })]));
 
     await page.goto('/members');
     await page.getByLabel(viMessages.members.searchLabel).fill(inactiveRestoreName);

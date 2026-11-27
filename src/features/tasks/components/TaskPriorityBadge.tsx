@@ -5,8 +5,10 @@ import { MemberAvatar } from '@/components/MemberAvatar';
 import {
   PRIORITY_MESSAGE_KEY,
   formatTaskDueDate,
+  getCalendarDeadlineInfo,
   getTaskDueUrgency,
   normalizeTaskPriority,
+  type CalendarDeadlineTier,
   type TaskDueUrgency,
 } from '../formatters';
 import type { DepartmentSummaryDto, MemberPublicSummary } from '../hooks/useTasks';
@@ -82,6 +84,33 @@ export function TaskDueBadge({
       <span>{resolveDueBadgeLabel(urgency, dateText, tTasks)}</span>
     </span>
   );
+}
+
+export function resolveDeadlineBadgeText(
+  tier: CalendarDeadlineTier,
+  daysDiff: number | null,
+  tTasks: ReturnType<typeof useTranslations<'tasks'>>
+): string {
+  if (tier === 'done') return tTasks('deadlineBadgeDone');
+  if (tier === 'unscheduled' || daysDiff === null) return tTasks('noDueDate');
+  if (tier === 'overdue') return tTasks('deadlineBadgeOverdue', { days: Math.abs(daysDiff) });
+  if (daysDiff === 0) return tTasks('dueTodayBadge');
+  return tTasks('deadlineBadgeDaysLeft', { days: daysDiff });
+}
+
+export function TaskDeadlineBadge({
+  dueAt,
+  isCompleted,
+  todayIso,
+}: {
+  readonly dueAt: string | null;
+  readonly isCompleted: boolean;
+  readonly todayIso?: string;
+}) {
+  const tTasks = useTranslations('tasks');
+  const { tier, daysDiff } = getCalendarDeadlineInfo({ dueAt, isCompleted }, todayIso);
+  const text = resolveDeadlineBadgeText(tier, daysDiff, tTasks);
+  return <span className={`task-deadline-badge is-${tier}`}>{text}</span>;
 }
 
 export function MemberInlineName({ member }: { member: MemberPublicSummary }) {

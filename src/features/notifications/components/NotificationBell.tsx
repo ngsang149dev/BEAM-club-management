@@ -41,7 +41,7 @@ export function selectNotificationItem({
   if (item.readAt === null) {
     markRead(item.id);
   }
-  navigate(`/boards/${item.boardId}?task=${item.taskId}`);
+  navigate(`/tasks?task=${item.taskId}`);
 }
 
 function useClosePopoverOnOutside(

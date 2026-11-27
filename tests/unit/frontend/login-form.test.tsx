@@ -122,10 +122,10 @@ describe('LoginForm (S01)', () => {
     expect(unsafePageEl.props.returnTo).toBeUndefined();
 
     const safePageEl = await LoginPage({
-      searchParams: Promise.resolve({ expired: '1', returnTo: '/my-tasks?priority=4' }),
+      searchParams: Promise.resolve({ expired: '1', returnTo: '/my-tasks?deadline=overdue' }),
     });
     expect(safePageEl.props.expired).toBe(true);
-    expect(safePageEl.props.returnTo).toBe('/my-tasks?priority=4');
+    expect(safePageEl.props.returnTo).toBe('/my-tasks?deadline=overdue');
 
     const emptyPageEl = await LoginPage({
       searchParams: Promise.resolve({}),
@@ -148,7 +148,7 @@ describe('LoginForm (S01)', () => {
     expect(
       resolveLoginRedirectTarget(null, {
         user: baseUser,
-        redirectTo: '/boards',
+        redirectTo: '/tasks',
         expiresAt: '2026-11-25T00:00:00.000Z',
       })
     ).toBe('/profile?changePassword=1');
@@ -164,10 +164,10 @@ describe('LoginForm (S01)', () => {
     expect(
       resolveLoginRedirectTarget(null, {
         user: { ...baseUser, mustChangePassword: false },
-        redirectTo: '/boards',
+        redirectTo: '/tasks',
         expiresAt: '2026-11-25T00:00:00.000Z',
       })
-    ).toBe('/boards');
+    ).toBe('/tasks');
   });
 
   it('renders session expired banner when expired is true in both locales', () => {

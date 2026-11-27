@@ -11,7 +11,7 @@ import { BRANDING_QUERY_KEYS } from '@/features/branding/hooks/useBranding';
 import { PermissionsProvider } from '@/features/shared/permissions/can';
 
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/boards',
+  usePathname: () => '/tasks',
   useRouter: () => ({
     refresh: vi.fn(),
     push: vi.fn(),
@@ -39,14 +39,15 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
   it('hides gated workspace and admin links when user is omitted and no permissions exist', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
-        <AppShell title="Board">
+        <AppShell title="Calendar" fullHeight>
           <div>workspace-body</div>
         </AppShell>
       </NextIntlClientProvider>
     );
 
-    expect(html).toContain('href="/boards"');
-    expect(html).toContain('href="/boards" class="app-brand"');
+    expect(html).toContain('app-shell is-full-height');
+    expect(html).toContain('href="/tasks"');
+    expect(html).toContain('href="/tasks" class="app-brand"');
     expect(html).not.toContain('href="/"');
     expect(html).toContain('href="/my-tasks"');
     expect(html).toContain('href="/profile"');

@@ -23,8 +23,8 @@ export default async function NotFoundPage() {
           <Link href="/my-tasks" className="ui-btn primary">
             {tCommon('backToMyTasks')}
           </Link>
-          <Link href="/boards" className="ui-btn secondary">
-            {tCommon('backToBoards')}
+          <Link href="/tasks" className="ui-btn secondary">
+            {tCommon('backToTasks')}
           </Link>
         </>
       }

@@ -35,6 +35,12 @@ function formatPriorityChangedSummary(fromLabel: string, toLabel: string): strin
     .replace('{to}', toLabel);
 }
 
+function formatTitleChangedSummary(fromTitle: string, toTitle: string): string {
+  return viMessages.taskHistory.events.titleChanged
+    .replace('{from}', fromTitle)
+    .replace('{to}', toTitle);
+}
+
 async function attachRuntimeErrorTracker(page: Page): Promise<{
   assertClean: () => Promise<void>;
 }> {
@@ -65,14 +71,17 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
 async function signInAs(
   page: Page,
   studentId: string,
-  returnTo = '/boards',
+  returnTo = '/tasks',
   password = DEV_SEED_PASSWORD,
 ): Promise<void> {
+  const expectedPath = returnTo.startsWith('/boards')
+    ? `/tasks${returnTo.includes('?') ? returnTo.slice(returnTo.indexOf('?')) : ''}`
+    : returnTo;
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(studentId);
   await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(password);
   await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
-  await page.waitForURL((url) => `${url.pathname}${url.search}` === returnTo);
+  await page.waitForURL((url) => `${url.pathname}${url.search}` === expectedPath);
 }
 
 async function openSignedInContext(
@@ -91,38 +100,33 @@ async function openSignedInContext(
   return { context, page, tracker };
 }
 
-function getColumnSection(page: Page, columnName: string): Locator {
-  return page.locator('section.kanban-col', {
-    has: page.locator('h2.kanban-col-name', {
-      hasText: new RegExp(`^${escapeRegex(columnName)}$`),
-    }),
-  });
+async function ensureUnscheduledTrayOpen(page: Page): Promise<void> {
+  const toggle = page.locator('.hcal-unscheduled-toggle');
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+  }
+  await expect(page.locator('.hcal-unscheduled-list')).toBeVisible();
 }
 
-function getTaskCardInColumn(page: Page, columnName: string, title: string): Locator {
-  return getColumnSection(page, columnName).locator('article.kanban-card', {
-    has: page.locator('.kanban-card-title', {
+function getUnscheduledTaskChip(page: Page, title: string): Locator {
+  return page.locator('.hcal-unscheduled-chip', {
+    has: page.locator('.hcal-unscheduled-title', {
       hasText: new RegExp(`^${escapeRegex(title)}$`),
     }),
   });
 }
 
 function getTaskDrawer(page: Page): Locator {
-  return page.locator('aside.ui-drawer-task[role="dialog"]');
+  return page.locator('aside.task-modal-shell[role="dialog"]');
 }
 
 async function openHistoryTab(drawer: Locator): Promise<void> {
   await drawer
+    .locator('.task-subtabs')
     .getByRole('tab', { name: new RegExp(`^${escapeRegex(viMessages.tasks.tabHistory)}$`) })
     .click();
   await expect(drawer.locator('.task-history-section')).toBeVisible();
-}
-
-async function openDetailsTab(drawer: Locator): Promise<void> {
-  await drawer
-    .getByRole('tab', { name: new RegExp(`^${escapeRegex(viMessages.tasks.tabDetails)}$`) })
-    .click();
-  await expect(drawer.locator('.task-drawer-grid')).toBeVisible();
 }
 
 function assertZeroPiiInStrings(
@@ -752,48 +756,35 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     });
 
     await signInAs(page, creatorEditorStudentId, `/boards/${historyBoardId}`);
-    await expect(getTaskCardInColumn(page, 'Todo', primaryTaskTitle)).toBeVisible();
+    await ensureUnscheduledTrayOpen(page);
+    await expect(getUnscheduledTaskChip(page, primaryTaskTitle)).toBeVisible();
 
-    // 1. Move task via S04 "Chuyển tới cột…" menu -> verify Sonner Undo toast -> click Undo -> persists across reload + compensating task_event
-    const primaryCardInTodo = getTaskCardInColumn(page, 'Todo', primaryTaskTitle);
-    await primaryCardInTodo.getByLabel(viMessages.tasks.taskActionsMenu, { exact: true }).click();
-    await expect(primaryCardInTodo.getByText(viMessages.tasks.moveToColumnMenu)).toBeVisible();
-
-    const movePromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${primaryTaskId}/move`) &&
-        res.request().method() === 'POST',
-    );
-    await primaryCardInTodo.getByRole('menuitem', { name: 'Doing' }).click();
-    const moveRes = await movePromise;
+    // 1. Move task via API -> revert via compensating task_event -> verify DB columnId & append-only task_events
+    const moveRes = await page.request.post(`/api/v1/tasks/${primaryTaskId}/move`, {
+      data: { columnId: histDoingColId, version: 1 },
+    });
     expect(moveRes.status()).toBe(200);
     const moveEventId = ((await moveRes.json()) as { eventId: string }).eventId;
 
-    await expect(getTaskCardInColumn(page, 'Doing', primaryTaskTitle)).toBeVisible();
+    const [movedDoingDb] = await db
+      .select({ columnId: tasks.columnId })
+      .from(tasks)
+      .where(eq(tasks.id, primaryTaskId))
+      .limit(1);
+    expect(movedDoingDb?.columnId).toBe(histDoingColId);
 
-    const moveToastText = viMessages.tasks.movedToColumnToast.replace('{column}', 'Doing');
-    const moveToast = page.locator('[data-sonner-toast]', { hasText: moveToastText }).last();
-    await expect(moveToast).toBeVisible();
-    const moveUndoBtn = moveToast.getByRole('button', {
-      name: viMessages.taskHistory.undoAction,
-      exact: true,
-    });
-    await expect(moveUndoBtn).toBeVisible();
-
-    const revertMovePromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${primaryTaskId}/events/${moveEventId}/revert`) &&
-        res.request().method() === 'POST',
+    const revertMoveRes = await page.request.post(
+      `/api/v1/tasks/${primaryTaskId}/events/${moveEventId}/revert`,
+      { data: { force: false } },
     );
-    await moveUndoBtn.click();
-    expect((await revertMovePromise).status()).toBe(200);
+    expect(revertMoveRes.status()).toBe(200);
 
-    await expect(getTaskCardInColumn(page, 'Todo', primaryTaskTitle)).toBeVisible();
-    await expect(getTaskCardInColumn(page, 'Doing', primaryTaskTitle)).toHaveCount(0);
-
-    await page.reload();
-    await expect(getTaskCardInColumn(page, 'Todo', primaryTaskTitle)).toBeVisible();
-    await expect(getTaskCardInColumn(page, 'Doing', primaryTaskTitle)).toHaveCount(0);
+    const [revertedTodoDb] = await db
+      .select({ columnId: tasks.columnId })
+      .from(tasks)
+      .where(eq(tasks.id, primaryTaskId))
+      .limit(1);
+    expect(revertedTodoDb?.columnId).toBe(histTodoColId);
 
     const moveEventsAfterUndo = await db
       .select()
@@ -806,57 +797,61 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     expect(moveEventsAfterUndo[1]?.revertsEventId).toBe(moveEventId);
     expect(moveEventsAfterUndo[1]?.forced).toBe(false);
 
-    // 2. Open S05 Drawer -> update Priority (2 -> 4) -> click 10s Undo toast -> Priority reverts back to 2 (AC-17)
-    await getTaskCardInColumn(page, 'Todo', primaryTaskTitle).locator('.kanban-card-open').click();
+    // 2. Open S05 near-fullscreen modal -> update Title -> click 10s Undo toast -> Title reverts back (AC-17)
+    const primaryTitleV1 = `${primaryTaskTitle} V1`;
+    const primaryTitleV2 = `${primaryTaskTitle} V2`;
+
+    await getUnscheduledTaskChip(page, primaryTaskTitle).click();
     const drawer = getTaskDrawer(page);
     await expect(drawer).toBeVisible();
 
-    const prioritySelect = drawer.getByLabel(viMessages.tasks.priorityLabel, { exact: true });
-    await expect(prioritySelect).toHaveValue('2');
-    await prioritySelect.selectOption('4');
+    const titleInput = drawer.getByLabel(viMessages.tasks.titleLabel, { exact: true });
+    await expect(titleInput).toHaveValue(primaryTaskTitle);
+    await titleInput.fill(primaryTitleV1);
 
-    const patchPrio1Promise = page.waitForResponse(
+    const patchTitle1Promise = page.waitForResponse(
       (res) =>
         res.url().endsWith(`/api/v1/tasks/${primaryTaskId}`) &&
         res.request().method() === 'PATCH',
     );
     await drawer.getByRole('button', { name: viMessages.tasks.saveDetails, exact: true }).click();
-    const patchPrio1Res = await patchPrio1Promise;
-    expect(patchPrio1Res.status()).toBe(200);
-    const prio4EventId = ((await patchPrio1Res.json()) as { eventId: string }).eventId;
+    const patchTitle1Res = await patchTitle1Promise;
+    expect(patchTitle1Res.status()).toBe(200);
+    const titleV1EventId = ((await patchTitle1Res.json()) as { eventId: string }).eventId;
 
-    const prioToast = page
+    const editToast = page
       .locator('[data-sonner-toast]', { hasText: viMessages.tasks.updatedToast })
       .last();
-    await expect(prioToast).toBeVisible();
-    const prioUndoBtn = prioToast.getByRole('button', {
+    await expect(editToast).toBeVisible();
+    const editUndoBtn = editToast.getByRole('button', {
       name: viMessages.taskHistory.undoAction,
       exact: true,
     });
-    await expect(prioUndoBtn).toBeVisible();
+    await expect(editUndoBtn).toBeVisible();
 
-    const revertPrio4Promise = page.waitForResponse(
+    const revertTitle1Promise = page.waitForResponse(
       (res) =>
-        res.url().includes(`/api/v1/tasks/${primaryTaskId}/events/${prio4EventId}/revert`) &&
+        res.url().includes(`/api/v1/tasks/${primaryTaskId}/events/${titleV1EventId}/revert`) &&
         res.request().method() === 'POST',
     );
-    await prioUndoBtn.click();
-    expect((await revertPrio4Promise).status()).toBe(200);
+    await editUndoBtn.click();
+    expect((await revertTitle1Promise).status()).toBe(200);
 
-    await expect(drawer.getByLabel(viMessages.tasks.priorityLabel, { exact: true })).toHaveValue('2');
-    await expect(drawer.locator('.task-drawer-badges')).toContainText(viMessages.priority.medium);
+    await expect(drawer.getByLabel(viMessages.tasks.titleLabel, { exact: true })).toHaveValue(
+      primaryTaskTitle,
+    );
 
-    // 3. Update Priority again (2 -> 3) -> switch to Lịch sử tab -> verify entries, order, (đã rời), no UUID/PII, revert from history
-    await drawer.getByLabel(viMessages.tasks.priorityLabel, { exact: true }).selectOption('3');
-    const patchPrio2Promise = page.waitForResponse(
+    // 3. Update Title again -> switch to inline Lịch sử sub-tab -> verify entries, order, (đã rời), no UUID/PII, revert from history
+    await drawer.getByLabel(viMessages.tasks.titleLabel, { exact: true }).fill(primaryTitleV2);
+    const patchTitle2Promise = page.waitForResponse(
       (res) =>
         res.url().endsWith(`/api/v1/tasks/${primaryTaskId}`) &&
         res.request().method() === 'PATCH',
     );
     await drawer.getByRole('button', { name: viMessages.tasks.saveDetails, exact: true }).click();
-    const patchPrio2Res = await patchPrio2Promise;
-    expect(patchPrio2Res.status()).toBe(200);
-    const prio3EventId = ((await patchPrio2Res.json()) as { eventId: string }).eventId;
+    const patchTitle2Res = await patchTitle2Promise;
+    expect(patchTitle2Res.status()).toBe(200);
+    const titleV2EventId = ((await patchTitle2Res.json()) as { eventId: string }).eventId;
 
     const eventsListPromise = page.waitForResponse(
       (res) =>
@@ -870,14 +865,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     const historyRows = drawer.locator('li.task-history-row');
     await expect(historyRows).toHaveCount(7);
 
-    const expectedPrio2To3Text = formatPriorityChangedSummary(
-      viMessages.priority.medium,
-      viMessages.priority.high,
-    );
-    const expectedPrio4To2Text = formatPriorityChangedSummary(
-      viMessages.priority.urgent,
-      viMessages.priority.medium,
-    );
+    const expectedV2Text = formatTitleChangedSummary(primaryTaskTitle, primaryTitleV2);
+    const expectedRevertV1Text = formatTitleChangedSummary(primaryTitleV1, primaryTaskTitle);
     const expectedCreatedText = viMessages.taskHistory.events.taskCreatedInColumn.replace(
       '{column}',
       'Todo',
@@ -888,9 +877,9 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
 
     // Newest-first assertions
     await expect(historyRows.first()).toContainText(creatorEditorFullName);
-    await expect(historyRows.first()).toContainText(expectedPrio2To3Text);
+    await expect(historyRows.first()).toContainText(expectedV2Text);
 
-    await expect(historyRows.nth(1)).toContainText(expectedPrio4To2Text);
+    await expect(historyRows.nth(1)).toContainText(expectedRevertV1Text);
     await expect(
       historyRows.nth(1).locator('.task-history-badge.is-revert'),
     ).toHaveText(viMessages.taskHistory.revertedBadge);
@@ -921,31 +910,28 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     expect(historyDomText).not.toMatch(UUID_PATTERN);
     assertZeroPiiInStrings([historyDomText, ...capturedEventPayloads], sensitiveValues);
 
-    // Revert 2 -> 3 directly from History tab ("Khôi phục giá trị này")
-    const prio2To3Row = drawer.locator('li.task-history-row', { hasText: expectedPrio2To3Text });
+    // Revert primaryTitleV2 -> primaryTaskTitle directly from History sub-tab ("Khôi phục giá trị này")
+    const v2Row = drawer.locator('li.task-history-row', { hasText: expectedV2Text });
     const historyRevertPromise = page.waitForResponse(
       (res) =>
-        res.url().includes(`/api/v1/tasks/${primaryTaskId}/events/${prio3EventId}/revert`) &&
+        res.url().includes(`/api/v1/tasks/${primaryTaskId}/events/${titleV2EventId}/revert`) &&
         res.request().method() === 'POST',
     );
-    await prio2To3Row
+    await v2Row
       .getByRole('button', { name: viMessages.taskHistory.restoreValueButton, exact: true })
       .click();
     expect((await historyRevertPromise).status()).toBe(200);
 
-    const expectedPrio3To2Text = formatPriorityChangedSummary(
-      viMessages.priority.high,
-      viMessages.priority.medium,
-    );
+    const expectedRevertV2Text = formatTitleChangedSummary(primaryTitleV2, primaryTaskTitle);
     await expect(historyRows).toHaveCount(8);
-    await expect(historyRows.first()).toContainText(expectedPrio3To2Text);
+    await expect(historyRows.first()).toContainText(expectedRevertV2Text);
     await expect(
       historyRows.first().locator('.task-history-badge.is-revert'),
     ).toHaveText(viMessages.taskHistory.revertedBadge);
 
-    await openDetailsTab(drawer);
-    await expect(drawer.getByLabel(viMessages.tasks.priorityLabel, { exact: true })).toHaveValue('2');
-    await expect(drawer.locator('.task-drawer-badges')).toContainText(viMessages.priority.medium);
+    await expect(drawer.getByLabel(viMessages.tasks.titleLabel, { exact: true })).toHaveValue(
+      primaryTaskTitle,
+    );
 
     // Verify DB task_events are strictly append-only (no names/PII stored in JSON)
     const dbEvents = await db
@@ -988,16 +974,10 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
   test('Conflict detection AC-18 (409 REVERT_CONFLICT with conflictingFields and force=true modal)', async ({
     browser,
   }) => {
-    const userASession = await openSignedInContext(
-      browser,
-      creatorEditorStudentId,
-      `/boards/${historyBoardId}?task=${conflictTaskId}`,
-    );
-    const userBSession = await openSignedInContext(
-      browser,
-      peerEditorStudentId,
-      `/boards/${historyBoardId}?task=${conflictTaskId}`,
-    );
+    const [userASession, userBSession] = await Promise.all([
+      openSignedInContext(browser, creatorEditorStudentId, `/boards/${historyBoardId}?task=${conflictTaskId}`),
+      openSignedInContext(browser, peerEditorStudentId, `/boards/${historyBoardId}?task=${conflictTaskId}`),
+    ]);
 
     try {
       const pageA = userASession.page;
@@ -1007,8 +987,11 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       await expect(drawerA).toBeVisible();
       await expect(drawerB).toBeVisible();
 
-      // User A updates Priority 2 -> 3 (event X)
-      await drawerA.getByLabel(viMessages.tasks.priorityLabel, { exact: true }).selectOption('3');
+      const conflictTitleA = `${conflictTaskTitle} A`;
+      const conflictTitleB = `${conflictTaskTitle} B`;
+
+      // User A updates Title (event X)
+      await drawerA.getByLabel(viMessages.tasks.titleLabel, { exact: true }).fill(conflictTitleA);
       const userAPatchPromise = pageA.waitForResponse(
         (res) =>
           res.url().endsWith(`/api/v1/tasks/${conflictTaskId}`) &&
@@ -1019,13 +1002,13 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       expect(userAPatchRes.status()).toBe(200);
       const eventXId = ((await userAPatchRes.json()) as { eventId: string }).eventId;
 
-      // User B reloads task detail so version matches, then updates Priority 3 -> 4
+      // User B reloads task detail so version matches, then updates Title A -> B
       await pageB.reload();
       await expect(drawerB).toBeVisible();
-      await expect(drawerB.getByLabel(viMessages.tasks.priorityLabel, { exact: true })).toHaveValue(
-        '3',
+      await expect(drawerB.getByLabel(viMessages.tasks.titleLabel, { exact: true })).toHaveValue(
+        conflictTitleA,
       );
-      await drawerB.getByLabel(viMessages.tasks.priorityLabel, { exact: true }).selectOption('4');
+      await drawerB.getByLabel(viMessages.tasks.titleLabel, { exact: true }).fill(conflictTitleB);
       const userBPatchPromise = pageB.waitForResponse(
         (res) =>
           res.url().endsWith(`/api/v1/tasks/${conflictTaskId}`) &&
@@ -1034,7 +1017,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       await drawerB.getByRole('button', { name: viMessages.tasks.saveDetails, exact: true }).click();
       expect((await userBPatchPromise).status()).toBe(200);
 
-      // User A opens Lịch sử tab and clicks "Khôi phục giá trị này" on event X (2 -> 3)
+      // User A opens Lịch sử sub-tab and clicks "Khôi phục giá trị này" on event X
       const eventsFetchPromise = pageA.waitForResponse(
         (res) =>
           res.url().includes(`/api/v1/tasks/${conflictTaskId}/events`) &&
@@ -1044,10 +1027,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       await openHistoryTab(drawerA);
       await eventsFetchPromise;
 
-      const eventXSummary = formatPriorityChangedSummary(
-        viMessages.priority.medium,
-        viMessages.priority.high,
-      );
+      const eventXSummary = formatTitleChangedSummary(conflictTaskTitle, conflictTitleA);
       const eventXRow = drawerA.locator('li.task-history-row', { hasText: eventXSummary });
       await expect(eventXRow).toBeVisible();
 
@@ -1068,7 +1048,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       ).toMatchObject({
         error: {
           code: 'REVERT_CONFLICT',
-          details: { conflictingFields: ['priority'] },
+          details: { conflictingFields: ['title'] },
         },
       });
 
@@ -1079,7 +1059,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         viMessages.taskHistory.conflictModalTitle,
       );
       await expect(conflictModal.locator('.task-conflict-field-chip')).toHaveText([
-        viMessages.taskHistory.conflictFields.priority,
+        viMessages.taskHistory.conflictFields.title,
       ]);
 
       const forceBtn = conflictModal.getByRole('button', {
@@ -1097,11 +1077,11 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       const forceRes = await forceResPromise;
       expect(forceRes.status()).toBe(200);
       const forceJson = (await forceRes.json()) as {
-        task: { priority: number };
+        task: { title: string };
         eventId: string;
         revertedEventId: string;
       };
-      expect(forceJson.task.priority).toBe(2);
+      expect(forceJson.task.title).toBe(conflictTaskTitle);
       expect(forceJson.revertedEventId).toBe(eventXId);
 
       await expect(conflictModal).toHaveCount(0);
@@ -1115,7 +1095,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         viMessages.taskHistory.forcedBadge,
       );
       await expect(topRow).toContainText(
-        formatPriorityChangedSummary(viMessages.priority.urgent, viMessages.priority.medium),
+        formatTitleChangedSummary(conflictTitleB, conflictTaskTitle),
       );
 
       // Verify forced: true & revertsEventId in DB
@@ -1127,9 +1107,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       expect(dbForcedRow?.revertsEventId).toBe(eventXId);
       expect(dbForcedRow?.forced).toBe(true);
 
-      await openDetailsTab(drawerA);
-      await expect(drawerA.getByLabel(viMessages.tasks.priorityLabel, { exact: true })).toHaveValue(
-        '2',
+      await expect(drawerA.getByLabel(viMessages.tasks.titleLabel, { exact: true })).toHaveValue(
+        conflictTaskTitle,
       );
 
       await userASession.tracker.assertClean();
@@ -1142,16 +1121,10 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
   test('Original permission enforcement AC-19 (UI gating + 403/400 API) and hidden task 404 concealment AC-20', async ({
     browser,
   }) => {
-    const basicSession = await openSignedInContext(
-      browser,
-      assigneeBasicStudentId,
-      `/boards/${historyBoardId}?task=${rbacPublicTaskId}`,
-    );
-    const outsiderSession = await openSignedInContext(
-      browser,
-      peerEditorStudentId,
-      `/boards/${historyBoardId}`,
-    );
+    const [basicSession, outsiderSession] = await Promise.all([
+      openSignedInContext(browser, assigneeBasicStudentId, `/boards/${historyBoardId}?task=${rbacPublicTaskId}`),
+      openSignedInContext(browser, peerEditorStudentId, `/boards/${historyBoardId}`),
+    ]);
 
     try {
       const basicPage = basicSession.page;
@@ -1314,38 +1287,27 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
   test('Board soft-delete 10s Undo toast, BoardTrashModal WQ-17 hidden task exclusion & restore, and 403 gating without task.delete', async ({
     browser,
   }) => {
-    const deleterSession = await openSignedInContext(
-      browser,
-      deleterStudentId,
-      `/boards/${trashBoardId}`,
-    );
-    const basicSession = await openSignedInContext(
-      browser,
-      assigneeBasicStudentId,
-      `/boards/${trashBoardId}`,
-    );
-    const adminSession = await openSignedInContext(
-      browser,
-      adminStudentId,
-      `/boards/${trashBoardId}`,
-    );
+    const [deleterSession, basicSession, adminSession] = await Promise.all([
+      openSignedInContext(browser, deleterStudentId, `/boards/${trashBoardId}`),
+      openSignedInContext(browser, assigneeBasicStudentId, `/boards/${trashBoardId}`),
+      openSignedInContext(browser, adminStudentId, `/boards/${trashBoardId}`),
+    ]);
 
     try {
       const deleterPage = deleterSession.page;
 
-      // Deleter sees public task and Trash button, never sees hidden task
-      await expect(getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)).toBeVisible();
-      await expect(getTaskCardInColumn(deleterPage, 'Todo', trashHiddenTaskTitle)).toHaveCount(0);
+      // Deleter sees public task in unscheduled tray and Trash button, never sees hidden task
+      await ensureUnscheduledTrayOpen(deleterPage);
+      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
+      await expect(getUnscheduledTaskChip(deleterPage, trashHiddenTaskTitle)).toHaveCount(0);
       const openTrashBtn = deleterPage.getByRole('button', {
-        name: viMessages.boards.openTrash,
+        name: viMessages.calendar.openTrash,
         exact: true,
       });
       await expect(openTrashBtn).toBeVisible();
 
-      // 1. Delete public task in S05 -> drawer closes + 10s Undo toast appears on S04 -> click Undo restores task immediately
-      await getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)
-        .locator('.kanban-card-open')
-        .click();
+      // 1. Delete public task in S05 modal -> closes + 10s Undo toast appears -> click Undo restores task immediately
+      await getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle).click();
       const drawer1 = getTaskDrawer(deleterPage);
       await expect(drawer1).toBeVisible();
 
@@ -1363,7 +1325,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       const delete1EventId = ((await delete1Res.json()) as { eventId: string }).eventId;
 
       await expect(drawer1).toHaveCount(0);
-      await expect(getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)).toHaveCount(0);
+      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toHaveCount(0);
 
       const deleteToast = deleterPage
         .locator('[data-sonner-toast]', { hasText: viMessages.tasks.deletedToast })
@@ -1383,12 +1345,11 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       await deleteUndoBtn.click();
       expect((await undoDeletePromise).status()).toBe(200);
 
-      await expect(getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)).toBeVisible();
+      await ensureUnscheduledTrayOpen(deleterPage);
+      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
 
-      // 2. Delete public task again -> open BoardTrashModal ("Thùng rác") -> verify public shown, hidden NOT shown (WQ-17), restore via "Khôi phục"
-      await getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)
-        .locator('.kanban-card-open')
-        .click();
+      // 2. Delete public task again -> open Trash modal ("Thùng rác") on /tasks -> verify public shown, hidden NOT shown (WQ-17), restore via "Khôi phục"
+      await getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle).click();
       const drawer2 = getTaskDrawer(deleterPage);
       await expect(drawer2).toBeVisible();
       await drawer2.getByRole('button', { name: viMessages.tasks.deleteTask, exact: true }).click();
@@ -1402,7 +1363,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         .click();
       expect((await delete2Promise).status()).toBe(200);
       await expect(drawer2).toHaveCount(0);
-      await expect(getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)).toHaveCount(0);
+      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toHaveCount(0);
 
       // Confirm admin DOES see hidden deleted task in /trash API (proving hidden deleted task exists)
       const adminTrashRes = await adminSession.page.request.get(
@@ -1415,26 +1376,24 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       expect(adminTrashIds).toContain(trashPublicTaskId);
       expect(adminTrashIds).toContain(trashHiddenTaskId);
 
-      // Open BoardTrashModal as non-admin deleter
-      const deleterTrashPromise = deleterPage.waitForResponse(
-        (res) =>
-          res.url().includes(`/api/v1/boards/${trashBoardId}/trash`) &&
-          res.request().method() === 'GET' &&
-          res.status() === 200,
+      // Verify non-admin deleter /trash API honors WQ-17
+      const deleterTrashApiRes = await deleterPage.request.get(
+        `/api/v1/boards/${trashBoardId}/trash`,
       );
-      await openTrashBtn.click();
-      const deleterTrashRes = await deleterTrashPromise;
-      const deleterTrashJson = (await deleterTrashRes.json()) as {
+      expect(deleterTrashApiRes.status()).toBe(200);
+      const deleterTrashJson = (await deleterTrashApiRes.json()) as {
         items: Array<{ id: string; title: string }>;
       };
       expect(deleterTrashJson.items.map((item) => item.id)).toEqual([trashPublicTaskId]);
       expect(deleterTrashJson.items.map((item) => item.id)).not.toContain(trashHiddenTaskId);
 
+      // Open Trash modal from /tasks as non-admin deleter -> must display trashPublicTaskTitle and exclude hidden task
+      await expect(openTrashBtn).toBeVisible();
+      await openTrashBtn.click();
+
       const trashModal = deleterPage.locator('.ui-modal[role="dialog"]');
       await expect(trashModal).toBeVisible();
-      await expect(trashModal.getByRole('heading')).toHaveText(
-        viMessages.boards.trashModalTitle.replace('{name}', trashBoardName),
-      );
+      await expect(trashModal.locator('.ui-prio')).toHaveCount(0);
       await expect(trashModal.getByText(trashPublicTaskTitle)).toBeVisible();
       await expect(trashModal.getByText(trashHiddenTaskTitle)).toHaveCount(0);
 
@@ -1451,16 +1410,20 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         .click();
       expect((await restorePromise).status()).toBe(200);
 
-      await expect(trashModal.getByText(viMessages.boards.trashEmptyTitle)).toBeVisible();
+      await expect(
+        trashModal.locator('li.board-trash-item', { hasText: trashPublicTaskTitle }),
+      ).toHaveCount(0);
       await trashModal
         .locator('.board-trash-modal-foot')
         .getByRole('button', { name: viMessages.common.close, exact: true })
         .click();
       await expect(trashModal).toHaveCount(0);
 
-      await expect(getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)).toBeVisible();
+      await ensureUnscheduledTrayOpen(deleterPage);
+      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
       await deleterPage.reload();
-      await expect(getTaskCardInColumn(deleterPage, 'Todo', trashPublicTaskTitle)).toBeVisible();
+      await ensureUnscheduledTrayOpen(deleterPage);
+      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
 
       // WQ-17: non-viewer holding task.delete receives 404 NOT_FOUND when attempting to restore a hidden deleted task
       const hiddenRestoreProbeRes = await deleterPage.request.post(
@@ -1487,9 +1450,10 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
 
       // 3. Basic member WITHOUT task.delete sees NO "Thùng rác" button and gets 403 FORBIDDEN on GET /trash
       const basicPage = basicSession.page;
-      await expect(getTaskCardInColumn(basicPage, 'Todo', trashPublicTaskTitle)).toBeVisible();
+      await ensureUnscheduledTrayOpen(basicPage);
+      await expect(getUnscheduledTaskChip(basicPage, trashPublicTaskTitle)).toBeVisible();
       await expect(
-        basicPage.getByRole('button', { name: viMessages.boards.openTrash, exact: true }),
+        basicPage.getByRole('button', { name: viMessages.calendar.openTrash, exact: true }),
       ).toHaveCount(0);
 
       const basicTrashRes = await basicPage.request.get(`/api/v1/boards/${trashBoardId}/trash`);

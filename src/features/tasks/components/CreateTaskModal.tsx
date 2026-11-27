@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
 import { usePermissions } from '@/features/shared/permissions/can';
-import { taskDescriptionSchema, taskPrioritySchema, taskTitleSchema } from '@/lib/tasks';
+import { taskDescriptionSchema, taskTitleSchema } from '@/lib/tasks';
 import { hoChiMinhInputToUtcIso } from '../formatters';
 import {
   useCreateTaskMutation,
@@ -17,38 +17,71 @@ import {
   type CreateTaskRequest,
 } from '../hooks/useTasks';
 import {
-  TaskDepartmentPicker,
   TaskDueDateInput,
   TaskErrorBanner,
-  TaskIndividualAssigneesDetails,
-  TaskPrioritySelect,
+  TaskStartDateInput,
 } from './TaskFormFields';
-import { TaskNotificationOptions } from './TaskNotificationOptions';
+import {
+  CreateTaskAssignmentFields,
+  CreateTaskModalActions,
+  CreateTaskModalHeader,
+  CreateTaskToggleRow,
+} from './CreateTaskModalSections';
 
-const createTaskFormSchema = z.object({
-  title: taskTitleSchema,
-  description: z.string().max(10000),
-  dueAtInput: z.string(),
-  priority: taskPrioritySchema,
-  isHidden: z.boolean(),
-});
+const createTaskFormSchema = z
+  .object({
+    title: taskTitleSchema,
+    description: z.string().max(10000),
+    startAtInput: z.string(),
+    dueAtInput: z.string(),
+    isHidden: z.boolean(),
+  })
+  .refine((d) => !(d.startAtInput && d.dueAtInput && d.startAtInput > d.dueAtInput), {
+    message: 'invalidDateRange',
+    path: ['dueAtInput'],
+  });
 
 export type CreateTaskFormValues = z.infer<typeof createTaskFormSchema>;
 
 export interface CreateTaskModalProps {
-  boardId: string;
-  columnId: string;
-  columnName: string;
-  onClose: () => void;
+  readonly boardId?: string;
+  readonly columnId?: string;
+  readonly columnName?: string;
+  readonly onClose: () => void;
 }
 
 function toggleSelectionId(current: string[], id: string): string[] {
   return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
 }
 
+function buildAssignmentPayloadFields(params: {
+  readonly canAssign: boolean;
+  readonly assigneeIds: readonly string[];
+  readonly departmentIds: readonly string[];
+  readonly notifyInApp: boolean;
+  readonly notifyEmail: boolean;
+}) {
+  if (!params.canAssign) {
+    return {
+      assigneeIds: [],
+      departmentIds: [],
+      notifyInApp: false,
+      notifyEmail: false,
+      notifyDepartmentMembers: false,
+    };
+  }
+  return {
+    assigneeIds: [...params.assigneeIds],
+    departmentIds: [...params.departmentIds],
+    notifyInApp: params.notifyInApp,
+    notifyEmail: params.notifyEmail,
+    notifyDepartmentMembers: params.notifyInApp || params.notifyEmail,
+  };
+}
+
 export function buildCreateTaskRequestPayload(params: {
-  readonly boardId: string;
-  readonly columnId: string;
+  readonly boardId?: string;
+  readonly columnId?: string;
   readonly values: CreateTaskFormValues;
   readonly canAssign: boolean;
   readonly assigneeIds: readonly string[];
@@ -57,23 +90,25 @@ export function buildCreateTaskRequestPayload(params: {
   readonly notifyEmail: boolean;
 }): CreateTaskRequest {
   const parsedDesc = taskDescriptionSchema.safeParse(params.values.description.trim() || null);
+  const scope = params.boardId && params.columnId
+    ? { boardId: params.boardId, columnId: params.columnId }
+    : {};
   return {
-    boardId: params.boardId,
-    columnId: params.columnId,
+    ...scope,
     title: params.values.title.trim(),
     description: parsedDesc.success ? parsedDesc.data : null,
+    startAt: hoChiMinhInputToUtcIso(params.values.startAtInput),
     dueAt: hoChiMinhInputToUtcIso(params.values.dueAtInput),
-    priority: params.values.priority,
-    assigneeIds: params.canAssign ? [...params.assigneeIds] : [],
-    departmentIds: params.canAssign ? [...params.departmentIds] : [],
-    notifyInApp: params.canAssign ? params.notifyInApp : false,
-    notifyEmail: params.canAssign ? params.notifyEmail : false,
-    notifyDepartmentMembers: params.canAssign ? params.notifyInApp || params.notifyEmail : false,
+    ...buildAssignmentPayloadFields(params),
     isHidden: params.values.isHidden,
   };
 }
 
-function useCreateTaskController(boardId: string, columnId: string, onClose: () => void) {
+function useCreateTaskController(
+  boardId: string | undefined,
+  columnId: string | undefined,
+  onClose: () => void
+) {
   const tTasks = useTranslations('tasks');
   const { can } = usePermissions();
   const canAssign = can('task.assign');
@@ -87,7 +122,7 @@ function useCreateTaskController(boardId: string, columnId: string, onClose: () 
   const createMutation = useCreateTaskMutation();
   const form = useForm<CreateTaskFormValues>({
     resolver: zodResolver(createTaskFormSchema),
-    defaultValues: { title: '', description: '', dueAtInput: '', priority: 2, isHidden: false },
+    defaultValues: { title: '', description: '', startAtInput: '', dueAtInput: '', isHidden: false },
   });
 
   const submitForm = (values: CreateTaskFormValues) => {
@@ -128,130 +163,78 @@ function useCreateTaskController(boardId: string, columnId: string, onClose: () 
   };
 }
 
-function CreateTaskAssignmentFields({ ctrl }: { ctrl: ReturnType<typeof useCreateTaskController> }) {
+function CreateTaskFormFields({
+  ctrl,
+  baseId,
+  onClose,
+}: {
+  readonly ctrl: ReturnType<typeof useCreateTaskController>;
+  readonly baseId: string;
+  readonly onClose: () => void;
+}) {
   const tTasks = useTranslations('tasks');
-  if (!ctrl.canAssign) return null;
+  const tErr = useTranslations('errors');
+  const { register, control, setValue, handleSubmit, formState: { errors } } = ctrl.form;
+  const startAtInput = useWatch({ control, name: 'startAtInput' });
+  const dueAtInput = useWatch({ control, name: 'dueAtInput' });
+  const isHidden = useWatch({ control, name: 'isHidden' });
+  const hasAnyAssignment = ctrl.assigneeIds.length > 0 || ctrl.departmentIds.length > 0;
+  const dateRangeError = errors.dueAtInput ? tErr('invalidDateRange') : null;
 
   return (
-    <>
+    <form className="ui-modal-body" method="post" onSubmit={handleSubmit(ctrl.submitForm)} noValidate>
+      <TaskErrorBanner error={ctrl.createMutation.error} />
       <div className="ui-field">
-        <span className="ui-label">{tTasks('departmentsLabel')}</span>
-        <TaskDepartmentPicker
-          departments={ctrl.departments}
-          selectedIds={ctrl.departmentIds}
-          disabled={ctrl.createMutation.isPending}
-          onToggle={ctrl.toggleDepartment}
-        />
+        <label className="ui-label" htmlFor={`${baseId}-title`}>{tTasks('titleLabel')}</label>
+        <input id={`${baseId}-title`} className="ui-input" type="text" placeholder={tTasks('titlePlaceholder')} aria-invalid={Boolean(errors.title)} {...register('title')} />
+        {errors.title ? <p className="ui-field-error" role="alert">{tTasks('validationTitle')}</p> : null}
       </div>
-      <TaskIndividualAssigneesDetails
-        members={ctrl.members}
+      <div className="ui-field">
+        <label className="ui-label" htmlFor={`${baseId}-desc`}>{tTasks('descriptionLabel')}</label>
+        <textarea id={`${baseId}-desc`} className="ui-textarea" rows={4} placeholder={tTasks('descriptionPlaceholder')} {...register('description')} />
+      </div>
+      <div className="task-form-two-col">
+        <TaskStartDateInput value={startAtInput} onChange={(next) => setValue('startAtInput', next, { shouldValidate: true })} />
+        <TaskDueDateInput value={dueAtInput} errorText={dateRangeError} onChange={(next) => setValue('dueAtInput', next, { shouldValidate: true })} />
+      </div>
+      <CreateTaskAssignmentFields
+        canAssign={ctrl.canAssign}
         canViewMembers={ctrl.canViewMembers}
-        selectedIds={ctrl.assigneeIds}
+        departments={ctrl.departments}
+        members={ctrl.members}
+        departmentIds={ctrl.departmentIds}
+        assigneeIds={ctrl.assigneeIds}
         disabled={ctrl.createMutation.isPending}
-        onToggle={ctrl.toggleAssignee}
+        onToggleDepartment={ctrl.toggleDepartment}
+        onToggleAssignee={ctrl.toggleAssignee}
       />
-      <TaskNotificationOptions
+      <CreateTaskToggleRow
+        canAssign={ctrl.canAssign}
+        isBusy={ctrl.createMutation.isPending}
         notifyInApp={ctrl.notifyInApp}
-        onToggleNotifyInApp={ctrl.setNotifyInApp}
         notifyEmail={ctrl.notifyEmail}
-        onToggleNotifyEmail={ctrl.setNotifyEmail}
-        disabled={ctrl.createMutation.isPending}
+        isHidden={isHidden}
+        hasAnyAssignment={hasAnyAssignment}
+        onToggleInApp={ctrl.setNotifyInApp}
+        onToggleEmail={ctrl.setNotifyEmail}
+        onToggleHidden={(next) => setValue('isHidden', next)}
       />
-    </>
-  );
-}
-
-function CreateTaskModalHeader({
-  titleId,
-  columnName,
-  onClose,
-}: {
-  readonly titleId: string;
-  readonly columnName: string;
-  readonly onClose: () => void;
-}) {
-  const tTasks = useTranslations('tasks');
-  const tCommon = useTranslations('common');
-
-  return (
-    <div className="ui-modal-header">
-      <div>
-        <h2 id={titleId} className="ui-modal-title">{tTasks('createModalTitle')}</h2>
-        <span className="admin-card-hint">{columnName}</span>
-      </div>
-      <button type="button" className="ui-icon-btn" aria-label={tCommon('close')} onClick={onClose}>✕</button>
-    </div>
-  );
-}
-
-function CreateTaskModalActions({
-  isPending,
-  onClose,
-}: {
-  readonly isPending: boolean;
-  readonly onClose: () => void;
-}) {
-  const tTasks = useTranslations('tasks');
-  const tCommon = useTranslations('common');
-
-  return (
-    <div className="ui-modal-actions">
-      <button type="button" className="ui-btn ghost" onClick={onClose} disabled={isPending}>
-        {tCommon('cancel')}
-      </button>
-      <button type="submit" className="ui-btn primary" disabled={isPending}>
-        {isPending ? tTasks('creating') : tTasks('createSubmit')}
-      </button>
-    </div>
+      <CreateTaskModalActions isPending={ctrl.createMutation.isPending} onClose={onClose} />
+    </form>
   );
 }
 
 export function CreateTaskModal({ boardId, columnId, columnName, onClose }: CreateTaskModalProps) {
-  const tTasks = useTranslations('tasks');
   const titleId = useId();
   const baseId = useId();
   useEscapeClose(true, onClose);
   const ctrl = useCreateTaskController(boardId, columnId, onClose);
-  const { register, control, setValue, handleSubmit, formState: { errors } } = ctrl.form;
-  const priority = useWatch({ control, name: 'priority' });
-  const dueAtInput = useWatch({ control, name: 'dueAtInput' });
-  const isHidden = useWatch({ control, name: 'isHidden' });
-  const hasAnyAssignment = ctrl.assigneeIds.length > 0 || ctrl.departmentIds.length > 0;
 
   return (
-    <div className="ui-modal-backdrop" role="presentation">
+    <div className="ui-modal-backdrop" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ui-modal ui-modal-lg" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <CreateTaskModalHeader titleId={titleId} columnName={columnName} onClose={onClose} />
-        <form className="ui-modal-body" method="post" onSubmit={handleSubmit(ctrl.submitForm)} noValidate>
-          <TaskErrorBanner error={ctrl.createMutation.error} />
-          <div className="ui-field">
-            <label className="ui-label" htmlFor={`${baseId}-title`}>{tTasks('titleLabel')}</label>
-            <input id={`${baseId}-title`} className="ui-input" type="text" placeholder={tTasks('titlePlaceholder')} aria-invalid={Boolean(errors.title)} {...register('title')} />
-            {errors.title ? <p className="ui-field-error" role="alert">{tTasks('validationTitle')}</p> : null}
-          </div>
-          <div className="ui-field">
-            <label className="ui-label" htmlFor={`${baseId}-desc`}>{tTasks('descriptionLabel')}</label>
-            <textarea id={`${baseId}-desc`} className="ui-textarea" rows={6} placeholder={tTasks('descriptionPlaceholder')} {...register('description')} />
-          </div>
-          <div className="task-form-two-col">
-            <TaskPrioritySelect value={priority} onChange={(next) => setValue('priority', next)} />
-            <TaskDueDateInput value={dueAtInput} onChange={(next) => setValue('dueAtInput', next)} />
-          </div>
-          <CreateTaskAssignmentFields ctrl={ctrl} />
-          <label className="ui-check-inline">
-            <input type="checkbox" {...register('isHidden')} />
-            <span>{tTasks('isHiddenLabel')}</span>
-          </label>
-          {isHidden && !hasAnyAssignment ? (
-            <div className="ui-banner is-warn" role="status">
-              <div className="ui-banner-body">
-                <span className="ui-banner-title">{tTasks('hiddenUnassignedWarnTitle')}</span>
-                <span className="ui-banner-text">{tTasks('hiddenUnassignedWarnBody')}</span>
-              </div>
-            </div>
-          ) : null}
-          <CreateTaskModalActions isPending={ctrl.createMutation.isPending} onClose={onClose} />
-        </form>
+        <CreateTaskFormFields ctrl={ctrl} baseId={baseId} onClose={onClose} />
       </div>
     </div>
   );

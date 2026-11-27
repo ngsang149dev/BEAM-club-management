@@ -31,6 +31,7 @@ const taskEventsHooksMock = vi.hoisted(() => ({
   useTaskEventsInfiniteQuery: vi.fn(),
   useRevertTaskEventMutation: vi.fn(),
   useBoardTrashInfiniteQuery: vi.fn(),
+  useWorkspaceTrashInfiniteQuery: vi.fn(),
   useRestoreBoardTaskMutation: vi.fn(),
   useUndoTaskActionToast: vi.fn(() => vi.fn()),
 }));
@@ -86,6 +87,7 @@ import {
   executeQuickUndo,
   extractRevertConflictFields,
   TASK_EVENTS_PAGE_SIZE,
+  TASK_EVENTS_QUERY_KEYS,
   UNDO_TOAST_DURATION_MS,
   useUndoTaskActionToast,
 } from '@/features/tasks/hooks/useTaskEvents';
@@ -509,8 +511,10 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     expect(keys).toContainEqual(['boards']);
     expect(keys).toContainEqual(['boardDetail', SAMPLE_TASK.boardId]);
     expect(keys).toContainEqual(TASKS_QUERY_KEYS.boardListRoot);
+    expect(keys).toContainEqual(TASKS_QUERY_KEYS.calendarRoot);
     expect(keys).toContainEqual(TASKS_QUERY_KEYS.myTasksRoot);
     expect(keys).toContainEqual(['boardTrash', SAMPLE_TASK.boardId]);
+    expect(keys).toContainEqual(TASK_EVENTS_QUERY_KEYS.workspaceTrash);
     expect(keys).toContainEqual(['archive']);
     expect(keys).toContainEqual(['notifications']);
     expect(toastMock.success).toHaveBeenCalledWith(messages.success);
@@ -771,6 +775,52 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     expect(loadedHtml).toContain('Khôi phục');
     expect(loadedHtml).toContain('Tải thêm task đã xóa');
     expect(loadedHtml).toContain('href="/archive"');
+    expect(loadedHtml).not.toContain('ui-prio');
     expect(loadedHtml).not.toMatch(UUID_REGEX);
+
+    taskEventsHooksMock.useWorkspaceTrashInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: true,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: {
+        pages: [
+          {
+            tab: 'tasks',
+            tasks: [
+              {
+                task: { ...SAMPLE_TASK, deletedAt: '2026-11-23T07:30:00Z', isHidden: true },
+                boardName: 'Open Day 2026',
+                boardArchived: false,
+                columnName: 'Design',
+              },
+              {
+                task: { ...SAMPLE_TASK, id: 'f1111111-1111-4111-8111-111111111111', title: 'Task workspace xóa cột', columnId: null, deletedAt: '2026-11-22T02:00:00Z' },
+                boardName: 'Media 2026',
+                boardArchived: false,
+                columnName: null,
+              },
+            ],
+            members: [],
+            boards: [],
+            meta: { nextCursor: 'cur-ws-2', limit: 50 },
+          },
+        ],
+        pageParams: [undefined],
+      },
+    });
+    const workspaceTrashHtml = renderWithIntl(
+      <BoardTrashModal boardId={null} boardName="BEAM Workspace" onClose={vi.fn()} />
+    );
+    expect(workspaceTrashHtml).toContain('Thùng rác · BEAM Workspace');
+    expect(workspaceTrashHtml).toContain('Chuẩn bị slide Open Day');
+    expect(workspaceTrashHtml).toContain('Cột cũ: Design');
+    expect(workspaceTrashHtml).toContain('Task workspace xóa cột');
+    expect(workspaceTrashHtml).toContain('Cột cũ đã xóa (sẽ khôi phục vào cột đầu)');
+    expect(workspaceTrashHtml).toContain('Khôi phục');
+    expect(workspaceTrashHtml).not.toContain('ui-prio');
   });
 });

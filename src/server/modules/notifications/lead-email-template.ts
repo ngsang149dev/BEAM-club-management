@@ -12,7 +12,7 @@ export interface BuildLeadActivityEmailParams {
   readonly deliverableUrl?: string | null;
   readonly isHiddenTask: boolean;
   readonly appUrl: string;
-  readonly boardId: string;
+  readonly boardId?: string;
   readonly taskId: string;
 }
 
@@ -25,9 +25,9 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function buildTaskLink(appUrl: string, boardId: string, taskId: string): string {
+function buildTaskLink(appUrl: string, taskId: string): string {
   const base = appUrl.replace(/\/+$/, '');
-  return `${base}/boards/${boardId}?task=${taskId}`;
+  return `${base}/tasks?task=${taskId}`;
 }
 
 interface CopyParts {
@@ -140,5 +140,5 @@ function renderEmailBody(
 export function buildLeadActivityEmail(params: BuildLeadActivityEmailParams): RenderedNotificationEmail {
   const deptLabel = params.departmentNames.length > 0 ? params.departmentNames.join(', ') : null;
   const copy = buildCopyParts(params, deptLabel);
-  return renderEmailBody(params, copy, buildTaskLink(params.appUrl, params.boardId, params.taskId));
+  return renderEmailBody(params, copy, buildTaskLink(params.appUrl, params.taskId));
 }

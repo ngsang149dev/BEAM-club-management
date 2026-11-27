@@ -410,7 +410,7 @@ describe('Auth & /me Route Handlers integration', () => {
     expect(defaultCookieLine).toMatch(/SameSite=Lax/i);
     expect(defaultCookieLine).not.toMatch(/Max-Age=/i);
     expect(defaultCookieLine).not.toMatch(/Expires=/i);
-    expect(((await defaultRes.json()) as { redirectTo: string }).redirectTo).toBe('/boards');
+    expect(((await defaultRes.json()) as { redirectTo: string }).redirectTo).toBe('/tasks');
 
     const defaultPair = extractCookiePair(defaultCookieLine);
     const defaultSessionRes = await sessionGet(
@@ -986,7 +986,7 @@ describe('Auth & /me Route Handlers integration', () => {
       .where(eq(sessions.tokenHash, legacyExtraHash));
     expect(legacyRow?.revokedAt).not.toBeNull();
 
-    // 6. Old password fails, new password succeeds and redirects to /boards
+    // 6. Old password fails, new password succeeds and redirects to /tasks
     const oldLoginRes = await loginPost(
       new Request('http://localhost:3000/api/v1/auth/login', {
         method: 'POST',
@@ -1014,7 +1014,7 @@ describe('Auth & /me Route Handlers integration', () => {
       redirectTo: string;
       user: { mustChangePassword: boolean };
     };
-    expect(newLoginBody.redirectTo).toBe('/boards');
+    expect(newLoginBody.redirectTo).toBe('/tasks');
     expect(newLoginBody.user.mustChangePassword).toBe(false);
 
     const serializedLogs = capturedLogs.join('\n');

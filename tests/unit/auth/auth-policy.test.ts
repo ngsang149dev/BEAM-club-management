@@ -32,6 +32,9 @@ import {
 
 describe('sanitizeReturnTo', () => {
   it('accepts safe internal paths with query and hash', () => {
+    expect(DEFAULT_LOGIN_REDIRECT).toBe('/tasks');
+    expect(sanitizeReturnTo('/tasks')).toBe('/tasks');
+    expect(sanitizeReturnTo('/tasks?task=t-1')).toBe('/tasks?task=t-1');
     expect(sanitizeReturnTo('/boards')).toBe('/boards');
     expect(sanitizeReturnTo('  /boards/abc?view=kanban#card-1  ')).toBe(
       '/boards/abc?view=kanban#card-1',

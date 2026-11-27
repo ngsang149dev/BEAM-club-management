@@ -26,6 +26,9 @@ const tasksHooksMock = vi.hoisted(() => ({
   useReplaceTaskAssigneesMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useDeleteTaskMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
   useUpdateTaskHiddenMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useUpdateTaskAcceptanceMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useCreateTaskDeliverableMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
+  useDeleteTaskDeliverableMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })),
 }));
 
 const commentsHooksMock = vi.hoisted(() => ({
@@ -276,35 +279,36 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
 
     authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-inactive' } } });
     const assignedEditHtml = renderWithIntl(<TaskDetailDrawer taskId="t-1" onClose={vi.fn()} />, { permissions: ['task.update_assigned', 'task.assign', 'task.delete'] });
-    expect(assignedEditHtml).toContain('ui-drawer ui-drawer-task');
-    expect(assignedEditHtml).toContain('task-drawer-grid');
-    expect(assignedEditHtml).toContain('task-drawer-col-main');
-    expect(assignedEditHtml).toContain('task-drawer-col-side');
-    expect(assignedEditHtml).toContain('task-assigned-summary');
-    expect(assignedEditHtml).toContain('rows="6"');
+    expect(assignedEditHtml).toContain('task-modal-shell');
+    expect(assignedEditHtml).toContain('task-modal-grid');
+    expect(assignedEditHtml).toContain('task-modal-col-main');
+    expect(assignedEditHtml).toContain('task-modal-col-side');
+    expect(assignedEditHtml).toContain('task-acceptance-count-pill');
+    expect(assignedEditHtml).toContain('rows="5"');
     expect(assignedEditHtml).toContain('Lưu thay đổi');
     expect(assignedEditHtml).toContain('type="date"');
+    expect(assignedEditHtml).not.toContain('prio-p4');
     expect(assignedEditHtml).toContain('Bạn không có quyền xem danh sách thành viên.');
     expect(assignedEditHtml).toContain('Tùy chọn gửi thông báo');
     expect(assignedEditHtml).toContain('Thông báo trên web');
     expect(assignedEditHtml).toContain('Gửi email');
     expect(assignedEditHtml).toContain('Cập nhật giao việc');
     expect(assignedEditHtml).toContain('Xóa task');
-    expect(assignedEditHtml).toContain('task-drawer-tabs');
+    expect(assignedEditHtml).toContain('task-subtabs');
     expect(assignedEditHtml).toContain('role="tablist"');
-    expect(assignedEditHtml).toContain('Chi tiết');
     expect(assignedEditHtml).toContain('Bình luận');
     expect(assignedEditHtml).toContain('Lịch sử');
-    expect(assignedEditHtml).toContain('task-comments-jump-chip');
-    expect(assignedEditHtml).not.toContain('task-comments-section');
+    expect(assignedEditHtml).toContain('task-comments-section');
+    expect(assignedEditHtml).toContain('task-deliverables-card');
+    expect(assignedEditHtml).toContain('task-side-card');
     expect(assignedEditHtml).not.toContain('task-history-section');
     expect(assignedEditHtml).not.toContain('task-hidden-section');
 
     const creatorDrawerHtml = renderWithIntl(<TaskDetailDrawer taskId="t-1" onClose={vi.fn()} />, { isAdmin: true, locale: 'en' });
     expect(creatorDrawerHtml).toContain('task-hidden-section');
-    expect(creatorDrawerHtml).toContain('task-drawer-tabs');
+    expect(creatorDrawerHtml).toContain('task-subtabs');
     expect(creatorDrawerHtml).toContain('History');
-    expect(creatorDrawerHtml).not.toContain('task-comments-section');
+    expect(creatorDrawerHtml).toContain('task-comments-section');
 
     tasksHooksMock.useTaskAssigneeMembersQuery.mockReturnValueOnce({
       isPending: false,
@@ -351,7 +355,8 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     expect(boardHtml).toContain('task-dept-chip');
     expect(boardHtml).toContain('Truyền thông');
     expect(boardHtml).toContain('is-draggable');
-    expect(boardHtml).toContain('Chi tiết task');
+    expect(boardHtml).toContain('task-modal-shell');
+    expect(boardHtml).toContain('Chuẩn bị slide giới thiệu');
 
     tasksHooksMock.useTaskDetailQuery.mockReturnValueOnce({
       isPending: false,
@@ -369,7 +374,8 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
     );
     expect(deptDrawerHtml).toContain('Lưu thay đổi');
     expect(deptDrawerHtml).toContain('task-dept-chip');
-    expect(deptDrawerHtml).toContain('Ban được giao');
+    expect(deptDrawerHtml).toContain('Truyền thông');
+    expect(deptDrawerHtml).toContain('Đã nhận công việc');
     expect(deptDrawerHtml).toContain('Giao cho ban');
     expect(deptDrawerHtml).toContain('task-notify-card');
     expect(deptDrawerHtml).toContain('Tùy chọn gửi thông báo');
@@ -387,7 +393,8 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       <TaskDetailDrawer taskId="t-2" onClose={vi.fn()} />,
       { permissions: ['task.update_assigned', 'task.assign'], locale: 'en' }
     );
-    expect(deptDrawerEnHtml).toContain('Assigned departments');
+    expect(deptDrawerEnHtml).toContain('Assign to departments');
+    expect(deptDrawerEnHtml).toContain('0/1 accepted');
     expect(deptDrawerEnHtml).toContain('Notification options');
     expect(deptDrawerEnHtml).toContain('Web notification');
     expect(deptDrawerEnHtml).toContain('Send email');
@@ -398,16 +405,18 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       { permissions: ['task.create', 'task.assign'] }
     );
     expect(createModalVi).toContain('ui-modal ui-modal-lg');
-    expect(createModalVi).toContain('rows="6"');
+    expect(createModalVi).toContain('rows="4"');
     expect(createModalVi.indexOf('Giao cho ban')).toBeLessThan(
       createModalVi.indexOf('Giao thêm cho từng thành viên')
     );
     expect(createModalVi.indexOf('Giao thêm cho từng thành viên')).toBeLessThan(
-      createModalVi.indexOf('Tùy chọn gửi thông báo')
+      createModalVi.indexOf('task-create-toggles')
     );
     expect(createModalVi).toContain('Thông báo trên web');
     expect(createModalVi).toContain('Gửi email');
-    expect(createModalVi.match(/task-notify-option is-checked/g) ?? []).toHaveLength(2);
+    expect(createModalVi).toContain('role="switch"');
+    expect(createModalVi.match(/aria-checked="true"[^>]*task-notify-option/g) ?? []).toHaveLength(2);
+    expect(createModalVi).not.toContain('Độ ưu tiên');
     expect(createModalVi).toContain('Sự kiện');
     expect(createModalVi).toContain('Truyền thông');
     expect(createModalVi).not.toContain('class="task-individual-details" open');
@@ -417,7 +426,6 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       { permissions: ['task.create', 'task.assign'], locale: 'en' }
     );
     expect(createModalEn).toContain('Assign to departments');
-    expect(createModalEn).toContain('Notification options');
     expect(createModalEn).toContain('Web notification');
     expect(createModalEn).toContain('Send email');
     expect(createModalEn).toContain('Assign individual members');
@@ -430,13 +438,13 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
         onToggleNotifyEmail={vi.fn()}
       />
     );
-    expect(notifySplitHtml.match(/task-notify-option is-checked/g) ?? []).toHaveLength(1);
+    expect(notifySplitHtml.match(/aria-checked="true"[^>]*task-notify-option/g) ?? []).toHaveLength(1);
 
     expect(
       buildCreateTaskRequestPayload({
         boardId: 'b-1',
         columnId: 'c-1',
-        values: { title: '  Chuẩn bị poster  ', description: '  Khổ A3  ', dueAtInput: '', priority: 3, isHidden: false },
+        values: { title: '  Chuẩn bị poster  ', description: '  Khổ A3  ', startAtInput: '', dueAtInput: '', isHidden: false },
         canAssign: true,
         assigneeIds: ['u-1'],
         departmentIds: ['d-2'],
@@ -448,8 +456,8 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       columnId: 'c-1',
       title: 'Chuẩn bị poster',
       description: 'Khổ A3',
+      startAt: null,
       dueAt: null,
-      priority: 3,
       assigneeIds: ['u-1'],
       departmentIds: ['d-2'],
       notifyInApp: true,
@@ -460,9 +468,31 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
 
     expect(
       buildCreateTaskRequestPayload({
+        values: { title: 'Calendar task', description: '', startAtInput: '2026-11-28', dueAtInput: '2026-11-30', isHidden: true },
+        canAssign: true,
+        assigneeIds: [],
+        departmentIds: ['d-1'],
+        notifyInApp: true,
+        notifyEmail: false,
+      })
+    ).toEqual({
+      title: 'Calendar task',
+      description: null,
+      startAt: '2026-11-27T17:00:00.000Z',
+      dueAt: '2026-11-29T17:00:00.000Z',
+      assigneeIds: [],
+      departmentIds: ['d-1'],
+      notifyInApp: true,
+      notifyEmail: false,
+      notifyDepartmentMembers: true,
+      isHidden: true,
+    });
+
+    expect(
+      buildCreateTaskRequestPayload({
         boardId: 'b-1',
         columnId: 'c-1',
-        values: { title: 'Silent', description: '', dueAtInput: '', priority: 2, isHidden: false },
+        values: { title: 'Silent', description: '', startAtInput: '', dueAtInput: '', isHidden: false },
         canAssign: true,
         assigneeIds: ['u-1'],
         departmentIds: [],
@@ -479,7 +509,7 @@ describe('BoardDetailView (S04), ColumnModals & TaskDetailDrawer (S05)', () => {
       buildCreateTaskRequestPayload({
         boardId: 'b-1',
         columnId: 'c-1',
-        values: { title: 'No Assign Perm', description: '', dueAtInput: '', priority: 2, isHidden: false },
+        values: { title: 'No Assign Perm', description: '', startAtInput: '', dueAtInput: '', isHidden: false },
         canAssign: false,
         assigneeIds: ['u-1'],
         departmentIds: ['d-2'],

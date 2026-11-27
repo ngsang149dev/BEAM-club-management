@@ -24,6 +24,7 @@ export interface AuthGuardProps {
   breadcrumb?: string;
   actions?: ReactNode;
   userSummary?: AppShellUser;
+  fullHeight?: boolean;
   children: ReactNode;
 }
 
@@ -114,7 +115,7 @@ function AuthGuardLocaleAlert() {
   );
 }
 
-export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, children }: AuthGuardProps) {
+export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, fullHeight, children }: AuthGuardProps) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
   const tCommon = useTranslations('common');
@@ -139,14 +140,14 @@ export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, 
 
   if (shouldShowGuardLoading({ isLoggedOut, isPending: sessionQuery.isPending, isUnauthorized })) {
     return (
-      <AppShell activeNav={activeNav} title={title} breadcrumb={breadcrumb}>
+      <AppShell activeNav={activeNav} title={title} breadcrumb={breadcrumb} fullHeight={fullHeight}>
         <p className="auth-loading" role="status">{tCommon('loading')}</p>
       </AppShell>
     );
   }
   if (sessionQuery.isError || !sessionQuery.data) {
     return (
-      <AppShell activeNav={activeNav} title={title} breadcrumb={breadcrumb}>
+      <AppShell activeNav={activeNav} title={title} breadcrumb={breadcrumb} fullHeight={fullHeight}>
         <AuthGuardErrorView error={sessionQuery.error} onRetry={() => void sessionQuery.refetch()} />
       </AppShell>
     );
@@ -167,6 +168,7 @@ export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, 
         actions={actions}
         notificationsSlot={<NotificationBell />}
         user={resolvedUser}
+        fullHeight={fullHeight}
         onSignOut={() => logoutMutation.mutate()}
         onLocaleChange={(locale: AppLocale) => updateLocaleMutation.mutateAsync(locale)}
       >

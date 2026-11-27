@@ -15,7 +15,7 @@ export default async function HomePage() {
       const auth = await getContainer().authService.authenticateSession(token);
       destination = auth.profile.mustChangePassword
         ? '/profile?changePassword=1'
-        : '/boards';
+        : '/tasks';
     } catch {
       destination = '/login';
     }

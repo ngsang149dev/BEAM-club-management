@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import type { usePermissions, PermissionCode } from '@/features/shared/permissions/can';
 
 export type AppNavKey =
-  | 'boards'
+  | 'tasks'
   | 'myTasks'
   | 'members'
   | 'archive'
@@ -27,7 +27,7 @@ export interface NavItemConfig {
 }
 
 export const WORKSPACE_NAV: readonly NavItemConfig[] = [
-  { key: 'boards', href: '/boards' },
+  { key: 'tasks', href: '/tasks' },
   { key: 'myTasks', href: '/my-tasks' },
   { key: 'members', href: '/members', permission: 'member.view' },
   { key: 'archive', href: '/archive', anyOf: ['task.delete', 'member.deactivate', 'board.delete'] },
@@ -51,7 +51,7 @@ const MEMBERS_ICON = (
 );
 
 const NAV_ICON_PATHS: Record<AppNavKey, ReactNode> = {
-  boards: <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />,
+  tasks: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M8 2v4M16 2v4M3 10h18" /></>,
   myTasks: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M8 12l3 3 5-6" /></>,
   members: MEMBERS_ICON,
   archive: <><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></>,

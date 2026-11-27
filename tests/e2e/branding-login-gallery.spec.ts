@@ -83,7 +83,7 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
 async function signInAs(
   page: Page,
   studentId: string,
-  returnTo = '/boards',
+  returnTo = '/tasks',
   password = DEV_SEED_PASSWORD,
 ): Promise<void> {
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
@@ -325,7 +325,7 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
     await db.delete(loginGalleryItems);
 
     try {
-      await signInAs(page, adminStudentId, '/boards');
+      await signInAs(page, adminStudentId, '/tasks');
       const brandingNavLink = page
         .locator('.app-side')
         .getByRole('link', { name: viMessages.nav.branding, exact: true });
@@ -936,7 +936,7 @@ test.describe('Branding Console & Login Polaroid Gallery E2E (CR-07)', () => {
         await mobilePage.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(hrMemberStudentId);
         await mobilePage.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
         await mobilePage.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
-        await mobilePage.waitForURL(`${BASE_ORIGIN}/boards`);
+        await mobilePage.waitForURL(`${BASE_ORIGIN}/tasks`);
         await mobileTracker.assertClean();
       } finally {
         await mobileContext.close();

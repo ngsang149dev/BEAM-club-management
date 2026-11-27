@@ -184,7 +184,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     await pool?.end();
   });
 
-  test('redirects root / immediately to /login when unauthenticated, /boards when active, and /profile?changePassword=1 when mustChangePassword=true (CR-02B)', async ({
+  test('redirects root / immediately to /login when unauthenticated, /tasks when active, and /profile?changePassword=1 when mustChangePassword=true (CR-02B, CR-10)', async ({
     page,
     context,
     browser,
@@ -210,23 +210,23 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     await page.waitForURL(`${BASE_ORIGIN}/login`);
     await context.clearCookies();
 
-    // 2. Authenticated active visitor -> /boards (and AppShell brand link points to /boards)
+    // 2. Authenticated active visitor -> /tasks (and AppShell brand link points to /tasks)
     await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
     await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
     await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
-    await page.waitForURL(`${BASE_ORIGIN}/boards`);
-    await expect(page.locator('.app-side a.app-brand')).toHaveAttribute('href', '/boards');
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+    await expect(page.locator('.app-side a.app-brand')).toHaveAttribute('href', '/tasks');
 
     const activeRootRes = await page.request.get('/', { maxRedirects: 0 });
     expect([303, 307, 308]).toContain(activeRootRes.status());
     const activeLocation = activeRootRes.headers()['location'] ?? '';
     const activeParsed = new URL(activeLocation, BASE_ORIGIN);
-    expect(`${activeParsed.pathname}${activeParsed.search}`).toBe('/boards');
+    expect(`${activeParsed.pathname}${activeParsed.search}`).toBe('/tasks');
 
     await page.goto('/profile');
     await page.waitForURL(`${BASE_ORIGIN}/profile`);
     await page.goto('/');
-    await page.waitForURL(`${BASE_ORIGIN}/boards`);
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
 
     // 3. Authenticated mustChangePassword=true visitor -> /profile?changePassword=1
     const mustChangeContext = await browser.newContext();
@@ -370,7 +370,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     };
     expect(loginJson.user.mustChangePassword).toBe(false);
 
-    await page.waitForURL(`${BASE_ORIGIN}/boards`);
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
     expect(new URL(page.url()).origin).toBe(BASE_ORIGIN);
 
     const cookies = await context.cookies(BASE_ORIGIN);
@@ -539,12 +539,12 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
       await expect(page1.locator('.profile-main')).toContainText(activeFullName);
       expect((await page1.request.get('/api/v1/auth/session')).status()).toBe(200);
 
-      // 2. Context 2 signs in with the SAME activeStudentId and navigates to /boards
+      // 2. Context 2 signs in with the SAME activeStudentId and navigates to /tasks
       await page2.goto('/login');
       await page2.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(activeStudentId);
       await page2.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(DEV_SEED_PASSWORD);
       await page2.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
-      await page2.waitForURL(`${BASE_ORIGIN}/boards`);
+      await page2.waitForURL(`${BASE_ORIGIN}/tasks`);
 
       const ctx2SessionRes = await page2.request.get('/api/v1/auth/session');
       expect(ctx2SessionRes.status()).toBe(200);
@@ -577,7 +577,7 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
 
       // Context 2 stays logged in after reload
       await page2.reload();
-      await expect(page2).toHaveURL(`${BASE_ORIGIN}/boards`);
+      await expect(page2).toHaveURL(`${BASE_ORIGIN}/tasks`);
       expect((await page2.request.get('/api/v1/auth/session')).status()).toBe(200);
 
       // 4. Context 1 signs back in -> supersedes Context 2 -> Context 2 opens uncached authenticated view without reload -> QueryProvider 401 auto-logout

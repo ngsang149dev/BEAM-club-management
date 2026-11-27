@@ -105,27 +105,31 @@ describe('MyTasksView (S06) & task formatters', () => {
     });
   });
 
-  it('calls /me/tasks with includeDone=false and departmentId="" by default (WQ-03) and renders tasks, department filter & chips, priority, and Load more', () => {
+  it('calls /me/tasks with includeDone=false and departmentId="" by default (WQ-03) and renders deadline tier, acceptance, deliverables, and Load more without Priority UI', () => {
     const html = renderMyTasks('vi');
     expect(tasksHooksMock.useMyTasksInfiniteQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ includeDone: false, priority: '', departmentId: '' }),
+      expect.objectContaining({ includeDone: false, deadlineFilter: '', departmentId: '' }),
       true
     );
     expect(html).toContain('Hiện cả task đã hoàn thành');
     expect(html).toContain('Lọc theo ban');
     expect(html).toContain('Tất cả ban');
+    expect(html).toContain('Lọc theo hạn');
+    expect(html).toContain('Mọi hạn');
     expect(html).toContain('task-dept-chip');
     expect(html).toContain('Truyền thông');
     expect(html).toContain('Viết kịch bản MC');
-    expect(html).toContain('Khẩn');
-    expect(html).toContain('prio-p4');
-    expect(html).toContain('is-overdue');
+    expect(html).toContain('deadline-overdue');
+    expect(html).toContain('task-accept-pill');
+    expect(html).toContain('0 SP');
+    expect(html).not.toContain('prio-p4');
+    expect(html).not.toContain('Khẩn');
     expect(html).toContain('Task ẩn');
     expect(html).toContain('Quá hạn');
     expect(html).toContain('Tải thêm task');
   });
 
-  it('renders English copy, empty state, and error state with requestId cleanly', () => {
+  it('renders English copy, empty state with /tasks link, and error state with requestId cleanly', () => {
     expect(renderMyTasks('en')).toContain('Show completed tasks');
 
     tasksHooksMock.useMyTasksInfiniteQuery.mockReturnValueOnce({
@@ -140,7 +144,7 @@ describe('MyTasksView (S06) & task formatters', () => {
     });
     const emptyHtml = renderMyTasks('vi');
     expect(emptyHtml).toContain('Bạn chưa có task nào khớp bộ lọc');
-    expect(emptyHtml).toContain('/boards');
+    expect(emptyHtml).toContain('href="/tasks"');
 
     tasksHooksMock.useMyTasksInfiniteQuery.mockReturnValueOnce({
       isPending: false,

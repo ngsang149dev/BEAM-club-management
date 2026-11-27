@@ -38,6 +38,7 @@ export interface AppShellProps {
   actions?: ReactNode;
   notificationsSlot?: ReactNode;
   user?: AppShellUser | null;
+  fullHeight?: boolean;
   onSignOut?: () => void;
   onLocaleChange?: (locale: AppLocale) => unknown | Promise<unknown>;
   children: ReactNode;
@@ -93,7 +94,7 @@ function SidebarContent({
   const tLang = useTranslations('language');
   return (
     <>
-      <Link href="/boards" className="app-brand" onClick={onNavigate}>
+      <Link href="/tasks" className="app-brand" onClick={onNavigate}>
         <ClubLogo alt="" />
         <ClubWordmark className="app-brand-text" />
       </Link>
@@ -208,7 +209,7 @@ export function AppShell(props: AppShellProps) {
   };
 
   return (
-    <div className="app-shell" data-component="AppShell">
+    <div className={`app-shell${props.fullHeight ? ' is-full-height' : ''}`} data-component="AppShell">
       <a className="skip" href="#main-content">{tApp('skipToContent')}</a>
       <aside className="app-side" data-component="AppSidebar"><SidebarContent {...sidebarProps} /></aside>
       {drawerOpen ? (

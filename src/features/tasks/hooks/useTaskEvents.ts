@@ -19,14 +19,17 @@ export type TaskEventDto = components['schemas']['TaskEventDto'];
 export type TaskEventPageResponse = components['schemas']['TaskEventPageResponse'];
 export type RevertTaskEventRequest = components['schemas']['RevertTaskEventRequest'];
 export type RevertTaskEventResponse = components['schemas']['RevertTaskEventResponse'];
+export type ArchiveTaskItem = components['schemas']['ArchiveTaskItem'];
 
 export const TASK_EVENTS_PAGE_SIZE = 15;
 export const BOARD_TRASH_PAGE_SIZE = 10;
+export const WORKSPACE_TRASH_PAGE_SIZE = 50;
 export const UNDO_TOAST_DURATION_MS = 10_000;
 
 export const TASK_EVENTS_QUERY_KEYS = {
   byTask: (taskId: string) => ['taskEvents', taskId] as const,
   boardTrash: (boardId: string) => ['boardTrash', boardId] as const,
+  workspaceTrash: ['tasks', 'workspaceTrash'] as const,
 };
 
 export type TaskEventErrorKey =
@@ -93,11 +96,13 @@ export async function invalidateTaskEventQueries(
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: TASK_EVENTS_QUERY_KEYS.byTask(taskId) }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.detail(taskId) }),
+    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.calendarRoot }),
     queryClient.invalidateQueries({ queryKey: ['boards'] }),
     queryClient.invalidateQueries({ queryKey: ['boardDetail', boardId] }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.boardListRoot }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.myTasksRoot }),
     queryClient.invalidateQueries({ queryKey: TASK_EVENTS_QUERY_KEYS.boardTrash(boardId) }),
+    queryClient.invalidateQueries({ queryKey: TASK_EVENTS_QUERY_KEYS.workspaceTrash }),
     queryClient.invalidateQueries({ queryKey: ['archive'] }),
     queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   ]);
@@ -156,6 +161,26 @@ export function useBoardTrashInfiniteQuery(boardId: string, enabled = true) {
       }),
     getNextPageParam: (lastPage) => lastPage.meta.nextCursor ?? undefined,
     enabled: enabled && Boolean(boardId),
+    retry: shouldRetryTaskEventQuery,
+    refetchOnMount: 'always',
+  });
+}
+
+export function useWorkspaceTrashInfiniteQuery(enabled = true) {
+  return useInfiniteQuery({
+    queryKey: TASK_EVENTS_QUERY_KEYS.workspaceTrash,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      apiFetch('/archive', {
+        query: {
+          tab: 'tasks',
+          ...(pageParam ? { cursor: pageParam } : {}),
+          limit: WORKSPACE_TRASH_PAGE_SIZE,
+        },
+        signal,
+      }),
+    getNextPageParam: (lastPage) => lastPage.meta.nextCursor ?? undefined,
+    enabled,
     retry: shouldRetryTaskEventQuery,
     refetchOnMount: 'always',
   });

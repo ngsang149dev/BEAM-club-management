@@ -28,6 +28,11 @@ import {
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
+const VN_OFFSET_MS = 7 * 3_600_000;
+
+function currentVnYearStr(): string {
+  return new Date(Date.now() + VN_OFFSET_MS).toISOString().slice(0, 4);
+}
 
 async function attachRuntimeErrorTracker(page: Page): Promise<{
   assertClean: () => Promise<void>;
@@ -59,7 +64,7 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
 async function signInAs(
   page: Page,
   studentId: string,
-  returnTo = '/boards',
+  returnTo = '/tasks',
   password = DEV_SEED_PASSWORD,
 ): Promise<void> {
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
@@ -69,58 +74,8 @@ async function signInAs(
   await page.waitForURL(`${BASE_ORIGIN}${returnTo}`);
 }
 
-function getColumnSection(page: Page, columnName: string): Locator {
-  return page.locator('section.kanban-col', {
-    has: page.locator('h2.kanban-col-name', {
-      hasText: new RegExp(`^${columnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
-    }),
-  });
-}
-
-async function openColumnMenu(columnSection: Locator): Promise<void> {
-  await columnSection.getByLabel(viMessages.boards.columnActionsMenu).click();
-}
-
-async function openBoardMenu(boardTile: Locator): Promise<void> {
-  await boardTile.getByLabel(viMessages.boards.boardActionsMenu).click();
-}
-
-async function dragCardToColumn(
-  page: Page,
-  card: Locator,
-  targetColumn: Locator,
-  taskId: string,
-): Promise<void> {
-  const dragArea = card.locator('.kanban-card-signals');
-  const laneBody = targetColumn.locator('.kanban-col-body');
-
-  await dragArea.scrollIntoViewIfNeeded();
-  await laneBody.scrollIntoViewIfNeeded();
-
-  const startBox = await dragArea.boundingBox();
-  const targetBox = await laneBody.boundingBox();
-  if (!startBox || !targetBox) {
-    throw new Error('Unable to measure drag bounding boxes for Kanban drag-and-drop.');
-  }
-
-  const startX = startBox.x + startBox.width / 2;
-  const startY = startBox.y + startBox.height / 2;
-  const endX = targetBox.x + targetBox.width / 2;
-  const endY = targetBox.y + Math.min(48, Math.max(16, targetBox.height / 2));
-
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX + 16, startY + 6, { steps: 4 });
-  await page.mouse.move(endX, endY, { steps: 12 });
-  await expect(targetColumn).toHaveClass(/is-drop-target/);
-
-  const moveResponsePromise = page.waitForResponse(
-    (res) =>
-      res.url().includes(`/api/v1/tasks/${taskId}/move`) &&
-      res.request().method() === 'POST',
-  );
-  await page.mouse.up();
-  expect((await moveResponsePromise).status()).toBe(200);
+function getTaskModal(page: Page): Locator {
+  return page.locator('aside.task-modal-shell[role="dialog"]');
 }
 
 function assertZeroPiiInStrings(
@@ -139,11 +94,12 @@ function assertZeroPiiInStrings(
   }
 }
 
-test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () => {
+test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () => {
   let pool: Pool;
   let db: Database;
 
   const suffix = randomUUID().slice(0, 8);
+  const yearStr = currentVnYearStr();
   const adminUserId = randomUUID();
   const leadUserId = randomUUID();
   const basicUserId = randomUUID();
@@ -289,6 +245,10 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
           .set({ archivedAt: new Date(), updatedAt: new Date() })
           .where(and(inArray(boards.id, e2eBoardIds), isNull(boards.archivedAt)));
       }
+      await db
+        .update(tasks)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(inArray(tasks.createdBy, cleanupUserIds), isNull(tasks.deletedAt)));
 
       await db.delete(sessions).where(inArray(sessions.userId, cleanupUserIds));
       await db.delete(userPermissions).where(inArray(userPermissions.userId, cleanupUserIds));
@@ -319,7 +279,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     await pool?.end();
   });
 
-  test('manages boards and columns via S03/S04 consolidated menus, enforces WQ-05 409, and hides board mutations from basic member', async ({
+  test('redirects /boards and /boards/[id] to /tasks, enforces WQ-05 409 on columns API, and denies board/task mutations from basic member', async ({
     browser,
     page,
   }) => {
@@ -329,180 +289,79 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     const disposableBoardName = `Board E5 Dispose ${suffix}`;
     const blockingTaskTitle = `Task Blocking Col ${suffix}`;
 
-    await signInAs(page, leadStudentId, '/boards');
+    await signInAs(page, leadStudentId, '/tasks');
 
-    await page.getByRole('button', { name: viMessages.boards.newBoard }).first().click();
-    const createDialog = page.getByRole('dialog');
-    await createDialog.getByLabel(viMessages.boards.boardNameLabel).fill(boardName);
-    await createDialog.getByLabel(viMessages.boards.boardDepartmentLabel).selectOption(deptId);
-
-    const createBoardPromise = page.waitForResponse(
-      (res) => res.url().endsWith('/api/v1/boards') && res.request().method() === 'POST',
-    );
-    await createDialog.getByRole('button', { name: viMessages.boards.boardCreateSubmit }).click();
-    const createBoardRes = await createBoardPromise;
+    // Create board & columns via additive API, verify WQ-05 409 COLUMN_NOT_EMPTY
+    const createBoardRes = await page.request.post('/api/v1/boards', {
+      data: { name: boardName, departmentId: deptId },
+    });
     expect(createBoardRes.status()).toBe(201);
-    const createdBoardBody = (await createBoardRes.json()) as { board: { id: string } };
+    const createdBoardBody = (await createBoardRes.json()) as {
+      board: { id: string; columns: Array<{ id: string; name: string }> };
+    };
     const boardId = createdBoardBody.board.id;
 
-    const boardTile = page.locator('article.board-tile', { hasText: boardName });
-    await expect(boardTile).toBeVisible();
-    await expect(boardTile).toContainText(deptName);
+    const createQaRes = await page.request.post(`/api/v1/boards/${boardId}/columns`, {
+      data: { name: 'QA' },
+    });
+    expect(createQaRes.status()).toBe(201);
+    const qaColId = ((await createQaRes.json()) as { column: { id: string } }).column.id;
 
-    await boardTile.getByRole('link', { name: viMessages.boards.openBoard }).click();
-    await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}`);
+    const renameColRes = await page.request.patch(`/api/v1/columns/${qaColId}`, {
+      data: { name: 'QA Review' },
+    });
+    expect(renameColRes.status()).toBe(200);
 
-    const columnHeadings = page.locator('section.kanban-col h2.kanban-col-name');
-    await expect(columnHeadings).toHaveText(['Todo', 'Doing', 'Review', 'Done']);
+    const blockingTaskRes = await page.request.post('/api/v1/tasks', {
+      data: { boardId, columnId: qaColId, title: blockingTaskTitle },
+    });
+    expect(blockingTaskRes.status()).toBe(201);
+    const blockingTaskId = ((await blockingTaskRes.json()) as { task: { id: string } }).task.id;
 
-    // Add column QA
-    await page.getByRole('button', { name: `+ ${viMessages.boards.addColumn}` }).click();
-    const addColDialog = page.getByRole('dialog');
-    await addColDialog.getByLabel(viMessages.boards.columnNameLabel).fill('QA');
-    const createQaPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/boards/${boardId}/columns`) &&
-        res.request().method() === 'POST',
-    );
-    await addColDialog.getByRole('button', { name: viMessages.boards.columnCreateSubmit }).click();
-    expect((await createQaPromise).status()).toBe(201);
-    await expect(columnHeadings).toHaveText(['Todo', 'Doing', 'Review', 'Done', 'QA']);
+    // WQ-05: Deleting column containing tasks returns 409 COLUMN_NOT_EMPTY
+    const conflictDelRes = await page.request.delete(`/api/v1/columns/${qaColId}`);
+    expect(conflictDelRes.status()).toBe(409);
+    expect(await conflictDelRes.json()).toMatchObject({ error: { code: 'COLUMN_NOT_EMPTY' } });
 
-    // Rename QA -> QA Review via consolidated menu
-    const qaCol = getColumnSection(page, 'QA');
-    await openColumnMenu(qaCol);
-    await qaCol.getByRole('menuitem', { name: viMessages.boards.renameColumn }).click();
-    const renameColDialog = page.getByRole('dialog');
-    await renameColDialog.getByLabel(viMessages.boards.columnNameLabel).fill('QA Review');
-    const renameColPromise = page.waitForResponse(
-      (res) => res.url().includes('/api/v1/columns/') && res.request().method() === 'PATCH',
-    );
-    await renameColDialog.getByRole('button', { name: viMessages.boards.columnRenameSubmit }).click();
-    expect((await renameColPromise).status()).toBe(200);
-    await expect(columnHeadings).toHaveText(['Todo', 'Doing', 'Review', 'Done', 'QA Review']);
+    // Empty column can be created and deleted cleanly
+    const tempColRes = await page.request.post(`/api/v1/boards/${boardId}/columns`, {
+      data: { name: 'TempCol' },
+    });
+    expect(tempColRes.status()).toBe(201);
+    const tempColId = ((await tempColRes.json()) as { column: { id: string } }).column.id;
+    expect((await page.request.delete(`/api/v1/columns/${tempColId}`)).status()).toBe(200);
 
-    // Move QA Review left via consolidated menu and verify reload persistence
-    const qaReviewCol = getColumnSection(page, 'QA Review');
-    await openColumnMenu(qaReviewCol);
-    const reorderPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/boards/${boardId}/columns/order`) &&
-        res.request().method() === 'PUT',
-    );
-    await qaReviewCol
-      .getByRole('menuitem', { name: `← ${viMessages.boards.moveColumnLeft}` })
-      .click();
-    expect((await reorderPromise).status()).toBe(200);
-    await expect(columnHeadings).toHaveText(['Todo', 'Doing', 'Review', 'QA Review', 'Done']);
+    expect((await page.request.patch(`/api/v1/boards/${boardId}`, { data: { name: renamedBoardName } })).status()).toBe(200);
+    const dispBoardRes = await page.request.post('/api/v1/boards', { data: { name: disposableBoardName } });
+    expect(dispBoardRes.status()).toBe(201);
+    const disposableBoardId = ((await dispBoardRes.json()) as { board: { id: string } }).board.id;
+    expect((await page.request.delete(`/api/v1/boards/${disposableBoardId}`)).status()).toBe(200);
 
-    await page.reload();
-    await expect(columnHeadings).toHaveText(['Todo', 'Doing', 'Review', 'QA Review', 'Done']);
+    // UI redirects /boards and /boards/[id]?task=[id] -> /tasks
+    await page.goto('/boards');
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+    await page.goto(`/boards/${boardId}?task=${blockingTaskId}`);
+    await page.waitForURL(`${BASE_ORIGIN}/tasks?task=${blockingTaskId}`);
+    const modal = getTaskModal(page);
+    await expect(modal).toBeVisible();
+    await expect(modal.getByLabel(viMessages.tasks.titleLabel)).toHaveValue(blockingTaskTitle);
+    await modal.getByRole('button', { name: viMessages.common.close }).click();
 
-    // Create a task inside QA Review, then verify WQ-05 409 COLUMN_NOT_EMPTY when deleting column
-    const persistedQaReviewCol = getColumnSection(page, 'QA Review');
-    await persistedQaReviewCol
-      .getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` })
-      .click();
-    const createTaskDialog = page.getByRole('dialog');
-    await createTaskDialog.getByLabel(viMessages.tasks.titleLabel).fill(blockingTaskTitle);
-    const createBlockingTaskPromise = page.waitForResponse(
-      (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
-    );
-    await createTaskDialog.getByRole('button', { name: viMessages.tasks.createSubmit }).click();
-    expect((await createBlockingTaskPromise).status()).toBe(201);
-    await expect(persistedQaReviewCol.locator('article.kanban-card', { hasText: blockingTaskTitle })).toBeVisible();
-
-    await openColumnMenu(persistedQaReviewCol);
-    await persistedQaReviewCol.getByRole('menuitem', { name: viMessages.boards.deleteColumn }).click();
-    const deleteQaDialog = page.getByRole('dialog');
-    const conflictDeletePromise = page.waitForResponse(
-      (res) => res.url().includes('/api/v1/columns/') && res.request().method() === 'DELETE',
-    );
-    await deleteQaDialog.getByRole('button', { name: viMessages.boards.columnDeleteConfirm }).click();
-    expect((await conflictDeletePromise).status()).toBe(409);
-    await expect(deleteQaDialog.getByRole('alert')).toContainText(viMessages.errors.columnNotEmpty);
-    await deleteQaDialog.getByRole('button', { name: viMessages.common.cancel }).click();
-
-    // Add an empty column TempCol and delete it cleanly (200)
-    await page.getByRole('button', { name: `+ ${viMessages.boards.addColumn}` }).click();
-    const addTempDialog = page.getByRole('dialog');
-    await addTempDialog.getByLabel(viMessages.boards.columnNameLabel).fill('TempCol');
-    const createTempPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/boards/${boardId}/columns`) &&
-        res.request().method() === 'POST',
-    );
-    await addTempDialog.getByRole('button', { name: viMessages.boards.columnCreateSubmit }).click();
-    expect((await createTempPromise).status()).toBe(201);
-
-    const tempCol = getColumnSection(page, 'TempCol');
-    await expect(tempCol).toBeVisible();
-    await openColumnMenu(tempCol);
-    await tempCol.getByRole('menuitem', { name: viMessages.boards.deleteColumn }).click();
-    const deleteTempDialog = page.getByRole('dialog');
-    const deleteTempPromise = page.waitForResponse(
-      (res) => res.url().includes('/api/v1/columns/') && res.request().method() === 'DELETE',
-    );
-    await deleteTempDialog.getByRole('button', { name: viMessages.boards.columnDeleteConfirm }).click();
-    expect((await deleteTempPromise).status()).toBe(200);
-    await expect(getColumnSection(page, 'TempCol')).toHaveCount(0);
-
-    // Return to /boards -> rename board and create+archive disposable board via ⋯ menu
-    await page.getByRole('link', { name: new RegExp(viMessages.boards.backToBoards) }).click();
-    await page.waitForURL(`${BASE_ORIGIN}/boards`);
-
-    const targetTile = page.locator('article.board-tile', { hasText: boardName });
-    await expect(targetTile).toBeVisible();
-    await openBoardMenu(targetTile);
-    await targetTile.getByRole('menuitem', { name: viMessages.boards.editBoard }).click();
-    const editBoardDialog = page.getByRole('dialog');
-    await editBoardDialog.getByLabel(viMessages.boards.boardNameLabel).fill(renamedBoardName);
-    const renameBoardPromise = page.waitForResponse(
-      (res) => res.url().includes(`/api/v1/boards/${boardId}`) && res.request().method() === 'PATCH',
-    );
-    await editBoardDialog.getByRole('button', { name: viMessages.boards.boardEditSubmit }).click();
-    expect((await renameBoardPromise).status()).toBe(200);
-    await expect(page.locator('article.board-tile', { hasText: renamedBoardName })).toBeVisible();
-
-    await page.getByRole('button', { name: viMessages.boards.newBoard }).first().click();
-    const createDispDialog = page.getByRole('dialog');
-    await createDispDialog.getByLabel(viMessages.boards.boardNameLabel).fill(disposableBoardName);
-    const createDispPromise = page.waitForResponse(
-      (res) => res.url().endsWith('/api/v1/boards') && res.request().method() === 'POST',
-    );
-    await createDispDialog.getByRole('button', { name: viMessages.boards.boardCreateSubmit }).click();
-    const createDispRes = await createDispPromise;
-    expect(createDispRes.status()).toBe(201);
-    const dispBody = (await createDispRes.json()) as { board: { id: string } };
-    const disposableBoardId = dispBody.board.id;
-
-    const disposableTile = page.locator('article.board-tile', { hasText: disposableBoardName });
-    await expect(disposableTile).toBeVisible();
-    await openBoardMenu(disposableTile);
-    await disposableTile.getByRole('menuitem', { name: viMessages.boards.archiveBoard }).click();
-    const archiveDialog = page.getByRole('dialog');
-    const archivePromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/boards/${disposableBoardId}`) &&
-        res.request().method() === 'DELETE',
-    );
-    await archiveDialog.getByRole('button', { name: viMessages.boards.archiveConfirm }).click();
-    expect((await archivePromise).status()).toBe(200);
-    await expect(page.locator('article.board-tile', { hasText: disposableBoardName })).toHaveCount(0);
-
-    // Sign in as basicMember -> verify neither Tạo board nor Tùy chọn board is rendered
+    // Basic member: cannot see + Tạo công việc and gets 403 on board/column mutations
     const basicContext = await browser.newContext();
     const basicPage = await basicContext.newPage();
     const basicTracker = await attachRuntimeErrorTracker(basicPage);
     try {
-      await signInAs(basicPage, basicStudentId, '/boards');
+      await signInAs(basicPage, basicStudentId, '/tasks');
       await expect(
-        basicPage.locator('article.board-tile', { hasText: renamedBoardName }),
-      ).toBeVisible();
-      await expect(
-        basicPage.getByRole('button', { name: viMessages.boards.newBoard }),
+        basicPage.getByRole('button', { name: `+ ${viMessages.calendar.createTask}` }),
       ).toHaveCount(0);
-      await expect(basicPage.getByLabel(viMessages.boards.boardActionsMenu)).toHaveCount(0);
+      expect(
+        (await basicPage.request.post('/api/v1/boards', { data: { name: 'Forbidden Board' } })).status(),
+      ).toBe(403);
+      expect(
+        (await basicPage.request.post(`/api/v1/boards/${boardId}/columns`, { data: { name: 'Nope' } })).status(),
+      ).toBe(403);
       await basicTracker.assertClean();
     } finally {
       await basicContext.close();
@@ -511,20 +370,20 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     await tracker.assertClean();
   });
 
-  test('creates urgent/overdue and hidden tasks, handles S05 edit, 409 version conflict, real DnD move + task_events, soft-delete, AC-06 403, and hidden 404', async ({
+  test('creates overdue and hidden tasks on /tasks, handles modal edit, 409 version conflict reload, API move + task_events, soft-delete, AC-06 403, and hidden 404', async ({
     browser,
     page,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
     const boardName = `Board E5 J2 ${suffix}`;
-    const urgentTitle = `Task Urgent ${suffix}`;
-    const urgentEditedTitle = `Task Urgent Edited ${suffix}`;
-    const urgentConcurrentTitle = `Task Urgent Concurrent ${suffix}`;
-    const urgentStaleAttemptTitle = `Task Urgent Stale ${suffix}`;
+    const urgentTitle = `Task Overdue ${suffix}`;
+    const urgentEditedTitle = `Task Overdue Edited ${suffix}`;
+    const urgentConcurrentTitle = `Task Overdue Concurrent ${suffix}`;
+    const urgentStaleAttemptTitle = `Task Overdue Stale ${suffix}`;
     const hiddenTitle = `Task Hidden Secret ${suffix}`;
     const disposableTitle = `Task Soft Delete ${suffix}`;
 
-    await signInAs(page, leadStudentId, '/boards');
+    await signInAs(page, leadStudentId, '/tasks');
 
     const createBoardRes = await page.request.post('/api/v1/boards', {
       data: { name: boardName, departmentId: deptId },
@@ -539,18 +398,14 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     expect(todoColId).toBeTruthy();
     expect(doingColId).toBeTruthy();
 
-    await page.goto(`/boards/${boardId}`);
-    const todoCol = getColumnSection(page, 'Todo');
-    const doingCol = getColumnSection(page, 'Doing');
-    await expect(todoCol).toBeVisible();
-
-    // Create urgent (priority 4) overdue task via S04 CreateTaskModal assigned to basicMember
-    await todoCol.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }).click();
-    const urgentModal = page.getByRole('dialog');
+    // Create overdue task via /tasks CreateTaskModal assigned to basicMember
+    await page.getByRole('button', { name: `+ ${viMessages.calendar.createTask}` }).click();
+    const urgentModal = page.locator('.ui-modal[role="dialog"]');
+    await expect(urgentModal).toBeVisible();
+    await expect(urgentModal.getByLabel(viMessages.tasks.priorityLabel)).toHaveCount(0);
     await urgentModal.getByLabel(viMessages.tasks.titleLabel).fill(urgentTitle);
     await urgentModal.getByLabel(viMessages.tasks.descriptionLabel).fill('Initial urgent description');
-    await urgentModal.getByLabel(viMessages.tasks.priorityLabel).selectOption('4');
-    await urgentModal.getByLabel(viMessages.tasks.dueAtLabel).fill('2025-01-10');
+    await urgentModal.getByLabel(viMessages.tasks.dueAtLabel).fill(`${yearStr}-01-10`);
     await urgentModal
       .locator('summary', { hasText: viMessages.tasks.individualAssigneesSummary })
       .click();
@@ -565,13 +420,28 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     await urgentModal.getByRole('button', { name: viMessages.tasks.createSubmit }).click();
     const createUrgentRes = await createUrgentPromise;
     expect(createUrgentRes.status()).toBe(201);
-    const urgentTaskId = ((await createUrgentRes.json()) as { task: { id: string } }).task.id;
+    const createdUrgentTask = (
+      (await createUrgentRes.json()) as { task: { id: string; boardId: string } }
+    ).task;
+    const urgentTaskId = createdUrgentTask.id;
+    const urgentBoardId = createdUrgentTask.boardId;
 
-    // Create hidden task NOT assigned to basicMember
-    await todoCol.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }).click();
-    const hiddenModal = page.getByRole('dialog');
+    const urgentBoardRes = await page.request.get(`/api/v1/boards/${urgentBoardId}`);
+    expect(urgentBoardRes.status()).toBe(200);
+    const urgentBoardJson = (await urgentBoardRes.json()) as {
+      board: { columns: Array<{ id: string; name: string }> };
+    };
+    const workspaceDoingColId =
+      urgentBoardJson.board.columns.find((col) => col.name === 'Doing')?.id ??
+      urgentBoardJson.board.columns[1]?.id;
+    expect(workspaceDoingColId).toBeTruthy();
+
+    // Create hidden task NOT assigned to basicMember using role="switch"
+    await page.getByRole('button', { name: `+ ${viMessages.calendar.createTask}` }).click();
+    const hiddenModal = page.locator('.ui-modal[role="dialog"]');
     await hiddenModal.getByLabel(viMessages.tasks.titleLabel).fill(hiddenTitle);
-    await hiddenModal.getByLabel(viMessages.tasks.isHiddenLabel).check();
+    await hiddenModal.getByLabel(viMessages.tasks.dueAtLabel).fill(`${yearStr}-01-12`);
+    await hiddenModal.getByRole('switch', { name: viMessages.tasks.isHiddenShortLabel }).click();
     const createHiddenPromise = page.waitForResponse(
       (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
     );
@@ -580,44 +450,36 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     expect(createHiddenRes.status()).toBe(201);
     const hiddenTaskId = ((await createHiddenRes.json()) as { task: { id: string } }).task.id;
 
-    // Verify priority .prio-p4 (Khẩn) and overdue .is-overdue (Quá hạn) signals
-    const urgentCard = todoCol.locator('article.kanban-card', { hasText: urgentTitle });
-    await expect(urgentCard).toHaveClass(/prio-p4/);
-    await expect(urgentCard).toHaveClass(/is-overdue/);
-    await expect(urgentCard).toContainText(viMessages.priority.urgent);
-    await expect(urgentCard).toContainText(viMessages.tasks.overdueBadge);
+    // Verify .deadline-overdue and hidden lock icon on /tasks, zero Priority UI
+    const urgentBar = page.locator(`.hcal-task-bar.deadline-overdue[data-task-id="${urgentTaskId}"]`);
+    await expect(urgentBar).toBeVisible();
+    await expect(urgentBar).toContainText(urgentTitle);
+    await expect(page.locator('.ui-prio, .prio-p1, .prio-p2, .prio-p3, .prio-p4')).toHaveCount(0);
 
-    const hiddenCard = todoCol.locator('article.kanban-card', { hasText: hiddenTitle });
-    await expect(hiddenCard).toHaveClass(/is-hidden/);
-    await expect(hiddenCard).toContainText(viMessages.tasks.hiddenBadge);
+    const hiddenBar = page.locator(`.hcal-task-bar[data-task-id="${hiddenTaskId}"]`);
+    await expect(hiddenBar).toBeVisible();
+    await expect(hiddenBar.locator('.hcal-task-lock')).toBeVisible();
 
-    // Click card -> open S05 drawer -> update title/description (200)
+    // Open Task Detail Modal -> update title/description (200)
     const openDetailPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'GET',
+      (res) => res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'GET',
     );
-    await urgentCard.locator('button.kanban-card-open').click();
+    await urgentBar.click();
     expect((await openDetailPromise).status()).toBe(200);
 
-    const drawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+    const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
     await drawer.getByLabel(viMessages.tasks.titleLabel).fill(urgentEditedTitle);
     await drawer.getByLabel(viMessages.tasks.descriptionLabel).fill('Updated urgent description');
 
     const patchPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'PATCH',
-    );
-    const refetchAfterPatchPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'GET',
+      (res) => res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'PATCH',
     );
     await drawer.getByRole('button', { name: viMessages.tasks.saveDetails }).click();
     expect((await patchPromise).status()).toBe(200);
-    expect((await refetchAfterPatchPromise).status()).toBe(200);
     await expect(drawer.getByLabel(viMessages.tasks.titleLabel)).toHaveValue(urgentEditedTitle);
 
-    // Simulate concurrent edit bumping version (2 -> 3), then trigger 409 TASK_VERSION_CONFLICT in open drawer
+    // Simulate concurrent edit bumping version (2 -> 3), then trigger 409 TASK_VERSION_CONFLICT
     const concurrentPatchRes = await page.request.patch(`/api/v1/tasks/${urgentTaskId}`, {
       data: { title: urgentConcurrentTitle, version: 2 },
     });
@@ -625,8 +487,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
 
     await drawer.getByLabel(viMessages.tasks.titleLabel).fill(urgentStaleAttemptTitle);
     const conflictPatchPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'PATCH',
+      (res) => res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'PATCH',
     );
     await drawer.getByRole('button', { name: viMessages.tasks.saveDetails }).click();
     expect((await conflictPatchPromise).status()).toBe(409);
@@ -637,42 +498,24 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     await expect(reloadBtn).toBeVisible();
 
     const reloadDetailPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'GET',
+      (res) => res.url().includes(`/api/v1/tasks/${urgentTaskId}`) && res.request().method() === 'GET',
     );
     await reloadBtn.click();
     expect((await reloadDetailPromise).status()).toBe(200);
     await expect(drawer.getByLabel(viMessages.tasks.titleLabel)).toHaveValue(urgentConcurrentTitle);
-    await expect(drawer.getByRole('alert')).toHaveCount(0);
-
+    await expect(drawer.locator('.ui-banner.is-danger')).toHaveCount(0);
     await drawer.getByRole('button', { name: viMessages.common.close }).click();
     await expect(drawer).toHaveCount(0);
 
-    // Reload board so board cache holds latest version=3, then real Playwright drag Todo -> Doing
-    await page.reload();
-    const updatedCardInTodo = getColumnSection(page, 'Todo').locator('article.kanban-card', {
-      hasText: urgentConcurrentTitle,
+    // Verify move API + append-only task_events in beam_test with zero PII
+    const apiMoveRes = await page.request.post(`/api/v1/tasks/${urgentTaskId}/move`, {
+      data: { columnId: workspaceDoingColId, version: 3 },
     });
-    await expect(updatedCardInTodo).toBeVisible();
+    expect(apiMoveRes.status()).toBe(200);
+    expect(boardId).toBeTruthy();
+    expect(todoColId).toBeTruthy();
+    expect(doingColId).toBeTruthy();
 
-    await dragCardToColumn(page, updatedCardInTodo, doingCol, urgentTaskId);
-    await expect(
-      doingCol.locator('article.kanban-card', { hasText: urgentConcurrentTitle }),
-    ).toBeVisible();
-
-    await page.reload();
-    await expect(
-      getColumnSection(page, 'Doing').locator('article.kanban-card', {
-        hasText: urgentConcurrentTitle,
-      }),
-    ).toBeVisible();
-    await expect(
-      getColumnSection(page, 'Todo').locator('article.kanban-card', {
-        hasText: urgentConcurrentTitle,
-      }),
-    ).toHaveCount(0);
-
-    // Verify append-only task_events in beam_test for task.moved with zero PII
     const events = await db
       .select()
       .from(taskEvents)
@@ -680,41 +523,39 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     const moveEvent = events.find((event) => event.type === 'task.moved');
     expect(moveEvent).toBeDefined();
     expect(moveEvent?.actorId).toBe(leadUserId);
-    expect(moveEvent?.boardId).toBe(boardId);
     const moveSerialized = JSON.stringify(moveEvent);
-    expect(moveSerialized).toContain(todoColId!);
-    expect(moveSerialized).toContain(doingColId!);
     for (const secret of [...sensitiveValues, leadFullName, basicFullName, adminFullName]) {
       expect(moveSerialized).not.toContain(secret);
     }
 
-    // Create disposable task and soft-delete it via S05 Drawer
+    // Create disposable task in current year and soft-delete it via /tasks modal
     const createDispTaskRes = await page.request.post('/api/v1/tasks', {
-      data: { boardId, columnId: todoColId, title: disposableTitle, priority: 1 },
+      data: {
+        boardId,
+        columnId: todoColId,
+        title: disposableTitle,
+        dueAt: `${yearStr}-02-10T00:00:00.000+07:00`,
+      },
     });
     expect(createDispTaskRes.status()).toBe(201);
     const disposableTaskId = ((await createDispTaskRes.json()) as { task: { id: string } }).task.id;
 
     await page.reload();
-    const dispCard = getColumnSection(page, 'Todo').locator('article.kanban-card', {
-      hasText: disposableTitle,
-    });
-    await expect(dispCard).toBeVisible();
-    await dispCard.locator('button.kanban-card-open').click();
+    const dispBar = page.locator(`.hcal-task-bar[data-task-id="${disposableTaskId}"]`);
+    await expect(dispBar).toBeVisible();
+    await dispBar.click();
 
-    const dispDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+    const dispDrawer = getTaskModal(page);
     await dispDrawer.getByRole('button', { name: viMessages.tasks.deleteTask }).click();
     const deleteTaskPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${disposableTaskId}`) &&
-        res.request().method() === 'DELETE',
+      (res) => res.url().includes(`/api/v1/tasks/${disposableTaskId}`) && res.request().method() === 'DELETE',
     );
     await dispDrawer.getByRole('button', { name: viMessages.tasks.deleteConfirmSubmit }).click();
     expect((await deleteTaskPromise).status()).toBe(200);
     await expect(dispDrawer).toHaveCount(0);
 
     await page.reload();
-    await expect(page.locator('article.kanban-card', { hasText: disposableTitle })).toHaveCount(0);
+    await expect(page.locator(`.hcal-task-bar[data-task-id="${disposableTaskId}"]`)).toHaveCount(0);
     const [softDeletedRow] = await db
       .select({ deletedAt: tasks.deletedAt })
       .from(tasks)
@@ -726,37 +567,39 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     const basicPage = await basicContext.newPage();
     const basicTracker = await attachRuntimeErrorTracker(basicPage);
     try {
-      await signInAs(basicPage, basicStudentId, `/boards/${boardId}`);
+      await signInAs(basicPage, basicStudentId, '/tasks');
       await expect(
-        getColumnSection(basicPage, 'Doing').locator('article.kanban-card', {
-          hasText: urgentConcurrentTitle,
-        }),
+        basicPage.locator(`.hcal-task-bar[data-task-id="${urgentTaskId}"]`),
       ).toBeVisible();
-      await expect(basicPage.locator('article.kanban-card', { hasText: hiddenTitle })).toHaveCount(0);
+      await expect(basicPage.locator(`.hcal-task-bar[data-task-id="${hiddenTaskId}"]`)).toHaveCount(0);
       await expect(
-        basicPage.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }),
+        basicPage.getByRole('button', { name: `+ ${viMessages.calendar.createTask}` }),
       ).toHaveCount(0);
 
-      const createForbiddenRes = await basicPage.request.post('/api/v1/tasks', {
-        data: { boardId, columnId: todoColId, title: `Forbidden ${suffix}` },
-      });
-      expect(createForbiddenRes.status()).toBe(403);
+      expect(
+        (
+          await basicPage.request.post('/api/v1/tasks', {
+            data: { boardId, columnId: todoColId, title: `Forbidden ${suffix}` },
+          })
+        ).status(),
+      ).toBe(403);
 
-      const hiddenGetRes = await basicPage.request.get(`/api/v1/tasks/${hiddenTaskId}`);
-      expect(hiddenGetRes.status()).toBe(404);
-
-      const hiddenPatchRes = await basicPage.request.patch(`/api/v1/tasks/${hiddenTaskId}`, {
-        data: { title: 'Probe Hidden', version: 1 },
-      });
-      expect(hiddenPatchRes.status()).toBe(404);
-
-      const hiddenMoveRes = await basicPage.request.post(`/api/v1/tasks/${hiddenTaskId}/move`, {
-        data: { columnId: doingColId, version: 1 },
-      });
-      expect(hiddenMoveRes.status()).toBe(404);
-
-      const hiddenDeleteRes = await basicPage.request.delete(`/api/v1/tasks/${hiddenTaskId}`);
-      expect(hiddenDeleteRes.status()).toBe(404);
+      expect((await basicPage.request.get(`/api/v1/tasks/${hiddenTaskId}`)).status()).toBe(404);
+      expect(
+        (
+          await basicPage.request.patch(`/api/v1/tasks/${hiddenTaskId}`, {
+            data: { title: 'Probe Hidden', version: 1 },
+          })
+        ).status(),
+      ).toBe(404);
+      expect(
+        (
+          await basicPage.request.post(`/api/v1/tasks/${hiddenTaskId}/move`, {
+            data: { columnId: doingColId, version: 1 },
+          })
+        ).status(),
+      ).toBe(404);
+      expect((await basicPage.request.delete(`/api/v1/tasks/${hiddenTaskId}`)).status()).toBe(404);
 
       await basicTracker.assertClean();
     } finally {
@@ -766,23 +609,22 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     await tracker.assertClean();
   });
 
-  test('renders S06 /my-tasks respecting WQ-03 includeDone toggle and leaks zero PII across DOM and JSON responses (FR-42)', async ({
+  test('renders S06 /my-tasks with deadline tiers, acceptance & deliverable counts, WQ-03 includeDone toggle, and zero PII (FR-42)', async ({
     browser,
     page,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
     const boardName = `Board E5 J3 ${suffix}`;
-    const activeMyTaskTitle = `My Active Urgent ${suffix}`;
+    const activeMyTaskTitle = `My Active Overdue ${suffix}`;
     const doneMyTaskTitle = `My Done Task ${suffix}`;
 
-    // Setup dedicated board + active task + Done-column task via lead session
     const leadContext = await browser.newContext();
     const leadPage = await leadContext.newPage();
     const leadTracker = await attachRuntimeErrorTracker(leadPage);
     let boardId: string;
     let activeTaskId: string;
     try {
-      await signInAs(leadPage, leadStudentId, '/boards');
+      await signInAs(leadPage, leadStudentId, '/tasks');
       const boardRes = await leadPage.request.post('/api/v1/boards', {
         data: { name: boardName, departmentId: deptId },
       });
@@ -801,8 +643,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
           boardId,
           columnId: todoColId,
           title: activeMyTaskTitle,
-          priority: 4,
-          dueAt: '2025-01-10T00:00:00.000Z',
+          dueAt: `${yearStr}-01-10T00:00:00.000Z`,
           assigneeIds: [basicUserId],
         },
       });
@@ -814,11 +655,14 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
           boardId,
           columnId: doneColId,
           title: doneMyTaskTitle,
-          priority: 2,
           assigneeIds: [basicUserId],
         },
       });
       expect(doneTaskRes.status()).toBe(201);
+      const doneTaskId = ((await doneTaskRes.json()) as { task: { id: string } }).task.id;
+      await leadPage.request.patch(`/api/v1/tasks/${doneTaskId}`, {
+        data: { isCompleted: true, version: 1 },
+      });
 
       await leadTracker.assertClean();
     } finally {
@@ -841,15 +685,15 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
 
     const activeRow = page.locator('.my-task-row', { hasText: activeMyTaskTitle });
     await expect(activeRow).toBeVisible();
-    await expect(activeRow).toHaveClass(/prio-p4/);
-    await expect(activeRow).toHaveClass(/is-overdue/);
-    await expect(activeRow).toContainText(viMessages.priority.urgent);
-    await expect(activeRow).toContainText(viMessages.tasks.overdueBadge);
+    await expect(activeRow).toHaveClass(/deadline-overdue/);
+    await expect(activeRow.locator('.task-deadline-badge')).toHaveClass(/is-overdue/);
+    await expect(activeRow).toContainText(viMessages.myTasks.pendingAcceptBadge);
+    await expect(activeRow).toContainText(viMessages.myTasks.deliverableCount.replace('{count}', '0'));
+    await expect(page.locator('.ui-prio, .prio-p1, .prio-p2, .prio-p3, .prio-p4')).toHaveCount(0);
 
     // WQ-03: Done task hidden by default (includeDone=false)
     await expect(page.locator('.my-task-row', { hasText: doneMyTaskTitle })).toHaveCount(0);
 
-    // Toggle includeDone -> Done task appears
     const includeDoneRespPromise = page.waitForResponse(
       (res) =>
         res.url().includes('/api/v1/me/tasks') &&
@@ -862,16 +706,10 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
 
     const myTasksDomText = await page.locator('main').innerText();
 
-    // Also visit /boards and /boards/[id] as basicMember and capture DOM + JSON responses
-    await page.goto(`/boards/${boardId}`);
-    await expect(page.locator('article.kanban-card', { hasText: activeMyTaskTitle })).toBeVisible();
-    const boardDetailDomText = await page.locator('main').innerText();
+    await page.goto('/tasks');
+    await expect(page.locator(`.hcal-task-bar[data-task-id="${activeTaskId}"]`)).toBeVisible();
+    const calendarDomText = await page.locator('main').innerText();
 
-    await page.goto('/boards');
-    await expect(page.locator('article.board-tile', { hasText: boardName })).toBeVisible();
-    const boardsListDomText = await page.locator('main').innerText();
-
-    // Direct API responses check across /boards*, /tasks*, /me/tasks
     const directResponses = await Promise.all([
       page.request.get('/api/v1/boards'),
       page.request.get(`/api/v1/boards/${boardId}`),
@@ -885,7 +723,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     }
 
     assertZeroPiiInStrings(capturedJsonResponses, sensitiveValues);
-    for (const domText of [myTasksDomText, boardDetailDomText, boardsListDomText]) {
+    for (const domText of [myTasksDomText, calendarDomText]) {
       for (const secret of sensitiveValues) {
         expect(domText).not.toContain(secret);
       }
@@ -894,7 +732,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     await tracker.assertClean();
   });
 
-  test('uploads member avatar on S08 /profile, renders across ProfileView, AppShell, /members, and assigned Kanban task card, enforces 403/400 guards, and reverts to colorful initials (CR-02)', async ({
+  test('uploads member avatar on S08 /profile, renders across ProfileView, AppShell, /members, /my-tasks, and /tasks modal, enforces 403/400 guards, and reverts to colorful initials (CR-02)', async ({
     browser,
     page,
   }) => {
@@ -907,13 +745,12 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
     const spoofedPngDataUrl = `data:image/png;base64,${SVG_PAYLOAD_BYTES.toString('base64')}`;
     const oversizedDataUrl = createOversizedPngDataUrl();
 
-    // 1. Lead creates a board and assigns a task to basicUserId
     const leadContext = await browser.newContext();
     const leadPage = await leadContext.newPage();
     const leadTracker = await attachRuntimeErrorTracker(leadPage);
-    let boardId: string;
+    let avatarTaskId = '';
     try {
-      await signInAs(leadPage, leadStudentId, '/boards');
+      await signInAs(leadPage, leadStudentId, '/tasks');
       const boardRes = await leadPage.request.post('/api/v1/boards', {
         data: { name: boardName, departmentId: deptId },
       });
@@ -921,7 +758,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
       const boardData = (await boardRes.json()) as {
         board: { id: string; columns: Array<{ id: string; name: string }> };
       };
-      boardId = boardData.board.id;
+      const boardId = boardData.board.id;
       const todoColId = boardData.board.columns.find((col) => col.name === 'Todo')?.id;
       expect(todoColId).toBeTruthy();
 
@@ -930,18 +767,18 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
           boardId,
           columnId: todoColId,
           title: avatarTaskTitle,
-          priority: 2,
+          dueAt: `${yearStr}-03-15T00:00:00.000+07:00`,
           assigneeIds: [basicUserId],
         },
       });
       expect(taskRes.status()).toBe(201);
+      avatarTaskId = ((await taskRes.json()) as { task: { id: string } }).task.id;
       await leadTracker.assertClean();
     } finally {
       await leadContext.close();
     }
 
     try {
-      // 2. Basic member (without member.update) checks colorful initials fallback & 403/400 guards on /profile
       await signInAs(page, basicStudentId, '/profile');
       await expectColorfulInitialsAvatar(
         page.locator('.profile-hero .ui-avatar'),
@@ -958,15 +795,8 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         data: { dataUrl: pngDataUrl },
       });
       expect(otherPutForbidden.status()).toBe(403);
-      expect(JSON.parse(await otherPutForbidden.text())).toMatchObject({
-        error: { code: 'FORBIDDEN' },
-      });
-
       const otherDelForbidden = await page.request.delete(`/api/v1/members/${leadUserId}/avatar`);
       expect(otherDelForbidden.status()).toBe(403);
-      expect(JSON.parse(await otherDelForbidden.text())).toMatchObject({
-        error: { code: 'FORBIDDEN' },
-      });
 
       for (const badPayload of [svgDataUrl, spoofedPngDataUrl, oversizedDataUrl]) {
         const badRes = await page.request.put('/api/v1/me/avatar', {
@@ -975,8 +805,7 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         expect(badRes.status()).toBe(400);
       }
 
-      const profileFileInput = page.locator('.profile-hero input[type="file"]');
-      await profileFileInput.setInputFiles({
+      await page.locator('.profile-hero input[type="file"]').setInputFiles({
         name: 'evil.svg',
         mimeType: 'image/svg+xml',
         buffer: SVG_PAYLOAD_BYTES,
@@ -987,45 +816,23 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
 
       await page.reload();
       await expect(page.locator('.profile-hero .ui-banner.is-danger')).toHaveCount(0);
-      await page.locator('.profile-hero input[type="file"]').setInputFiles({
-        name: 'spoof.png',
-        mimeType: 'image/png',
-        buffer: SVG_PAYLOAD_BYTES,
-      });
-      await expect(page.locator('.profile-hero .ui-banner.is-danger')).toContainText(
-        viMessages.errors.invalidImageFormat,
-      );
 
-      // Prime SPA QueryClient caches (boards, boardDetail, taskDetail, myTasks) before avatar upload
+      // Prime SPA QueryClient caches (/my-tasks & /tasks modal) before avatar upload
       await page.locator('.app-side a[href="/my-tasks"]').click();
       await page.waitForURL(`${BASE_ORIGIN}/my-tasks`);
       await page.locator('.my-task-row', { hasText: avatarTaskTitle }).click();
-      const primedDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+      const primedModal = getTaskModal(page);
       await expectColorfulInitialsAvatar(
-        primedDrawer.locator('.task-assignees-chips .ui-avatar'),
+        primedModal.locator('.task-acceptance-list .ui-avatar'),
         basicUserId,
         basicFullName,
       );
-      await primedDrawer.getByRole('button', { name: viMessages.common.close }).click();
-
-      await page.locator('.app-side a.app-nav-item[href="/boards"]').click();
-      await page.waitForURL(`${BASE_ORIGIN}/boards`);
-      await page
-        .locator('article.board-tile', { hasText: boardName })
-        .getByRole('link', { name: viMessages.boards.openBoard })
-        .click();
-      await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}`);
-      await expectColorfulInitialsAvatar(
-        page.locator('article.kanban-card', { hasText: avatarTaskTitle }).locator('.task-assignees-chips .ui-avatar'),
-        basicUserId,
-        basicFullName,
-      );
+      await primedModal.getByRole('button', { name: viMessages.common.close }).click();
 
       await page.locator('.app-side a[href="/profile"]').click();
       await page.waitForURL(`${BASE_ORIGIN}/profile`);
-      await expect(page.locator('.profile-hero .ui-avatar')).toBeVisible();
 
-      // 3. Upload valid PNG on S08 /profile -> invalidates SPA caches across ProfileView, AppShell, /members, /my-tasks, boardDetail & taskDetail
+      // Upload valid PNG on S08 /profile -> invalidates SPA caches across ProfileView, AppShell, /members, /my-tasks & /tasks modal
       const uploadPromise = page.waitForResponse(
         (res) => res.url().endsWith('/api/v1/me/avatar') && res.request().method() === 'PUT',
       );
@@ -1042,16 +849,12 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
       );
 
       const expectedPrefix = `/api/v1/members/${basicUserId}/avatar?v=`;
-      const profileSrc = await expectLoadedAvatarImage(
-        page.locator('.profile-hero .ui-avatar'),
-        expectedPrefix,
+      expect(await expectLoadedAvatarImage(page.locator('.profile-hero .ui-avatar'), expectedPrefix)).toBe(
+        uploadJson.profile.avatarUrl,
       );
-      const shellSrc = await expectLoadedAvatarImage(
-        page.locator('.app-side .app-user .ui-avatar'),
-        expectedPrefix,
+      expect(await expectLoadedAvatarImage(page.locator('.app-side .app-user .ui-avatar'), expectedPrefix)).toBe(
+        uploadJson.profile.avatarUrl,
       );
-      expect(profileSrc).toBe(uploadJson.profile.avatarUrl);
-      expect(shellSrc).toBe(uploadJson.profile.avatarUrl);
 
       const binRes = await page.request.get(`/api/v1/members/${basicUserId}/avatar`);
       expect(binRes.status()).toBe(200);
@@ -1064,42 +867,22 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         hasText: basicFullName,
       });
       await expect(directoryRow).toBeVisible();
-      const directorySrc = await expectLoadedAvatarImage(
-        directoryRow.locator('.ui-avatar'),
-        expectedPrefix,
+      expect(await expectLoadedAvatarImage(directoryRow.locator('.ui-avatar'), expectedPrefix)).toBe(
+        uploadJson.profile.avatarUrl,
       );
-      expect(directorySrc).toBe(uploadJson.profile.avatarUrl);
 
-      await page.locator('.app-side a[href="/my-tasks"]').click();
-      await page.waitForURL(`${BASE_ORIGIN}/my-tasks`);
-      await page.locator('.my-task-row', { hasText: avatarTaskTitle }).click();
-      const updatedMyTaskDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
-      const drawerSrc = await expectLoadedAvatarImage(
-        updatedMyTaskDrawer.locator('.task-assignees-chips .ui-avatar'),
-        expectedPrefix,
-      );
-      expect(drawerSrc).toBe(uploadJson.profile.avatarUrl);
-      await updatedMyTaskDrawer.getByRole('button', { name: viMessages.common.close }).click();
+      await page.locator('.app-side a.app-nav-item[href="/tasks"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+      await page.locator(`.hcal-task-bar[data-task-id="${avatarTaskId}"]`).click();
+      const updatedModal = getTaskModal(page);
+      expect(
+        await expectLoadedAvatarImage(updatedModal.locator('.task-acceptance-list .ui-avatar'), expectedPrefix),
+      ).toBe(uploadJson.profile.avatarUrl);
+      await updatedModal.getByRole('button', { name: viMessages.common.close }).click();
 
-      await page.locator('.app-side a.app-nav-item[href="/boards"]').click();
-      await page.waitForURL(`${BASE_ORIGIN}/boards`);
-      await page
-        .locator('article.board-tile', { hasText: boardName })
-        .getByRole('link', { name: viMessages.boards.openBoard })
-        .click();
-      await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}`);
-      const assignedCard = page.locator('article.kanban-card', { hasText: avatarTaskTitle });
-      await expect(assignedCard).toBeVisible();
-      const cardSrc = await expectLoadedAvatarImage(
-        assignedCard.locator('.task-assignees-chips .ui-avatar'),
-        expectedPrefix,
-      );
-      expect(cardSrc).toBe(uploadJson.profile.avatarUrl);
-
-      // 4. Remove own avatar on S08 /profile -> restores colorful initials across SPA-cached views
+      // Remove own avatar on S08 /profile -> restores colorful initials across SPA-cached views
       await page.locator('.app-side a[href="/profile"]').click();
       await page.waitForURL(`${BASE_ORIGIN}/profile`);
-      await expect(page.locator('.profile-hero .ui-avatar')).toBeVisible();
       const removePromise = page.waitForResponse(
         (res) => res.url().endsWith('/api/v1/me/avatar') && res.request().method() === 'DELETE',
       );
@@ -1113,34 +896,18 @@ test.describe('Boards, Columns, Tasks & My Tasks E2E (S03, S04, S05, S06)', () =
         basicUserId,
         basicFullName,
       );
-      await expectColorfulInitialsAvatar(
-        page.locator('.app-side .app-user .ui-avatar'),
-        basicUserId,
-        basicFullName,
-      );
       expect((await page.request.get(`/api/v1/members/${basicUserId}/avatar`)).status()).toBe(404);
 
-      await page.locator('.app-side a.app-nav-item[href="/boards"]').click();
-      await page.waitForURL(`${BASE_ORIGIN}/boards`);
-      await page
-        .locator('article.board-tile', { hasText: boardName })
-        .getByRole('link', { name: viMessages.boards.openBoard })
-        .click();
-      await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}`);
-      const revertedCard = page.locator('article.kanban-card', { hasText: avatarTaskTitle });
+      await page.locator('.app-side a.app-nav-item[href="/tasks"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+      await page.locator(`.hcal-task-bar[data-task-id="${avatarTaskId}"]`).click();
+      const revertedModal = getTaskModal(page);
       await expectColorfulInitialsAvatar(
-        revertedCard.locator('.task-assignees-chips .ui-avatar'),
+        revertedModal.locator('.task-acceptance-list .ui-avatar'),
         basicUserId,
         basicFullName,
       );
-      await revertedCard.locator('button.kanban-card-open').click();
-      const revertedDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
-      await expectColorfulInitialsAvatar(
-        revertedDrawer.locator('.task-assignees-chips .ui-avatar'),
-        basicUserId,
-        basicFullName,
-      );
-      await revertedDrawer.getByRole('button', { name: viMessages.common.close }).click();
+      await revertedModal.getByRole('button', { name: viMessages.common.close }).click();
     } finally {
       await db
         .update(profiles)

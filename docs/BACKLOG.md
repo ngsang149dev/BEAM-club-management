@@ -27,7 +27,7 @@
 | **E11** | Gia cố Bảo mật Production: OWASP Headers, CSRF Origin Guard, Rate limit 2 lớp, CDN Cache branding & Runbook WAF `[RỦI RO CAO]` | NFR-01–NFR-05 | Done |
 | **CR-08** | Đăng nhập 1 thiết bị (tự đăng xuất phiên cũ) & Session trượt 30 phút (bỏ "Ghi nhớ đăng nhập") (`A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-04`, `AC-05`, `AC-13` | Done |
 | **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | Done |
-| **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Ready |
+| **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Ready for PR |
 
 ---
 
@@ -859,7 +859,55 @@
 
 ---
 
-## Epic CR-10 — Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Cảnh báo/Lọc Deadline & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) *(Ready — sau khi merge CR-09)*
-- Thay thế giao diện Board bằng **Lịch công việc trượt ngang** (`100dvh`, `◀ Tháng 1..12 ▶` + `Hôm nay`, slider phóng to/thu nhỏ `Năm ⇄ Tháng ⇄ Tuần`, xếp làn chống đè).
-- Viền & bộ lọc theo Deadline (Xanh lá `> 3 ngày`, Vàng `2–3 ngày`, Đỏ nhấp nháy `<= 1 ngày`, Đỏ đậm nhấp nháy `Quá hạn`, dịu khi `Hoàn thành`), bỏ độ ưu tiên.
-- Cửa sổ Chi tiết Task gần full màn hình (toggle switch `Đã nhận task`, nộp/mở tab mới link sản phẩm, bình luận, lịch sử).
+## Epic CR-10 — Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Cảnh báo/Lọc Deadline & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) *(Ready for PR)*
+
+### CR-10-01
+- **ID:** `CR-10-01`
+- **Tiêu đề:** Điều hướng mặc định & liên kết email thông báo trỏ về Lịch công việc (`/tasks`) (`A1`, `A2`)
+- **Sub-agent phụ trách:** `backend-db`
+- **Liên quan:** `A1`, `A2`, `FR-04`, `WQ-27`, `docs/DECISIONS.md` (`CR-08..CR-10`)
+- **Phụ thuộc:** `CR-09` (`Done`), `0` migration & `0` sửa OpenAPI
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A, §7, §8), `.agents/skills/beam-backend-db/SKILL.md`, `src/lib/auth.ts`, `src/server/modules/notifications/{email-template,lead-email-template}.ts`
+- **Phạm vi file được sửa:** `src/lib/auth.ts`, `src/server/modules/notifications/{email-template,lead-email-template}.ts`, `tests/unit/auth/*`, `tests/unit/notifications/*`, `tests/integration/auth/*`
+- **Tiêu chí chấp nhận:**
+  1. `DEFAULT_LOGIN_REDIRECT` đổi từ `'/boards'` sang `'/tasks'`.
+  2. Liên kết công việc trong `email-template.ts` và `lead-email-template.ts` trỏ về `${base}/tasks?task=${taskId}` (giữ tương thích chữ ký caller hiện có).
+  3. Toàn bộ test `unit/auth`, `unit/notifications`, `integration/auth` xanh.
+- **Kiểm thử bắt buộc:** `npm run typecheck`, `npm run lint`, `npm run arch:check`, `tests/unit/{auth,notifications}`, `tests/integration/auth`.
+- **Ngoài phạm vi:** Xóa endpoint `/api/v1/boards*` (bắt buộc giữ additive), giao diện frontend (`CR-10-02`).
+- **Mức rủi ro:** Thấp
+- **Trạng thái:** `Ready for PR`
+
+### CR-10-02
+- **ID:** `CR-10-02`
+- **Tiêu đề:** Giao diện Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Cảnh báo & Lọc Deadline (bỏ Priority), Cửa sổ Chi tiết Task gần full màn, Tạo Task không Board & Nâng cấp `/my-tasks` (`A1`, `A5`, `A6`)
+- **Sub-agent phụ trách:** `frontend` (chạy song song với `CR-10-01`)
+- **Liên quan:** `A1`, `A5`, `A6`, `FR-20`–`FR-26`, `WQ-27`, `docs/DECISIONS.md` (`CR-08..CR-10`), `beam-calendar-task-wireframe.html`
+- **Phụ thuộc:** `CR-09` (`Done`)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.2, §6A.4, §6A.6), `.agents/skills/beam-frontend/SKILL.md`, `beam-calendar-task-wireframe.html`, `src/app/{page.tsx,globals.css}`, `src/components/{AppShell,AppShellNav}.tsx`, `src/features/tasks/*`
+- **Phạm vi file được sửa:** `src/app/{page.tsx,not-found.tsx,forbidden/page.tsx,globals.css}`, `src/app/tasks/page.tsx`, `src/app/boards/{page.tsx,[id]/page.tsx}`, `src/components/{AppShell.tsx,AppShellNav.tsx}`, `src/features/calendar/**`, `src/features/tasks/**`, `src/features/notifications/components/NotificationBell.tsx`, `src/features/reminders/components/RemindersAdminView.tsx`, `src/features/auth/components/AuthGuard.tsx`, `messages/{vi,en}.json`, `tests/unit/frontend/**`
+- **Tiêu chí chấp nhận:**
+  1. Trang `/tasks` (thay thế Board làm mục điều hướng workspace chính; `/`, `/boards`, `/boards/[id]` chuyển hướng về `/tasks` giữ `?task=`): hiển thị Lịch trượt ngang `100dvh`, chuyển năm `◀ YYYY ▶`, chuyển tháng `◀ Tháng 1..12 ▶` + `Hôm nay`, slider phóng to/thu nhỏ `Năm ⇄ Tháng ⇄ Tuần` kèm animation mượt + `Ctrl/Cmd+Wheel`, kéo chuột trượt ngang & xếp làn chống đè, khay `Chưa đặt hạn (N)` cho task thiếu ngày.
+  2. Bỏ hoàn toàn Priority khỏi UI tạo/sửa/lọc; thay bằng viền cảnh báo Deadline (`Quá hạn` đỏ đậm nhấp nháy, `≤ 1 ngày` đỏ nhấp nháy, `2–3 ngày` vàng, `> 3 ngày` xanh lá, `Hoàn thành` dịu, tôn trọng `prefers-reduced-motion`) & bộ lọc hạn Deadline + Ban + tìm kiếm `q`.
+  3. Cửa sổ Chi tiết Task gần full màn (`96vw`, max `1680px`, `94vh`): cột trái gồm Sửa chi tiết (`startAt`/`dueAt`), Sản phẩm bàn giao (tên Trưởng ban 0 PII, link mở tab mới, nộp/xóa link & báo Trưởng ban `WQ-27`), tab `Bình luận | Lịch sử`; cột phải gồm Trạng thái `Đang thực hiện`/`Hoàn thành`, switch `Đã nhận công việc` (`PUT /tasks/{id}/acceptance`) kèm danh sách nhận việc, Phân công (`Thông báo web`/`Gửi email` dạng toggle card), `Công việc ẩn` & `Xóa`.
+  4. Modal Tạo công việc không truyền `boardId`/`columnId` (tự dùng Workspace mặc định), chọn `startAt`/`dueAt` + 3 toggle card (`role="switch"`), nâng cấp `/my-tasks` bỏ Priority sang viền/lọc Deadline + badge nhận việc/SP; đủ `100%` `vi`/`en` súc tích & tuân thủ ngưỡng `<= 300` dòng / `<= 40` dòng (`6A.6`).
+- **Kiểm thử bắt buộc:** Unit test `calendar-math`, `calendar-workspace`, cập nhật `app-shell`, `home-redirect`, `my-tasks`, `notifications-bell`, `task-drawer-toast`, `task-history-undo`, `i18n-parity`, `typecheck`, `lint`, `arch:check`.
+- **Ngoài phạm vi:** API backend, xóa route `/api/v1/boards*`.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Ready for PR`
+
+### CR-10-03
+- **ID:** `CR-10-03`
+- **Tiêu đề:** Kiểm thử E2E Lịch công việc, Cảnh báo/Lọc Deadline, Cửa sổ Chi tiết Task & Audit độc lập ngữ cảnh sạch `CR-10`
+- **Sub-agent phụ trách:** `qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `A1`, `A5`, `A6`, `WQ-27`, `AGENTS.md` (§6A.8, §7, §8)
+- **Phụ thuộc:** `CR-10-01`, `CR-10-02`
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A.8, §7, §8), `.agents/skills/beam-qa-reviewer/SKILL.md`, `tests/e2e/*`
+- **Phạm vi file được sửa:** `tests/e2e/calendar-tasks.spec.ts` và cập nhật các `tests/e2e/*.spec.ts` ảnh hưởng do chuyển `/boards` → `/tasks`
+- **Tiêu chí chấp nhận:**
+  1. Bổ sung `tests/e2e/calendar-tasks.spec.ts` kiểm chứng luồng `/tasks` (trượt ngang, zoom `Năm/Tháng/Tuần`, chọn tháng & `Hôm nay`, viền & lọc Deadline, tạo task không Board, mở cửa sổ gần full màn, tick `Đã nhận task` -> chuông Trưởng ban, nộp/mở tab mới/xóa link sản phẩm -> chuông Trưởng ban, chuyển `Hoàn thành` & hoàn tác, bình luận, lịch sử, task ẩn `404` & `WQ-27`, redirect `/boards` → `/tasks`).
+  2. Cập nhật các E2E cũ dùng `/tasks` mà không hạ AC bảo mật; vượt đủ **9/9 cổng** (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `db:migrate -- --test`, `test:integration`, `db:restore:verify -- --test`, `build`, full Chrome `playwright test`) và audit `6A.8` (`13/13`) đạt `VERDICT: PASS`.
+- **Kiểm thử bắt buộc:** Full Vitest + Restore Verify + Next Build + Full Playwright Chrome E2E.
+- **Ngoài phạm vi:** Sửa code nghiệp vụ trực tiếp hoặc merge `main`.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Ready for PR`

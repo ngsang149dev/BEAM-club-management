@@ -1,26 +1,5 @@
-import type { Metadata } from 'next';
-import { getTranslations } from 'next-intl/server';
-import { AuthGuard } from '@/features/auth/components/AuthGuard';
-import { BoardsListView } from '@/features/boards/components/BoardsListView';
+import { redirect } from 'next/navigation';
 
-export async function generateMetadata(): Promise<Metadata> {
-  const tBoards = await getTranslations('boards');
-  const tApp = await getTranslations('app');
-  return {
-    title: `${tBoards('title')} · ${tApp('name')}`,
-  };
-}
-
-export default async function BoardsPage() {
-  const tBoards = await getTranslations('boards');
-
-  return (
-    <AuthGuard
-      activeNav="boards"
-      breadcrumb={tBoards('kicker')}
-      title={tBoards('title')}
-    >
-      <BoardsListView />
-    </AuthGuard>
-  );
+export default function BoardsRedirectPage() {
+  redirect('/tasks');
 }

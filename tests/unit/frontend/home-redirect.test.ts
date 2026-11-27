@@ -53,7 +53,7 @@ describe('HomePage (/) server redirect', () => {
     expect(mocks.redirect).toHaveBeenCalledWith('/login');
   });
 
-  it('redirects authenticated active members directly to /boards', async () => {
+  it('redirects authenticated active members directly to /tasks', async () => {
     mocks.cookies.mockResolvedValueOnce({
       get: (name: string) => (name === SESSION_COOKIE_NAME ? { value: 'valid-token' } : undefined),
     });
@@ -61,9 +61,9 @@ describe('HomePage (/) server redirect', () => {
       profile: { id: 'u-1', mustChangePassword: false },
     });
 
-    await expect(HomePage()).rejects.toThrow('NEXT_REDIRECT:/boards');
+    await expect(HomePage()).rejects.toThrow('NEXT_REDIRECT:/tasks');
     expect(mocks.authenticateSession).toHaveBeenCalledWith('valid-token');
-    expect(mocks.redirect).toHaveBeenCalledWith('/boards');
+    expect(mocks.redirect).toHaveBeenCalledWith('/tasks');
   });
 
   it('redirects authenticated members with mustChangePassword=true to /profile?changePassword=1', async () => {

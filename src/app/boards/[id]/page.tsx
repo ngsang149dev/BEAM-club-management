@@ -1,40 +1,14 @@
-import { Suspense } from 'react';
-import type { Metadata } from 'next';
-import { getTranslations } from 'next-intl/server';
-import { AuthGuard } from '@/features/auth/components/AuthGuard';
-import { BoardDetailView } from '@/features/boards/components/BoardDetailView';
+import { redirect } from 'next/navigation';
 
-export async function generateMetadata(): Promise<Metadata> {
-  const tBoards = await getTranslations('boards');
-  const tApp = await getTranslations('app');
-  return {
-    title: `${tBoards('title')} · ${tApp('name')}`,
-  };
-}
-
-export default async function BoardDetailPage({
-  params,
+export default async function BoardDetailRedirectPage({
   searchParams,
 }: {
-  params: Promise<{ id: string }>;
   searchParams: Promise<{ task?: string | string[] }>;
 }) {
-  const [{ id }, resolvedSearch] = await Promise.all([params, searchParams]);
-  const tBoards = await getTranslations('boards');
-  const initialTaskId =
-    typeof resolvedSearch.task === 'string' && resolvedSearch.task.trim().length > 0
-      ? resolvedSearch.task.trim()
-      : null;
-
-  return (
-    <AuthGuard
-      activeNav="boards"
-      breadcrumb={tBoards('kicker')}
-      title={tBoards('title')}
-    >
-      <Suspense fallback={null}>
-        <BoardDetailView boardId={id} initialTaskId={initialTaskId} />
-      </Suspense>
-    </AuthGuard>
-  );
+  const resolvedSearch = await searchParams;
+  const rawTask = Array.isArray(resolvedSearch.task)
+    ? resolvedSearch.task[0]
+    : resolvedSearch.task;
+  const taskId = typeof rawTask === 'string' && rawTask.trim().length > 0 ? rawTask.trim() : null;
+  redirect(taskId ? `/tasks?task=${encodeURIComponent(taskId)}` : '/tasks');
 }

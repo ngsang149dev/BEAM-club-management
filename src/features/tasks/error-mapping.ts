@@ -4,6 +4,9 @@ export type TaskErrorKey =
   | 'taskVersionConflict'
   | 'invalidAssigneeIds'
   | 'invalidDepartmentIds'
+  | 'invalidDateRange'
+  | 'deliverableLimitReached'
+  | 'invalidDeliverableUrl'
   | 'boardColumnMismatch'
   | 'invalidCursor'
   | 'unauthorized'
@@ -23,6 +26,9 @@ const CODE_TO_KEY: Record<string, TaskErrorKey> = {
   TASK_VERSION_CONFLICT: 'taskVersionConflict',
   INVALID_ASSIGNEE_IDS: 'invalidAssigneeIds',
   INVALID_DEPARTMENT_IDS: 'invalidDepartmentIds',
+  INVALID_DATE_RANGE: 'invalidDateRange',
+  DELIVERABLE_LIMIT_REACHED: 'deliverableLimitReached',
+  INVALID_DELIVERABLE_URL: 'invalidDeliverableUrl',
   BOARD_COLUMN_MISMATCH: 'boardColumnMismatch',
   INVALID_CURSOR: 'invalidCursor',
   UNAUTHORIZED: 'unauthorized',

@@ -56,7 +56,7 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
 async function signInAs(
   page: Page,
   studentId: string,
-  returnTo = '/boards',
+  returnTo = '/tasks',
   password = DEV_SEED_PASSWORD,
 ): Promise<void> {
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
@@ -591,7 +591,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     let taskId: string;
     let workspaceBoardId: string;
     try {
-      await signInAs(creatorPage, creatorStudentId, '/boards');
+      await signInAs(creatorPage, creatorStudentId, '/tasks');
       const createTaskRes = await creatorPage.request.post('/api/v1/tasks', {
         data: {
           title: workspaceTaskTitle,
@@ -628,7 +628,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     const adminPage = await adminContext.newPage();
     const adminTracker = await attachRuntimeErrorTracker(adminPage);
     try {
-      await signInAs(adminPage, adminStudentId, '/boards');
+      await signInAs(adminPage, adminStudentId, '/tasks');
       const adminAcceptRes = await adminPage.request.put(`/api/v1/tasks/${taskId}/acceptance`, {
         data: { accepted: true },
       });
@@ -642,7 +642,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     const outsiderPage = await outsiderContext.newPage();
     const outsiderTracker = await attachRuntimeErrorTracker(outsiderPage);
     try {
-      await signInAs(outsiderPage, outsiderStudentId, '/boards');
+      await signInAs(outsiderPage, outsiderStudentId, '/tasks');
       const outsiderAcceptRes = await outsiderPage.request.put(`/api/v1/tasks/${taskId}/acceptance`, {
         data: { accepted: true },
       });
@@ -674,7 +674,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     const leadPage = await leadContext.newPage();
     const leadTracker = await attachRuntimeErrorTracker(leadPage);
     try {
-      await signInAs(leadPage, leadStudentId, '/boards');
+      await signInAs(leadPage, leadStudentId, '/tasks');
       const bellBtn = leadPage.getByRole('button', {
         name: new RegExp(viMessages.notifications.bellAriaLabel),
       });
@@ -690,7 +690,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
       await expect(popover).toContainText(expectedAcceptMsg);
       assertNoSecretsInText([await popover.innerText()], sensitiveValues);
 
-      // Click notification -> navigates to /boards/[id]?task=[id] and opens drawer
+      // Click notification -> navigates to /tasks?task=[id] and opens near-fullscreen modal
       const markReadPromise = leadPage.waitForResponse(
         (res) =>
           res.url().includes('/api/v1/notifications/') &&
@@ -699,8 +699,8 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
       );
       await popover.getByText(expectedAcceptMsg).click();
       expect((await markReadPromise).status()).toBe(200);
-      await leadPage.waitForURL(`${BASE_ORIGIN}/boards/${workspaceBoardId}?task=${taskId}`);
-      const drawer = leadPage.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+      await leadPage.waitForURL(`${BASE_ORIGIN}/tasks?task=${taskId}`);
+      const drawer = leadPage.locator('aside.task-modal-shell[role="dialog"]');
       await expect(drawer).toBeVisible();
       await expect(drawer.getByLabel(viMessages.tasks.titleLabel)).toHaveValue(workspaceTaskTitle);
       await drawer.getByRole('button', { name: viMessages.common.close }).click();
@@ -791,7 +791,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     const creatorTracker = await attachRuntimeErrorTracker(creatorPage);
     let hiddenTaskId: string;
     try {
-      await signInAs(creatorPage, creatorStudentId, `/boards/${boardId}`);
+      await signInAs(creatorPage, creatorStudentId, '/tasks');
       const createRes = await creatorPage.request.post('/api/v1/tasks', {
         data: {
           boardId,
@@ -812,7 +812,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     }
 
     // Member of deptA accepts and submits deliverable on hidden task
-    await signInAs(page, memberStudentId, `/boards/${boardId}`);
+    await signInAs(page, memberStudentId, '/tasks');
     expect(
       (
         await page.request.put(`/api/v1/tasks/${hiddenTaskId}/acceptance`, {
@@ -834,7 +834,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     const outsiderPage = await outsiderContext.newPage();
     const outsiderTracker = await attachRuntimeErrorTracker(outsiderPage);
     try {
-      await signInAs(outsiderPage, outsiderStudentId, '/boards');
+      await signInAs(outsiderPage, outsiderStudentId, '/tasks');
       expect(
         (
           await outsiderPage.request.put(`/api/v1/tasks/${hiddenTaskId}/acceptance`, {
@@ -884,7 +884,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     const leadPage = await leadContext.newPage();
     const leadTracker = await attachRuntimeErrorTracker(leadPage);
     try {
-      await signInAs(leadPage, leadStudentId, '/boards');
+      await signInAs(leadPage, leadStudentId, '/tasks');
       const notifRes = await leadPage.request.get('/api/v1/notifications');
       expect(notifRes.status()).toBe(200);
       const notifText = await notifRes.text();
@@ -934,7 +934,7 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
         .getByRole('button', { name: 'EN', exact: true })
         .click();
       expect((await enSwitchPromise).status()).toBe(200);
-      await expect(leadPage.locator('.app-top-bread')).toContainText(enMessages.boards.title);
+      await expect(leadPage.locator('.app-top-bread')).toContainText(enMessages.calendar.title);
 
       const enBellBtn = leadPage.getByRole('button', {
         name: new RegExp(enMessages.notifications.bellAriaLabel),

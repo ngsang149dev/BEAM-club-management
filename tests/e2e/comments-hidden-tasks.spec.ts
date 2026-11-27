@@ -55,14 +55,17 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
 async function signInAs(
   page: Page,
   studentId: string,
-  returnTo = '/boards',
+  returnTo = '/tasks',
   password = DEV_SEED_PASSWORD,
 ): Promise<void> {
+  const expectedPath = returnTo.startsWith('/boards')
+    ? `/tasks${returnTo.includes('?') ? returnTo.slice(returnTo.indexOf('?')) : ''}`
+    : returnTo;
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(studentId);
   await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(password);
   await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
-  await page.waitForURL(`${BASE_ORIGIN}${returnTo}`);
+  await page.waitForURL(`${BASE_ORIGIN}${expectedPath}`);
 }
 
 async function openSignedInContext(
@@ -81,46 +84,41 @@ async function openSignedInContext(
   return { context, page, tracker };
 }
 
-function getColumnSection(page: Page, columnName: string): Locator {
-  return page.locator('section.kanban-col', {
-    has: page.locator('h2.kanban-col-name', {
-      hasText: new RegExp(`^${columnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
-    }),
-  });
+async function ensureUnscheduledTrayOpen(page: Page): Promise<void> {
+  const toggle = page.locator('.hcal-unscheduled-toggle');
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+  }
+  await expect(page.locator('.hcal-unscheduled-list')).toBeVisible();
 }
 
 function getTaskCard(page: Page, title: string): Locator {
-  return page.locator('article.kanban-card', {
-    has: page.locator('.kanban-card-title', {
+  return page.locator('.hcal-unscheduled-chip', {
+    has: page.locator('.hcal-unscheduled-title', {
       hasText: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
     }),
   });
 }
 
 function getTaskDrawer(page: Page): Locator {
-  return page.locator('aside.ui-drawer-task[role="dialog"]');
+  return page.locator('aside.task-modal-shell[role="dialog"]');
 }
 
 async function openCommentsTab(drawer: Locator): Promise<void> {
   await drawer
+    .locator('.task-subtabs')
     .getByRole('tab', { name: new RegExp(viMessages.tasks.tabComments) })
     .click();
-  await expect(drawer.locator('.task-comments-panel')).toBeVisible();
+  await expect(drawer.locator('.task-comments-section')).toBeVisible();
 }
 
-async function openDetailsTab(drawer: Locator): Promise<void> {
+async function openHistorySubTab(drawer: Locator): Promise<void> {
   await drawer
-    .getByRole('tab', { name: new RegExp(viMessages.tasks.tabDetails) })
+    .locator('.task-subtabs')
+    .getByRole('tab', { name: new RegExp(viMessages.tasks.tabHistory) })
     .click();
-  await expect(drawer.locator('.task-drawer-grid')).toBeVisible();
-}
-
-function formatVisibleTaskCount(count: number): string {
-  return viMessages.boards.visibleTaskCount.replace('{count}', String(count));
-}
-
-function formatCommentsCount(count: number): string {
-  return viMessages.tasks.commentsCount.replace('{count}', String(count));
+  await expect(drawer.locator('.task-history-section')).toBeVisible();
 }
 
 function assertZeroPiiInStrings(
@@ -528,40 +526,36 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       });
     };
 
-    const creatorSession = await openSignedInContext(
-      browser,
-      creatorStudentId,
-      `/boards/${hiddenBoardId}`,
-    );
-    const assigneeSession = await openSignedInContext(
-      browser,
-      assigneeStudentId,
-      `/boards/${hiddenBoardId}`,
-    );
-    const outsiderSession = await openSignedInContext(browser, outsiderStudentId, '/boards');
-    const adminSession = await openSignedInContext(
-      browser,
-      adminStudentId,
-      `/boards/${hiddenBoardId}`,
-    );
+    const [creatorSession, assigneeSession, outsiderSession, adminSession] = await Promise.all([
+      openSignedInContext(browser, creatorStudentId, `/boards/${hiddenBoardId}`),
+      openSignedInContext(browser, assigneeStudentId, `/boards/${hiddenBoardId}`),
+      openSignedInContext(browser, outsiderStudentId, '/boards'),
+      openSignedInContext(browser, adminStudentId, `/boards/${hiddenBoardId}`),
+    ]);
 
     try {
       for (const s of [creatorSession, assigneeSession, outsiderSession, adminSession]) {
         attachPayloadMonitor(s.page);
       }
 
-      // 1. Creator creates a public task without assignees via CreateTaskModal (also verifying WQ-27 preview warning in modal)
+      // 1. Creator creates a task without assignees via /tasks CreateTaskModal (also verifying WQ-27 preview warning in modal)
       const creatorPage = creatorSession.page;
-      const todoCol = getColumnSection(creatorPage, 'Todo');
-      await todoCol.getByRole('button', { name: new RegExp(viMessages.boards.addTaskInColumn) }).click();
+      await creatorPage
+        .getByRole('button', { name: `+ ${viMessages.calendar.createTask}`, exact: true })
+        .click();
       const createDialog = creatorPage.locator('.ui-modal[role="dialog"]');
       await expect(createDialog).toBeVisible();
 
       await createDialog.getByLabel(viMessages.tasks.titleLabel).fill(createdTaskTitle);
-      const hiddenCheckbox = createDialog.getByLabel(viMessages.tasks.isHiddenLabel);
-      await hiddenCheckbox.check();
+      const hiddenSwitch = createDialog.getByRole('switch', {
+        name: viMessages.tasks.isHiddenShortLabel,
+      });
+      await expect(hiddenSwitch).toHaveAttribute('aria-checked', 'false');
+      await hiddenSwitch.click();
+      await expect(hiddenSwitch).toHaveAttribute('aria-checked', 'true');
       await expect(createDialog.getByText(viMessages.tasks.hiddenUnassignedWarnTitle)).toBeVisible();
-      await hiddenCheckbox.uncheck();
+      await hiddenSwitch.click();
+      await expect(hiddenSwitch).toHaveAttribute('aria-checked', 'false');
       await expect(createDialog.getByText(viMessages.tasks.hiddenUnassignedWarnTitle)).toHaveCount(0);
 
       const createTaskResPromise = creatorPage.waitForResponse(
@@ -570,16 +564,20 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       await createDialog.getByRole('button', { name: viMessages.tasks.createSubmit, exact: true }).click();
       const createTaskRes = await createTaskResPromise;
       expect(createTaskRes.status()).toBe(201);
-      const createdJson = (await createTaskRes.json()) as { task: { id: string } };
+      const createdJson = (await createTaskRes.json()) as {
+        task: { id: string; boardId: string };
+      };
       createdTaskId = createdJson.task.id;
+      const createdBoardId = createdJson.task.boardId;
       trackedTaskIds.push(createdTaskId);
 
-      // Creator opens TaskDetailDrawer, sees role="switch", toggles Hidden ON -> WQ-27 warning appears
-      await getTaskCard(creatorPage, createdTaskTitle).locator('.kanban-card-open').click();
+      // Creator opens TaskDetailDrawer from unscheduled tray, sees .task-hidden-section role="switch", toggles Hidden ON -> WQ-27 warning appears
+      await ensureUnscheduledTrayOpen(creatorPage);
+      await getTaskCard(creatorPage, createdTaskTitle).click();
       const creatorDrawer = getTaskDrawer(creatorPage);
       await expect(creatorDrawer).toBeVisible();
 
-      const creatorSwitch = creatorDrawer.getByRole('switch');
+      const creatorSwitch = creatorDrawer.locator('.task-hidden-section').getByRole('switch');
       await expect(creatorSwitch).toBeVisible();
       await expect(creatorSwitch).toHaveAttribute('aria-checked', 'false');
 
@@ -614,7 +612,7 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       expect((await assignResPromise).status()).toBe(200);
       await expect(creatorDrawer.getByText(viMessages.tasks.hiddenUnassignedWarnTitle)).toHaveCount(0);
 
-      // Creator also posts one comment on the hidden task (via Comments tab) for Member C's 404 comment delete probe
+      // Creator also posts one comment on the hidden task (via inline Comments sub-tab) for Member C's 404 comment delete probe
       await openCommentsTab(creatorDrawer);
       await creatorDrawer.getByLabel(viMessages.comments.composerLabel).fill(hiddenCommentBody);
       const hiddenCommentResPromise = creatorPage.waitForResponse(
@@ -629,18 +627,19 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       hiddenCommentId = hiddenCommentJson.comment.id;
       await expect(creatorDrawer.getByText(hiddenCommentBody)).toBeVisible();
 
-      // 2. Assignee (Member A) sees hidden task + badge + banner, does NOT see switch, receives 403 on PUT /hidden
+      // 2. Assignee (Member A) sees hidden task + badge + banner, does NOT see .task-hidden-section switch, receives 403 on PUT /hidden
       const assigneePage = assigneeSession.page;
       await assigneePage.reload();
+      await ensureUnscheduledTrayOpen(assigneePage);
       const assigneeCard = getTaskCard(assigneePage, createdTaskTitle);
       await expect(assigneeCard).toBeVisible();
       await expect(assigneeCard.getByText(viMessages.tasks.hiddenBadge)).toBeVisible();
 
-      await assigneeCard.locator('.kanban-card-open').click();
+      await assigneeCard.click();
       const assigneeDrawer = getTaskDrawer(assigneePage);
       await expect(assigneeDrawer).toBeVisible();
       await expect(assigneeDrawer.getByText(viMessages.tasks.hiddenBannerTitle)).toBeVisible();
-      await expect(assigneeDrawer.getByRole('switch')).toHaveCount(0);
+      await expect(assigneeDrawer.locator('.task-hidden-section').getByRole('switch')).toHaveCount(0);
       await openCommentsTab(assigneeDrawer);
       await expect(assigneeDrawer.getByText(hiddenCommentBody)).toBeVisible();
 
@@ -656,11 +655,36 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       // 3. Non-viewer Member C (even holding task.update_any, comment.create, comment.delete_any)
       const outsiderPage = outsiderSession.page;
       await outsiderPage.reload();
-      const outsiderBoardTile = outsiderPage.locator('.board-tile', { hasText: hiddenBoardName });
-      await expect(outsiderBoardTile).toBeVisible();
-      await expect(outsiderBoardTile).toContainText(formatVisibleTaskCount(1));
+      const outsiderBoardApiRes = await outsiderPage.request.get(
+        `/api/v1/boards?q=${encodeURIComponent(hiddenBoardName)}`,
+      );
+      expect(outsiderBoardApiRes.status()).toBe(200);
+      const outsiderBoardApiJson = (await outsiderBoardApiRes.json()) as {
+        items: Array<{ id: string; visibleTaskCount: number }>;
+      };
+      expect(
+        outsiderBoardApiJson.items.find((item) => item.id === hiddenBoardId)?.visibleTaskCount,
+      ).toBe(1);
+
+      const outsiderWorkspaceBeforeRes = await outsiderPage.request.get(
+        `/api/v1/boards/${createdBoardId}`,
+      );
+      expect(outsiderWorkspaceBeforeRes.status()).toBe(200);
+      const outsiderWorkspaceBeforeCount = (
+        (await outsiderWorkspaceBeforeRes.json()) as {
+          board: { visibleTaskCount: number };
+        }
+      ).board.visibleTaskCount;
+
+      const outsiderSearchCreatedRes = await outsiderPage.request.get(
+        `/api/v1/tasks?boardId=${createdBoardId}&q=${encodeURIComponent(createdTaskTitle)}`,
+      );
+      expect(outsiderSearchCreatedRes.status()).toBe(200);
+      expect(((await outsiderSearchCreatedRes.json()) as { items: unknown[] }).items).toEqual([]);
 
       await outsiderPage.goto(`/boards/${hiddenBoardId}`);
+      await outsiderPage.waitForURL(`${BASE_ORIGIN}/tasks`);
+      await ensureUnscheduledTrayOpen(outsiderPage);
       await expect(getTaskCard(outsiderPage, publicTaskOnHiddenBoardTitle)).toBeVisible();
       await expect(getTaskCard(outsiderPage, createdTaskTitle)).toHaveCount(0);
 
@@ -711,8 +735,9 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
         error: { code: 'NOT_FOUND' },
       });
 
-      // Direct UI visit /boards/{boardId}?task={hiddenId} renders 404 ErrorState
+      // Direct UI visit /boards/{boardId}?task={hiddenId} redirects to /tasks?task={hiddenId} & renders 404 ErrorState
       await outsiderPage.goto(`/boards/${hiddenBoardId}?task=${createdTaskId}`);
+      await outsiderPage.waitForURL(`${BASE_ORIGIN}/tasks?task=${createdTaskId}`);
       const outsiderNotFoundDrawer = getTaskDrawer(outsiderPage);
       await expect(outsiderNotFoundDrawer).toBeVisible();
       await expect(outsiderNotFoundDrawer.getByText(viMessages.errors['404'].code)).toBeVisible();
@@ -725,11 +750,12 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
         .click();
       await expect(outsiderNotFoundDrawer).toHaveCount(0);
 
-      // 4. On a public task, Member C (with task.update_any, not creator, not admin) STILL sees no switch and gets 403
-      await getTaskCard(outsiderPage, publicTaskOnHiddenBoardTitle).locator('.kanban-card-open').click();
+      // 4. On a public task, Member C (with task.update_any, not creator, not admin) STILL sees no hidden switch and gets 403
+      await ensureUnscheduledTrayOpen(outsiderPage);
+      await getTaskCard(outsiderPage, publicTaskOnHiddenBoardTitle).click();
       const outsiderPublicDrawer = getTaskDrawer(outsiderPage);
       await expect(outsiderPublicDrawer).toBeVisible();
-      await expect(outsiderPublicDrawer.getByRole('switch')).toHaveCount(0);
+      await expect(outsiderPublicDrawer.locator('.task-hidden-section').getByRole('switch')).toHaveCount(0);
 
       const outsiderPublicToggleRes = await outsiderPage.request.put(
         `/api/v1/tasks/${publicTaskOnHiddenBoardId}/hidden`,
@@ -743,9 +769,10 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       // 5. Admin toggles Hidden OFF -> Member C now sees the task & comments
       const adminPage = adminSession.page;
       await adminPage.goto(`/boards/${hiddenBoardId}?task=${createdTaskId}`);
+      await adminPage.waitForURL(`${BASE_ORIGIN}/tasks?task=${createdTaskId}`);
       const adminDrawer = getTaskDrawer(adminPage);
       await expect(adminDrawer).toBeVisible();
-      const adminSwitch = adminDrawer.getByRole('switch');
+      const adminSwitch = adminDrawer.locator('.task-hidden-section').getByRole('switch');
       await expect(adminSwitch).toHaveAttribute('aria-checked', 'true');
 
       const unhideResPromise = adminPage.waitForResponse(
@@ -757,16 +784,39 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       expect((await unhideResPromise).status()).toBe(200);
       await expect(adminSwitch).toHaveAttribute('aria-checked', 'false');
 
-      await outsiderPage.goto('/boards');
-      await expect(outsiderPage.locator('.board-tile', { hasText: hiddenBoardName })).toContainText(
-        formatVisibleTaskCount(2),
+      const outsiderBoardAfterRes = await outsiderPage.request.get(
+        `/api/v1/boards?q=${encodeURIComponent(hiddenBoardName)}`,
       );
+      expect(outsiderBoardAfterRes.status()).toBe(200);
+      const outsiderBoardAfterJson = (await outsiderBoardAfterRes.json()) as {
+        items: Array<{ id: string; visibleTaskCount: number }>;
+      };
+      expect(
+        outsiderBoardAfterJson.items.find((item) => item.id === hiddenBoardId)?.visibleTaskCount,
+      ).toBe(1);
+
+      const outsiderWorkspaceAfterRes = await outsiderPage.request.get(
+        `/api/v1/boards/${createdBoardId}`,
+      );
+      expect(outsiderWorkspaceAfterRes.status()).toBe(200);
+      const outsiderWorkspaceAfterCount = (
+        (await outsiderWorkspaceAfterRes.json()) as {
+          board: { visibleTaskCount: number };
+        }
+      ).board.visibleTaskCount;
+      expect(outsiderWorkspaceAfterCount).toBe(outsiderWorkspaceBeforeCount + 1);
+
       await outsiderPage.goto(`/boards/${hiddenBoardId}`);
+      await outsiderPage.waitForURL(`${BASE_ORIGIN}/tasks`);
+      await ensureUnscheduledTrayOpen(outsiderPage);
       const revealedCard = getTaskCard(outsiderPage, createdTaskTitle);
       await expect(revealedCard).toBeVisible();
-      await revealedCard.locator('.kanban-card-open').click();
+      await revealedCard.click();
       const outsiderRevealedDrawer = getTaskDrawer(outsiderPage);
-      await expect(outsiderRevealedDrawer.locator('.task-comments-panel')).toHaveCount(0);
+      await expect(outsiderRevealedDrawer).toBeVisible();
+      await expect(outsiderRevealedDrawer.locator('.task-comments-section')).toBeVisible();
+      await openHistorySubTab(outsiderRevealedDrawer);
+      await expect(outsiderRevealedDrawer.locator('.task-comments-section')).toHaveCount(0);
       await openCommentsTab(outsiderRevealedDrawer);
       await expect(outsiderRevealedDrawer.getByText(hiddenCommentBody)).toBeVisible();
 
@@ -830,39 +880,29 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       });
     };
 
-    const assigneeSession = await openSignedInContext(
-      browser,
-      assigneeStudentId,
-      `/boards/${commentsBoardId}`,
-    );
-    const readOnlySession = await openSignedInContext(
-      browser,
-      readOnlyStudentId,
-      `/boards/${commentsBoardId}?task=${commentsTaskId}`,
-    );
-    const outsiderSession = await openSignedInContext(
-      browser,
-      outsiderStudentId,
-      `/boards/${commentsBoardId}?task=${commentsTaskId}`,
-    );
+    const [assigneeSession, readOnlySession, outsiderSession] = await Promise.all([
+      openSignedInContext(browser, assigneeStudentId, `/boards/${commentsBoardId}`),
+      openSignedInContext(browser, readOnlyStudentId, `/boards/${commentsBoardId}?task=${commentsTaskId}`),
+      openSignedInContext(browser, outsiderStudentId, `/boards/${commentsBoardId}?task=${commentsTaskId}`),
+    ]);
 
     try {
       for (const s of [assigneeSession, readOnlySession, outsiderSession]) {
         attachCommentPayloadMonitor(s.page);
       }
 
-      // 1. Member A (with comment.create) sees inactive author "(đã rời)", posts comment, verifies S04/S05 count & reload persistence
+      // 1. Member A (with comment.create) sees inactive author "(đã rời)", posts comment, verifies count sync & reload persistence
       const assigneePage = assigneeSession.page;
+      await ensureUnscheduledTrayOpen(assigneePage);
       const cardOnBoard = getTaskCard(assigneePage, commentsTaskTitle);
       await expect(cardOnBoard).toBeVisible();
-      await expect(cardOnBoard).toContainText(formatCommentsCount(2));
 
-      await cardOnBoard.locator('.kanban-card-open').click();
+      await cardOnBoard.click();
       const assigneeDrawer = getTaskDrawer(assigneePage);
       await expect(assigneeDrawer).toBeVisible();
-      await expect(assigneeDrawer.locator('.task-comments-panel')).toHaveCount(0);
-      await expect(assigneeDrawer.locator('.task-drawer-tab-count')).toHaveText('2');
-      await openCommentsTab(assigneeDrawer);
+      // CR-10: inline Comments sub-tab is active by default
+      await expect(assigneeDrawer.locator('.task-comments-section')).toBeVisible();
+      await expect(assigneeDrawer.locator('.task-subtab-btn .task-drawer-tab-count')).toHaveText('2');
       await expect(assigneeDrawer).toContainText(`${inactiveFullName} ${viMessages.member.leftBadge}`);
       await expect(assigneeDrawer.getByText(inactiveCommentBody)).toBeVisible();
       await expect(assigneeDrawer.getByText(creatorCommentBody)).toBeVisible();
@@ -901,28 +941,26 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
 
       await expect(assigneeDrawer.getByText(liveCommentBody)).toBeVisible();
       await expect(assigneeDrawer.locator('li.task-comment-item').first()).toContainText(liveCommentBody);
-      await expect(assigneeDrawer.locator('.task-drawer-tab-count')).toHaveText('3');
+      await expect(assigneeDrawer.locator('.task-subtab-btn .task-drawer-tab-count')).toHaveText('3');
       await expect(assigneeDrawer.locator('.task-comments-header .ui-chip')).toHaveText('3');
-      await openDetailsTab(assigneeDrawer);
-      await expect(assigneeDrawer.locator('.task-drawer-badges')).toContainText(
-        formatCommentsCount(3),
-      );
-      await expect(getTaskCard(assigneePage, commentsTaskTitle)).toContainText(
-        formatCommentsCount(3),
-      );
 
-      // Persist across full reload
+      const afterCreateTaskRes = await assigneePage.request.get(`/api/v1/tasks/${commentsTaskId}`);
+      expect(afterCreateTaskRes.status()).toBe(200);
+      expect(
+        ((await afterCreateTaskRes.json()) as { task: { commentCount: number } }).task.commentCount,
+      ).toBe(3);
+
+      // Switch to History sub-tab and back to Comments sub-tab
+      await openHistorySubTab(assigneeDrawer);
+      await expect(assigneeDrawer.locator('.task-comments-section')).toHaveCount(0);
+      await openCommentsTab(assigneeDrawer);
+
+      // Persist across full reload (?task= keeps modal open across reload)
       await assigneePage.reload();
-      await expect(getTaskCard(assigneePage, commentsTaskTitle)).toContainText(
-        formatCommentsCount(3),
-      );
-      await getTaskCard(assigneePage, commentsTaskTitle).locator('.kanban-card-open').click();
       const reloadedAssigneeDrawer = getTaskDrawer(assigneePage);
-      await expect(reloadedAssigneeDrawer.locator('.task-drawer-badges')).toContainText(
-        formatCommentsCount(3),
-      );
-      await reloadedAssigneeDrawer.locator('.task-comments-jump-chip').click();
-      await expect(reloadedAssigneeDrawer.locator('.task-comments-panel')).toBeVisible();
+      await expect(reloadedAssigneeDrawer).toBeVisible();
+      await expect(reloadedAssigneeDrawer.locator('.task-subtab-btn .task-drawer-tab-count')).toHaveText('3');
+      await expect(reloadedAssigneeDrawer.locator('.task-comments-section')).toBeVisible();
       await expect(reloadedAssigneeDrawer.getByText(liveCommentBody)).toBeVisible();
 
       // 2. Member D (without comment.create) sees comments cleanly, NO composer, NO Delete button, gets 403 on POST/DELETE
@@ -972,10 +1010,9 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       expect((await deleteOwnResPromise).status()).toBe(200);
 
       await expect(getTaskDrawer(assigneePage).getByText(liveCommentBody)).toHaveCount(0);
-      await expect(getTaskDrawer(assigneePage).locator('.task-drawer-tab-count')).toHaveText('2');
-      await expect(getTaskCard(assigneePage, commentsTaskTitle)).toContainText(
-        formatCommentsCount(2),
-      );
+      await expect(
+        getTaskDrawer(assigneePage).locator('.task-subtab-btn .task-drawer-tab-count'),
+      ).toHaveText('2');
 
       // 4. User holding comment.delete_any (Member C) deletes Creator's comment via inline confirmation
       const outsiderPage = outsiderSession.page;
@@ -1000,10 +1037,12 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       expect((await deleteAnyResPromise).status()).toBe(200);
 
       await expect(outsiderDrawer.getByText(creatorCommentBody)).toHaveCount(0);
-      await expect(outsiderDrawer.locator('.task-drawer-tab-count')).toHaveText('1');
-      await expect(getTaskCard(outsiderPage, commentsTaskTitle)).toContainText(
-        formatCommentsCount(1),
-      );
+      await expect(outsiderDrawer.locator('.task-subtab-btn .task-drawer-tab-count')).toHaveText('1');
+      const afterDeleteTaskRes = await outsiderPage.request.get(`/api/v1/tasks/${commentsTaskId}`);
+      expect(afterDeleteTaskRes.status()).toBe(200);
+      expect(
+        ((await afterDeleteTaskRes.json()) as { task: { commentCount: number } }).task.commentCount,
+      ).toBe(1);
 
       // 5. Verify task_events recorded comment.added & comment.deleted with ONLY comment_id UUID (zero body text or PII)
       const commentEvents = await db
@@ -1107,8 +1146,7 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       const page = session.page;
       const drawer = getTaskDrawer(page);
       await expect(drawer).toBeVisible();
-      await expect(drawer.locator('.task-comments-panel')).toHaveCount(0);
-      await expect(drawer.locator('.task-drawer-tab-count')).toHaveText('12');
+      await expect(drawer.locator('.task-subtab-btn .task-drawer-tab-count')).toHaveText('12');
 
       await openCommentsTab(drawer);
       await expect(drawer.locator('.task-comments-composer-pin')).toBeVisible();
