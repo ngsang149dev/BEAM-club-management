@@ -91,7 +91,7 @@ function RemindersForbiddenState() {
       code={tErr('403.code')}
       title={t('forbiddenTitle')}
       description={t('forbiddenDescription')}
-      actions={<Link href="/boards" className="ui-btn primary">{tCommon('backToBoards')}</Link>}
+      actions={<Link href="/tasks" className="ui-btn primary">{tCommon('backToTasks')}</Link>}
     />
   );
 }

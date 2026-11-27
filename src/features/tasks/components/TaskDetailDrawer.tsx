@@ -1,19 +1,27 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
 import { TaskCommentsSection } from '@/features/comments/components/TaskCommentsSection';
 import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
 import { usePermissions } from '@/features/shared/permissions/can';
-import { formatTaskDateTime } from '../formatters';
-import { useTaskDetailQuery, type TaskDto } from '../hooks/useTasks';
+import {
+  useTaskDepartmentsQuery,
+  useTaskDetailQuery,
+  type DepartmentDto,
+  type TaskDto,
+} from '../hooks/useTasks';
+import { TaskAcceptanceSection } from './TaskAcceptanceSection';
+import { TaskDeliverablesSection } from './TaskDeliverablesSection';
 import {
   type DrawerTab,
+  type ModalSubTab,
   TaskDrawerErrorBody,
   TaskDrawerHiddenBanner,
   TaskDrawerReadOnlyBody,
-  TaskDrawerTabBar,
+  TaskModalHeader,
+  TaskModalSubTabs,
 } from './TaskDrawerChrome';
 import {
   TaskAssigneesSection,
@@ -22,66 +30,115 @@ import {
 } from './TaskDrawerSections';
 import { canToggleTaskHidden, TaskHiddenSection } from './TaskHiddenSection';
 import { TaskHistorySection } from './TaskHistorySection';
-import {
-  MemberInlineName,
-  TaskAssigneeChips,
-  TaskDepartmentChips,
-  TaskDueBadge,
-  TaskPriorityBadge,
-} from './TaskPriorityBadge';
+import { TaskStatusSection } from './TaskStatusSection';
 
-function resolveCanEditTask({
-  isAdmin,
-  can,
-  currentUserId,
-  currentDepartmentIds,
-  assignees,
-  assignedDepartments,
-}: {
-  isAdmin: boolean;
-  can: ReturnType<typeof usePermissions>['can'];
-  currentUserId: string | null | undefined;
-  currentDepartmentIds: readonly string[];
-  assignees: TaskDto['assignees'];
-  assignedDepartments: TaskDto['assignedDepartments'];
-}): boolean {
-  if (isAdmin || can('task.update_any')) return true;
-  if (!can('task.update_assigned') || !currentUserId) return false;
+function isActorAssigned(
+  currentUserId: string | null | undefined,
+  currentDepartmentIds: readonly string[],
+  assignees: TaskDto['assignees'],
+  assignedDepartments: TaskDto['assignedDepartments']
+): boolean {
+  if (!currentUserId) return false;
   return (
     assignees.some((assignee) => assignee.id === currentUserId) ||
     assignedDepartments.some((dept) => currentDepartmentIds.includes(dept.id))
   );
 }
 
-function TaskDrawerSidebar({
+function resolveCanEditTask({
+  isAdmin,
+  can,
+  isAssigned,
+}: {
+  isAdmin: boolean;
+  can: ReturnType<typeof usePermissions>['can'];
+  isAssigned: boolean;
+}): boolean {
+  if (isAdmin || can('task.update_any')) return true;
+  return can('task.update_assigned') && isAssigned;
+}
+
+function TaskModalLeftColumn({
   task,
+  canEdit,
+  isAssigned,
+  currentUserId,
+  isAdmin,
+  canUpdateAny,
+  departments,
+  onReload,
+  onClose,
+}: {
+  readonly task: TaskDto;
+  readonly canEdit: boolean;
+  readonly isAssigned: boolean;
+  readonly currentUserId: string | null | undefined;
+  readonly isAdmin: boolean;
+  readonly canUpdateAny: boolean;
+  readonly departments: readonly DepartmentDto[];
+  readonly onReload: () => void;
+  readonly onClose: () => void;
+}) {
+  const [subTab, setSubTab] = useState<ModalSubTab>('comments');
+
+  return (
+    <div className="task-modal-col-main">
+      <TaskDrawerHiddenBanner isHidden={task.isHidden} />
+      <div className="task-modal-details-card">
+        {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
+      </div>
+      <TaskDeliverablesSection
+        task={task}
+        canSubmit={canEdit || isAssigned}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        canUpdateAny={canUpdateAny}
+        departments={departments}
+      />
+      <div className="task-modal-activity-card">
+        <TaskModalSubTabs subTab={subTab} commentCount={task.commentCount} onSelect={setSubTab} />
+        {subTab === 'comments' ? (
+          <TaskCommentsSection taskId={task.id} boardId={task.boardId} commentCount={task.commentCount} />
+        ) : (
+          <TaskHistorySection task={task} onTaskDeleted={onClose} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TaskModalRightColumn({
+  task,
+  canEdit,
+  isAssigned,
+  currentUserId,
+  departments,
   canAssign,
   canToggleHidden,
   canDelete,
   onReload,
   onClose,
 }: {
-  task: TaskDto;
-  canAssign: boolean;
-  canToggleHidden: boolean;
-  canDelete: boolean;
-  onReload: () => void;
-  onClose: () => void;
+  readonly task: TaskDto;
+  readonly canEdit: boolean;
+  readonly isAssigned: boolean;
+  readonly currentUserId: string | null | undefined;
+  readonly departments: readonly DepartmentDto[];
+  readonly canAssign: boolean;
+  readonly canToggleHidden: boolean;
+  readonly canDelete: boolean;
+  readonly onReload: () => void;
+  readonly onClose: () => void;
 }) {
-  const tTasks = useTranslations('tasks');
-
   return (
-    <div className="task-drawer-col-side">
-      <section className="task-assigned-summary">
-        <div className="task-assigned-summary-group">
-          <h3 className="task-section-title">{tTasks('assignedDepartmentsLabel')}</h3>
-          <TaskDepartmentChips departments={task.assignedDepartments} emptyLabel={tTasks('departmentsEmpty')} />
-        </div>
-        <div className="task-assigned-summary-group">
-          <h3 className="task-section-title">{tTasks('assigneesLabel')}</h3>
-          <TaskAssigneeChips assignees={task.assignees} />
-        </div>
-      </section>
+    <div className="task-modal-col-side">
+      <TaskStatusSection task={task} canEdit={canEdit} onReload={onReload} />
+      <TaskAcceptanceSection
+        task={task}
+        isAssigned={isAssigned}
+        currentUserId={currentUserId}
+        departments={departments}
+      />
       {canAssign ? <TaskAssigneesSection task={task} onReload={onReload} /> : null}
       {canToggleHidden ? <TaskHiddenSection task={task} onReload={onReload} /> : null}
       {canDelete ? <TaskDeleteSection task={task} onDeleted={onClose} /> : null}
@@ -93,52 +150,40 @@ function TaskDrawerLoaded({
   task,
   onReload,
   onClose,
-  onOpenComments,
 }: {
   task: TaskDto;
   onReload: () => void;
   onClose: () => void;
-  onOpenComments: () => void;
 }) {
-  const locale = useLocale();
-  const tTasks = useTranslations('tasks');
   const { isAdmin, can } = usePermissions();
   const meQuery = useMeQuery(true);
+  const departmentsQuery = useTaskDepartmentsQuery(true);
   const currentUserId = meQuery.data?.profile.id;
   const currentDepartmentIds = meQuery.data?.profile.departments?.map((dept) => dept.id) ?? [];
-  const canEdit = resolveCanEditTask({
-    isAdmin,
-    can,
-    currentUserId,
-    currentDepartmentIds,
-    assignees: task.assignees,
-    assignedDepartments: task.assignedDepartments,
-  });
+  const isAssigned = isActorAssigned(currentUserId, currentDepartmentIds, task.assignees, task.assignedDepartments);
+  const canEdit = resolveCanEditTask({ isAdmin, can, isAssigned });
   const canToggleHidden = canToggleTaskHidden({ isAdmin, creatorId: task.creator.id, currentUserId });
+  const departments = departmentsQuery.data?.items ?? [];
 
   return (
-    <div className="task-drawer-grid">
-      <div className="task-drawer-col-main">
-        <TaskDrawerHiddenBanner isHidden={task.isHidden} />
-        <div className="task-drawer-badges">
-          <TaskPriorityBadge priority={task.priority} />
-          <TaskDueBadge dueAt={task.dueAt} />
-          <button
-            type="button"
-            className="ui-chip task-comments-jump-chip"
-            onClick={onOpenComments}
-          >
-            {tTasks('commentsCount', { count: task.commentCount })}
-          </button>
-        </div>
-        <div className="task-drawer-meta-grid">
-          <div><span>{tTasks('creatorLabel')}</span><b><MemberInlineName member={task.creator} /></b></div>
-          <div><span>{tTasks('createdAtLabel')}</span><b className="mono">{formatTaskDateTime(task.createdAt, locale)}</b></div>
-        </div>
-        {canEdit ? <TaskEditFormSection task={task} onReload={onReload} /> : <TaskDrawerReadOnlyBody task={task} />}
-      </div>
-      <TaskDrawerSidebar
+    <div className="task-modal-grid">
+      <TaskModalLeftColumn
         task={task}
+        canEdit={canEdit}
+        isAssigned={isAssigned}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        canUpdateAny={can('task.update_any')}
+        departments={departments}
+        onReload={onReload}
+        onClose={onClose}
+      />
+      <TaskModalRightColumn
+        task={task}
+        canEdit={canEdit}
+        isAssigned={isAssigned}
+        currentUserId={currentUserId}
+        departments={departments}
         canAssign={can('task.assign')}
         canToggleHidden={canToggleHidden}
         canDelete={can('task.delete')}
@@ -156,7 +201,6 @@ export function TaskDrawerActiveTabPanel({
   panelIds,
   onReload,
   onClose,
-  onOpenComments,
 }: {
   readonly activeTab: DrawerTab;
   readonly task: TaskDto;
@@ -164,12 +208,12 @@ export function TaskDrawerActiveTabPanel({
   readonly panelIds: { details: string; comments: string; history: string };
   readonly onReload: () => void;
   readonly onClose: () => void;
-  readonly onOpenComments: () => void;
+  readonly onOpenComments?: () => void;
 }) {
   if (activeTab === 'details') {
     return (
-      <div id={panelIds.details} role="tabpanel" aria-labelledby={tabIds.details} className="ui-drawer-body task-drawer-tabpanel">
-        <TaskDrawerLoaded key={task.id} task={task} onReload={onReload} onClose={onClose} onOpenComments={onOpenComments} />
+      <div id={panelIds.details} role="tabpanel" aria-labelledby={tabIds.details} className="task-modal-body">
+        <TaskDrawerLoaded key={task.id} task={task} onReload={onReload} onClose={onClose} />
       </div>
     );
   }
@@ -187,52 +231,12 @@ export function TaskDrawerActiveTabPanel({
   );
 }
 
-function TaskDrawerTabsShell({
-  task,
-  onReload,
-  onClose,
-}: {
-  task: TaskDto;
-  onReload: () => void;
-  onClose: () => void;
-}) {
-  const [activeTab, setActiveTab] = useState<DrawerTab>('details');
-  const tabIds = { details: useId(), comments: useId(), history: useId() };
-  const panelIds = { details: useId(), comments: useId(), history: useId() };
-
-  return (
-    <>
-      <TaskDrawerTabBar
-        activeTab={activeTab}
-        commentCount={task.commentCount}
-        detailsTabId={tabIds.details}
-        commentsTabId={tabIds.comments}
-        historyTabId={tabIds.history}
-        detailsPanelId={panelIds.details}
-        commentsPanelId={panelIds.comments}
-        historyPanelId={panelIds.history}
-        onSelect={setActiveTab}
-      />
-      <TaskDrawerActiveTabPanel
-        activeTab={activeTab}
-        task={task}
-        tabIds={tabIds}
-        panelIds={panelIds}
-        onReload={onReload}
-        onClose={onClose}
-        onOpenComments={() => setActiveTab('comments')}
-      />
-    </>
-  );
-}
-
 export interface TaskDetailDrawerProps {
   taskId: string | null;
   onClose: () => void;
 }
 
 export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
-  const tTasks = useTranslations('tasks');
   const tCommon = useTranslations('common');
   const titleId = useId();
   useEscapeClose(Boolean(taskId), onClose);
@@ -242,18 +246,23 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
   const task = taskQuery.data?.task ?? null;
 
   return (
-    <div className="ui-drawer-backdrop" role="presentation">
-      <aside className="ui-drawer ui-drawer-task" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className="ui-modal-header">
-          <h2 id={titleId} className="ui-modal-title">{tTasks('drawerTitle')}</h2>
-          <button type="button" className="ui-icon-btn" aria-label={tCommon('close')} onClick={onClose}>✕</button>
-        </div>
+    <div
+      className="task-modal-backdrop"
+      role="presentation"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <aside className="task-modal-shell" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <TaskModalHeader titleId={titleId} task={task} onClose={onClose} />
         {taskQuery.isPending ? (
-          <div className="ui-drawer-body"><p className="auth-loading" role="status">{tCommon('loading')}</p></div>
+          <div className="task-modal-body"><p className="auth-loading" role="status">{tCommon('loading')}</p></div>
         ) : taskQuery.isError ? (
           <TaskDrawerErrorBody error={taskQuery.error} onClose={onClose} onRetry={() => taskQuery.refetch()} />
         ) : task ? (
-          <TaskDrawerTabsShell key={task.id} task={task} onReload={() => taskQuery.refetch()} onClose={onClose} />
+          <div className="task-modal-body">
+            <TaskDrawerLoaded key={task.id} task={task} onReload={() => taskQuery.refetch()} onClose={onClose} />
+          </div>
         ) : null}
       </aside>
     </div>

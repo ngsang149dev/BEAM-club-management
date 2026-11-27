@@ -33,7 +33,7 @@ import {
   TaskDueDateInput,
   TaskErrorBanner,
   TaskIndividualAssigneesDetails,
-  TaskPrioritySelect,
+  TaskStartDateInput,
 } from './TaskFormFields';
 import { TaskNotificationOptions } from './TaskNotificationOptions';
 
@@ -65,8 +65,8 @@ function useTaskEditFormController(task: TaskDto) {
         payload: {
           title: values.title.trim(),
           description: values.description.trim() || null,
+          startAt: hoChiMinhInputToUtcIso(values.startAtInput),
           dueAt: hoChiMinhInputToUtcIso(values.dueAtInput),
-          priority: values.priority,
           version: task.version,
         },
       },
@@ -87,10 +87,12 @@ function useTaskEditFormController(task: TaskDto) {
 
 export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReload: () => void }) {
   const tTasks = useTranslations('tasks');
+  const tErr = useTranslations('errors');
   const baseId = useId();
   const ctrl = useTaskEditFormController(task);
-  const priority = useWatch({ control: ctrl.control, name: 'priority' });
+  const startAtInput = useWatch({ control: ctrl.control, name: 'startAtInput' });
   const dueAtInput = useWatch({ control: ctrl.control, name: 'dueAtInput' });
+  const dateRangeError = ctrl.formState.errors.dueAtInput ? tErr('invalidDateRange') : null;
 
   return (
     <form className="task-edit-form" method="post" onSubmit={ctrl.handleSubmit(ctrl.handleSave)} noValidate>
@@ -108,11 +110,11 @@ export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReloa
       </div>
       <div className="ui-field">
         <label className="ui-label" htmlFor={`${baseId}-desc`}>{tTasks('descriptionLabel')}</label>
-        <textarea id={`${baseId}-desc`} className="ui-textarea" rows={6} {...ctrl.register('description')} />
+        <textarea id={`${baseId}-desc`} className="ui-textarea" rows={5} {...ctrl.register('description')} />
       </div>
       <div className="task-form-two-col">
-        <TaskPrioritySelect value={priority} onChange={(next) => ctrl.setValue('priority', next)} />
-        <TaskDueDateInput value={dueAtInput} onChange={(next) => ctrl.setValue('dueAtInput', next)} />
+        <TaskStartDateInput value={startAtInput} onChange={(next) => ctrl.setValue('startAtInput', next, { shouldValidate: true })} />
+        <TaskDueDateInput value={dueAtInput} errorText={dateRangeError} onChange={(next) => ctrl.setValue('dueAtInput', next, { shouldValidate: true })} />
       </div>
       <div className="task-section-actions">
         <button type="submit" className="ui-btn primary" disabled={ctrl.updateMutation.isPending}>
@@ -192,7 +194,7 @@ export function TaskAssigneesSection({ task, onReload }: { task: TaskDto; onRelo
   const ctrl = useTaskAssigneesController(task);
 
   return (
-    <section className="task-drawer-section">
+    <section className="task-side-card">
       <h3 className="task-section-title">{tTasks('departmentsLabel')}</h3>
       <TaskErrorBanner
         error={ctrl.assigneesMutation.error}
@@ -252,7 +254,7 @@ export function TaskDeleteSection({ task, onDeleted }: { task: TaskDto; onDelete
   };
 
   return (
-    <section className="task-drawer-section task-danger-zone">
+    <section className="task-side-card task-danger-zone">
       <TaskErrorBanner error={deleteMutation.error} />
       {confirming ? (
         <div className="task-delete-confirm">

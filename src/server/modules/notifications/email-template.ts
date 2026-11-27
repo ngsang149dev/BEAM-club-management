@@ -7,7 +7,7 @@ export interface BuildDepartmentEmailParams {
   readonly taskTitle: string | null;
   readonly isHiddenTask: boolean;
   readonly appUrl: string;
-  readonly boardId: string;
+  readonly boardId?: string;
   readonly taskId: string;
 }
 
@@ -26,9 +26,9 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function buildTaskLink(appUrl: string, boardId: string, taskId: string): string {
+function buildTaskLink(appUrl: string, taskId: string): string {
   const base = appUrl.replace(/\/+$/, '');
-  return `${base}/boards/${boardId}?task=${taskId}`;
+  return `${base}/tasks?task=${taskId}`;
 }
 
 interface EmailCopy {
@@ -159,7 +159,6 @@ export function buildDepartmentAssignedEmail(
       : null;
   const taskUrl = buildTaskLink(
     safeParams.appUrl,
-    safeParams.boardId,
     safeParams.taskId,
   );
   if (safeParams.locale === 'en') {

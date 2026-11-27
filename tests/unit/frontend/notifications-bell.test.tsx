@@ -323,7 +323,7 @@ describe('NotificationBell (CR-03)', () => {
     expect(emptyHtml).toContain('disabled=""');
   });
 
-  it('marks unread item as read on click, skips markRead for read item, and navigates to /boards/[id]?task=[id]', () => {
+  it('marks unread item as read on click, skips markRead for read item, and navigates to /tasks?task=[id]', () => {
     const closePopover = vi.fn();
     const markRead = vi.fn();
     const navigate = vi.fn();
@@ -331,7 +331,7 @@ describe('NotificationBell (CR-03)', () => {
     selectNotificationItem({ item: PUBLIC_DEPT_NOTIF, closePopover, markRead, navigate });
     expect(closePopover).toHaveBeenCalledTimes(1);
     expect(markRead).toHaveBeenCalledWith('n-1');
-    expect(navigate).toHaveBeenCalledWith('/boards/b-media?task=t-public');
+    expect(navigate).toHaveBeenCalledWith('/tasks?task=t-public');
 
     closePopover.mockClear();
     markRead.mockClear();
@@ -340,7 +340,7 @@ describe('NotificationBell (CR-03)', () => {
     selectNotificationItem({ item: HIDDEN_DEPT_NOTIF, closePopover, markRead, navigate });
     expect(closePopover).toHaveBeenCalledTimes(1);
     expect(markRead).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith('/boards/b-media?task=t-hidden');
+    expect(navigate).toHaveBeenCalledWith('/tasks?task=t-hidden');
   });
 
   it('updates QueryClient cache for mark-read and mark-all-read mutations', async () => {

@@ -56,60 +56,38 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
 async function signInAs(
   page: Page,
   studentId: string,
-  returnTo = '/boards',
+  returnTo = '/tasks',
   password = DEV_SEED_PASSWORD,
 ): Promise<void> {
+  const expectedPath = returnTo.startsWith('/boards')
+    ? `/tasks${returnTo.includes('?') ? returnTo.slice(returnTo.indexOf('?')) : ''}`
+    : returnTo;
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(studentId);
   await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(password);
   await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
-  await page.waitForURL(`${BASE_ORIGIN}${returnTo}`);
+  await page.waitForURL(`${BASE_ORIGIN}${expectedPath}`);
 }
 
-function getColumnSection(page: Page, columnName: string): Locator {
-  return page.locator('section.kanban-col', {
-    has: page.locator('h2.kanban-col-name', {
-      hasText: new RegExp(`^${columnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
+async function ensureUnscheduledTrayOpen(page: Page): Promise<void> {
+  const toggle = page.locator('.hcal-unscheduled-toggle');
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+  }
+  await expect(page.locator('.hcal-unscheduled-list')).toBeVisible();
+}
+
+function getTaskChip(page: Page, title: string): Locator {
+  return page.locator('.hcal-unscheduled-chip', {
+    has: page.locator('.hcal-unscheduled-title', {
+      hasText: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
     }),
   });
 }
 
-async function dragCardToColumn(
-  page: Page,
-  card: Locator,
-  targetColumn: Locator,
-  taskId: string,
-): Promise<void> {
-  const dragArea = card.locator('.kanban-card-signals');
-  const laneBody = targetColumn.locator('.kanban-col-body');
-
-  await dragArea.scrollIntoViewIfNeeded();
-  await laneBody.scrollIntoViewIfNeeded();
-
-  const startBox = await dragArea.boundingBox();
-  const targetBox = await laneBody.boundingBox();
-  if (!startBox || !targetBox) {
-    throw new Error('Unable to measure drag bounding boxes for Kanban drag-and-drop.');
-  }
-
-  const startX = startBox.x + startBox.width / 2;
-  const startY = startBox.y + startBox.height / 2;
-  const endX = targetBox.x + targetBox.width / 2;
-  const endY = targetBox.y + Math.min(48, Math.max(16, targetBox.height / 2));
-
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX + 16, startY + 6, { steps: 4 });
-  await page.mouse.move(endX, endY, { steps: 12 });
-  await expect(targetColumn).toHaveClass(/is-drop-target/);
-
-  const moveResponsePromise = page.waitForResponse(
-    (res) =>
-      res.url().includes(`/api/v1/tasks/${taskId}/move`) &&
-      res.request().method() === 'POST',
-  );
-  await page.mouse.up();
-  expect((await moveResponsePromise).status()).toBe(200);
+function getTaskModal(page: Page): Locator {
+  return page.locator('aside.task-modal-shell[role="dialog"]');
 }
 
 function assertNoSecretsInText(payloads: readonly string[], sensitiveValues: readonly string[]): void {
@@ -524,11 +502,12 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await signInAs(page, leadStudentId, `/boards/${boardId}`);
-    const todoCol = getColumnSection(page, 'Todo');
-    await expect(todoCol).toBeVisible();
+    await expect(page.locator('.hcal-shell')).toBeVisible();
 
-    // Open spacious 720px CreateTaskModal -> verify Department picker prominent, standalone TaskNotificationOptions checked, individual picker collapsed
-    await todoCol.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }).click();
+    // Open spacious 720px CreateTaskModal -> verify Department picker prominent, TaskNotificationOptions switches checked, individual picker collapsed
+    await page
+      .getByRole('button', { name: `+ ${viMessages.calendar.createTask}`, exact: true })
+      .click();
     const modal = page.getByRole('dialog');
     await expect(modal).toBeVisible();
     await expect(modal).toHaveClass(/ui-modal-lg/);
@@ -543,15 +522,14 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       .locator('input[type="checkbox"]');
     await expect(deptACheckbox).toBeVisible();
 
-    const notifyCard = modal.locator('.task-notify-card');
-    await expect(notifyCard).toBeVisible();
-    await expect(notifyCard).toContainText(viMessages.tasks.notifySectionTitle);
-    const notifyInAppCheckbox = modal.getByLabel(viMessages.tasks.notifyInAppLabel);
-    const notifyEmailCheckbox = modal.getByLabel(viMessages.tasks.notifyEmailLabel);
-    await expect(notifyInAppCheckbox).toBeVisible();
-    await expect(notifyInAppCheckbox).toBeChecked();
-    await expect(notifyEmailCheckbox).toBeVisible();
-    await expect(notifyEmailCheckbox).toBeChecked();
+    const notifyToggles = modal.locator('.task-create-toggles');
+    await expect(notifyToggles).toBeVisible();
+    const notifyInAppSwitch = modal.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel });
+    const notifyEmailSwitch = modal.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel });
+    await expect(notifyInAppSwitch).toBeVisible();
+    await expect(notifyInAppSwitch).toHaveAttribute('aria-checked', 'true');
+    await expect(notifyEmailSwitch).toBeVisible();
+    await expect(notifyEmailSwitch).toHaveAttribute('aria-checked', 'true');
 
     const individualDetails = modal.locator('details.task-individual-details', {
       hasText: viMessages.tasks.individualAssigneesSummary,
@@ -572,31 +550,36 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     const notifiedTaskId = ((await createNotifiedRes.json()) as { task: { id: string } }).task.id;
     trackedTaskIds.push(notifiedTaskId);
 
-    // Verify department badge appears on S04 Kanban card
-    const notifiedCard = todoCol.locator('article.kanban-card', { hasText: notifiedTitle });
-    await expect(notifiedCard).toBeVisible();
-    await expect(notifiedCard).toContainText(deptAName);
+    // Open unscheduled chip on /tasks -> verify spacious near-fullscreen 2-column TaskDetailDrawer, dept summary, notification switches & saveAssignments button
+    await ensureUnscheduledTrayOpen(page);
+    const notifiedChip = getTaskChip(page, notifiedTitle);
+    await expect(notifiedChip).toBeVisible();
+    await notifiedChip.click();
 
-    // Open spacious ~900px 2-column S05 TaskDetailDrawer -> verify side-by-side columns, summary, notification options & saveAssignments button
-    await notifiedCard.locator('button.kanban-card-open').click();
-    const drawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+    const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
-    await expect(drawer).toHaveClass(/ui-drawer-task/);
     const drawerBox = await drawer.boundingBox();
-    const mainColBox = await drawer.locator('.task-drawer-col-main').boundingBox();
-    const sideColBox = await drawer.locator('.task-drawer-col-side').boundingBox();
+    const mainColBox = await drawer.locator('.task-modal-col-main').boundingBox();
+    const sideColBox = await drawer.locator('.task-modal-col-side').boundingBox();
     expect(drawerBox).not.toBeNull();
-    expect(drawerBox!.width).toBeGreaterThanOrEqual(800);
+    expect(drawerBox!.width).toBeGreaterThanOrEqual(1150);
     expect(mainColBox).not.toBeNull();
     expect(sideColBox).not.toBeNull();
     expect(sideColBox!.x).toBeGreaterThanOrEqual(mainColBox!.x + mainColBox!.width);
 
-    await expect(drawer.locator('.task-assigned-summary')).toContainText(deptAName);
+    await expect(drawer.locator('.task-modal-header-badges')).toContainText(deptAName);
+    await expect(
+      drawer.locator('.task-side-card label', { hasText: deptAName }).locator('input[type="checkbox"]'),
+    ).toBeChecked();
     await expect(drawer.locator('.task-notify-card')).toContainText(
       viMessages.tasks.notifySectionTitle,
     );
-    await expect(drawer.getByLabel(viMessages.tasks.notifyInAppLabel)).toBeChecked();
-    await expect(drawer.getByLabel(viMessages.tasks.notifyEmailLabel)).toBeChecked();
+    await expect(
+      drawer.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }),
+    ).toHaveAttribute('aria-checked', 'true');
+    await expect(
+      drawer.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel }),
+    ).toHaveAttribute('aria-checked', 'true');
     await expect(
       drawer.getByRole('button', { name: viMessages.tasks.saveAssignments }),
     ).toBeVisible();
@@ -650,17 +633,23 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       await memberAContext.close();
     }
 
-    // CR-06: Create another task with notifyInApp UNCHECKED (keeping notifyEmail checked) -> assignment persists on card, 0 in-app notifications
-    await todoCol.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }).click();
+    // CR-06: Create another task with notifyInApp OFF (keeping notifyEmail ON) -> assignment persists, 0 in-app notifications
+    await page
+      .getByRole('button', { name: `+ ${viMessages.calendar.createTask}`, exact: true })
+      .click();
     const silentModal = page.getByRole('dialog');
     await silentModal.getByLabel(viMessages.tasks.titleLabel).fill(silentTitle);
     await silentModal
       .locator('label', { hasText: deptAName })
       .locator('input[type="checkbox"]')
       .check();
-    await silentModal.getByLabel(viMessages.tasks.notifyInAppLabel).uncheck();
-    await expect(silentModal.getByLabel(viMessages.tasks.notifyInAppLabel)).not.toBeChecked();
-    await expect(silentModal.getByLabel(viMessages.tasks.notifyEmailLabel)).toBeChecked();
+    await silentModal.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }).click();
+    await expect(
+      silentModal.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }),
+    ).toHaveAttribute('aria-checked', 'false');
+    await expect(
+      silentModal.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel }),
+    ).toHaveAttribute('aria-checked', 'true');
 
     const createSilentPromise = page.waitForResponse(
       (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
@@ -675,9 +664,9 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     const silentTaskId = ((await createSilentRes.json()) as { task: { id: string } }).task.id;
     trackedTaskIds.push(silentTaskId);
 
-    const silentCard = todoCol.locator('article.kanban-card', { hasText: silentTitle });
-    await expect(silentCard).toBeVisible();
-    await expect(silentCard).toContainText(deptAName);
+    await ensureUnscheduledTrayOpen(page);
+    const silentChip = getTaskChip(page, silentTitle);
+    await expect(silentChip).toBeVisible();
 
     const silentNotifsAfterCreate = await db
       .select()
@@ -685,16 +674,17 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       .where(eq(notifications.taskId, silentTaskId));
     expect(silentNotifsAfterCreate).toHaveLength(0);
 
-    // Also update assignments in S05 drawer adding Dept B with both toggles UNCHECKED -> 0 notifications
-    await silentCard.locator('button.kanban-card-open').click();
-    const silentDrawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+    // Also update assignments in S05 modal adding Dept B with both toggles OFF -> 0 notifications
+    await silentChip.click();
+    const silentDrawer = getTaskModal(page);
     await expect(silentDrawer).toBeVisible();
+    await expect(silentDrawer.locator('.task-modal-header-badges')).toContainText(deptAName);
     await silentDrawer
-      .locator('.task-drawer-section label', { hasText: deptBName })
+      .locator('.task-side-card label', { hasText: deptBName })
       .locator('input[type="checkbox"]')
       .check();
-    await silentDrawer.getByLabel(viMessages.tasks.notifyInAppLabel).uncheck();
-    await silentDrawer.getByLabel(viMessages.tasks.notifyEmailLabel).uncheck();
+    await silentDrawer.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }).click();
+    await silentDrawer.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel }).click();
 
     const updateAssigneesPromise = page.waitForResponse(
       (res) =>
@@ -711,13 +701,16 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       notifyEmail: false,
     });
     await silentDrawer.getByRole('button', { name: viMessages.common.close }).click();
+    await expect(silentDrawer).toHaveCount(0);
+    await expect(page).not.toHaveURL(/task=/);
 
     await page.reload();
-    const reloadedSilentCard = getColumnSection(page, 'Todo').locator('article.kanban-card', {
-      hasText: silentTitle,
-    });
-    await expect(reloadedSilentCard).toContainText(deptAName);
-    await expect(reloadedSilentCard).toContainText(deptBName);
+    await ensureUnscheduledTrayOpen(page);
+    await getTaskChip(page, silentTitle).click();
+    const reloadedSilentDrawer = getTaskModal(page);
+    await expect(reloadedSilentDrawer).toBeVisible();
+    await expect(reloadedSilentDrawer.locator('.task-modal-header-badges')).toContainText(deptAName);
+    await expect(reloadedSilentDrawer.locator('.task-modal-header-badges')).toContainText(deptBName);
 
     const silentNotifsAfterUpdate = await db
       .select()
@@ -728,7 +721,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await tracker.assertClean();
   });
 
-  test('allows Dept A member with only task.update_assigned to view on /my-tasks, edit in S05 drawer, and drag-and-drop on S04 persisting UUID-only task_events', async ({
+  test('allows Dept A member with only task.update_assigned to view on /my-tasks, edit in S05 modal, and move task persisting UUID-only task_events', async ({
     browser,
     page,
   }) => {
@@ -785,9 +778,9 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await expect(myRow).toBeVisible();
     await expect(myRow).toContainText(deptAName);
 
-    // Open S05 drawer from /my-tasks and edit title & description
+    // Open S05 modal from /my-tasks and edit title & description
     await myRow.click();
-    const drawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+    const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText(viMessages.tasks.readOnlyNotice)).toHaveCount(0);
 
@@ -803,23 +796,24 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await drawer.getByRole('button', { name: viMessages.common.close }).click();
     await expect(drawer).toHaveCount(0);
 
-    // Navigate to S04 /boards/[id] and drag-and-drop card from Todo -> Doing
+    // Navigate to legacy /boards/[id] -> redirects to /tasks -> verify edited task visible in unscheduled tray
     await page.goto(`/boards/${boardId}`);
-    const todoCol = getColumnSection(page, 'Todo');
-    const doingCol = getColumnSection(page, 'Doing');
-    const editedCard = todoCol.locator('article.kanban-card', { hasText: editedTitle });
-    await expect(editedCard).toBeVisible();
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+    await ensureUnscheduledTrayOpen(page);
+    await expect(getTaskChip(page, editedTitle)).toBeVisible();
 
-    await dragCardToColumn(page, editedCard, doingCol, taskId);
-    await expect(doingCol.locator('article.kanban-card', { hasText: editedTitle })).toBeVisible();
+    // Move task via /api/v1/tasks/{id}/move (Todo -> Doing) & persist UUID-only task_events
+    const moveRes = await page.request.post(`/api/v1/tasks/${taskId}/move`, {
+      data: { columnId: doingColId, version: 2 },
+    });
+    expect(moveRes.status()).toBe(200);
 
-    await page.reload();
-    await expect(
-      getColumnSection(page, 'Doing').locator('article.kanban-card', { hasText: editedTitle }),
-    ).toBeVisible();
-    await expect(
-      getColumnSection(page, 'Todo').locator('article.kanban-card', { hasText: editedTitle }),
-    ).toHaveCount(0);
+    const [movedRow] = await db
+      .select({ columnId: tasks.columnId })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+    expect(movedRow?.columnId).toBe(doingColId);
 
     // Verify task_events in beam_test: UUIDs only, zero PII, no department names
     const events = await db.select().from(taskEvents).where(eq(taskEvents.taskId, taskId));
@@ -874,17 +868,22 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     let hiddenTaskId: string;
     try {
       await signInAs(leadPage, leadStudentId, `/boards/${boardId}`);
-      const todoCol = getColumnSection(leadPage, 'Todo');
-      await todoCol.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }).click();
+      await leadPage
+        .getByRole('button', { name: `+ ${viMessages.calendar.createTask}`, exact: true })
+        .click();
       const modal = leadPage.getByRole('dialog');
       await modal.getByLabel(viMessages.tasks.titleLabel).fill(hiddenTitle);
       await modal
         .locator('label', { hasText: deptAName })
         .locator('input[type="checkbox"]')
         .check();
-      await modal.getByLabel(viMessages.tasks.isHiddenLabel).check();
-      await expect(modal.getByLabel(viMessages.tasks.notifyInAppLabel)).toBeChecked();
-      await expect(modal.getByLabel(viMessages.tasks.notifyEmailLabel)).toBeChecked();
+      await modal.getByRole('switch', { name: viMessages.tasks.isHiddenShortLabel }).click();
+      await expect(
+        modal.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }),
+      ).toHaveAttribute('aria-checked', 'true');
+      await expect(
+        modal.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel }),
+      ).toHaveAttribute('aria-checked', 'true');
 
       const createPromise = leadPage.waitForResponse(
         (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
@@ -915,15 +914,14 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     expect(revokeNotif).toBeDefined();
     const revokeNotifId = revokeNotif!.id;
 
-    // 1. Outsider holding task.update_any gets 404 everywhere, sees nothing on board/my-tasks, 0 notifications
+    // 1. Outsider holding task.update_any gets 404 everywhere, sees nothing on /tasks or /my-tasks, 0 notifications
     const outsiderContext = await browser.newContext();
     const outsiderPage = await outsiderContext.newPage();
     const outsiderTracker = await attachRuntimeErrorTracker(outsiderPage);
     try {
       await signInAs(outsiderPage, outsiderStudentId, `/boards/${boardId}`);
-      await expect(
-        outsiderPage.locator('article.kanban-card', { hasText: hiddenTitle }),
-      ).toHaveCount(0);
+      await expect(outsiderPage.locator('.hcal-shell')).toBeVisible();
+      await expect(outsiderPage.getByText(hiddenTitle)).toHaveCount(0);
 
       await outsiderPage.goto('/my-tasks');
       await expect(outsiderPage.locator('.my-task-row', { hasText: hiddenTitle })).toHaveCount(0);
@@ -957,7 +955,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
 
     // 2. Dept A member (revokeUser) sees hidden task & redacted WQ-27 notification, then loses access immediately on leaving Dept A
     await signInAs(page, revokeStudentId, `/boards/${boardId}`);
-    await expect(page.locator('article.kanban-card', { hasText: hiddenTitle })).toBeVisible();
+    await ensureUnscheduledTrayOpen(page);
+    await expect(getTaskChip(page, hiddenTitle)).toBeVisible();
 
     await page.goto('/my-tasks');
     await expect(page.locator('.my-task-row', { hasText: hiddenTitle })).toBeVisible();
@@ -1018,7 +1017,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     expect(postRevokeNotifsText).not.toContain(hiddenTaskId);
 
     await page.goto(`/boards/${boardId}`);
-    await expect(page.locator('article.kanban-card', { hasText: hiddenTitle })).toHaveCount(0);
+    await page.waitForURL(`${BASE_ORIGIN}/tasks`);
+    await expect(page.getByText(hiddenTitle)).toHaveCount(0);
 
     await page.goto('/my-tasks');
     await expect(page.locator('.my-task-row', { hasText: hiddenTitle })).toHaveCount(0);
@@ -1026,7 +1026,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await tracker.assertClean();
   });
 
-  test('renders NotificationBell badge (2 -> 1 -> 0), navigates to /boards/[id]?task=[id], auto-opens & cleanly closes drawer, marks all read, and leaks zero PII', async ({
+  test('renders NotificationBell badge (2 -> 1 -> 0), navigates to /tasks?task=[id], auto-opens & cleanly closes modal, marks all read, and leaks zero PII', async ({
     browser,
     page,
   }) => {
@@ -1178,15 +1178,15 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     const markReadJson = JSON.parse(markReadText) as { unreadCount: number };
     expect(markReadJson.unreadCount).toBe(1);
 
-    await page.waitForURL(`${BASE_ORIGIN}/boards/${boardId}?task=${publicTaskId}`);
-    const drawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+    await page.waitForURL(`${BASE_ORIGIN}/tasks?task=${publicTaskId}`);
+    const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
     await expect(drawer.getByLabel(viMessages.tasks.titleLabel)).toHaveValue(publicTitle);
 
-    // Close drawer cleanly -> ?task= query param cleared
+    // Close modal cleanly -> ?task= query param cleared
     await drawer.getByRole('button', { name: viMessages.common.close }).click();
     await expect(drawer).toHaveCount(0);
-    await expect(page).toHaveURL(`${BASE_ORIGIN}/boards/${boardId}`);
+    await expect(page).toHaveURL(`${BASE_ORIGIN}/tasks`);
     expect(new URL(page.url()).searchParams.get('task')).toBeNull();
 
     // Verify unread badge decremented to 1
@@ -1263,8 +1263,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await signInAs(page, leadStudentId, `/boards/${boardId}`);
-    const todoCol = getColumnSection(page, 'Todo');
-    await expect(todoCol).toBeVisible();
+    await expect(page.locator('.hcal-shell')).toBeVisible();
 
     // 1. Create hidden task without assignees, then assign directUserId individually via TaskDetailDrawer (notifyInApp=true, notifyEmail=false)
     const hiddenBaseRes = await page.request.post('/api/v1/tasks', {
@@ -1282,11 +1281,12 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     trackedTaskIds.push(hiddenDirectTaskId);
 
     await page.reload();
-    const hiddenCard = todoCol.locator('article.kanban-card', { hasText: hiddenDirectSecretTitle });
-    await expect(hiddenCard).toBeVisible();
-    await hiddenCard.locator('button.kanban-card-open').click();
+    await ensureUnscheduledTrayOpen(page);
+    const hiddenChip = getTaskChip(page, hiddenDirectSecretTitle);
+    await expect(hiddenChip).toBeVisible();
+    await hiddenChip.click();
 
-    const drawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
+    const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
     await drawer.locator('details.task-individual-details > summary').click();
     const directMemberDrawerCheckbox = drawer
@@ -1295,9 +1295,13 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await expect(directMemberDrawerCheckbox).toBeVisible();
     await directMemberDrawerCheckbox.check();
 
-    await expect(drawer.getByLabel(viMessages.tasks.notifyInAppLabel)).toBeChecked();
-    await drawer.getByLabel(viMessages.tasks.notifyEmailLabel).uncheck();
-    await expect(drawer.getByLabel(viMessages.tasks.notifyEmailLabel)).not.toBeChecked();
+    await expect(
+      drawer.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }),
+    ).toHaveAttribute('aria-checked', 'true');
+    await drawer.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel }).click();
+    await expect(
+      drawer.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel }),
+    ).toHaveAttribute('aria-checked', 'false');
 
     const assignPutPromise = page.waitForResponse(
       (res) =>
@@ -1317,7 +1321,9 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await expect(drawer).toHaveCount(0);
 
     // 2. Create public direct task (notifyInApp=true, plus self-assigning leadUserId to verify actorId exclusion) AND web-silent direct task (notifyInApp=false, notifyEmail=true) via CreateTaskModal
-    await todoCol.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }).click();
+    await page
+      .getByRole('button', { name: `+ ${viMessages.calendar.createTask}`, exact: true })
+      .click();
     const publicModal = page.getByRole('dialog');
     await publicModal.getByLabel(viMessages.tasks.titleLabel).fill(publicDirectTitle);
     await publicModal.locator('details.task-individual-details > summary').click();
@@ -1335,10 +1341,16 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await publicModal.getByRole('button', { name: viMessages.tasks.createSubmit }).click();
     const createPubDirectRes = await createPubDirectPromise;
     expect(createPubDirectRes.status()).toBe(201);
-    const publicDirectTaskId = ((await createPubDirectRes.json()) as { task: { id: string } }).task.id;
+    const createdPubDirectJson = (await createPubDirectRes.json()) as {
+      task: { id: string; boardId: string };
+    };
+    const publicDirectTaskId = createdPubDirectJson.task.id;
+    const publicDirectBoardId = createdPubDirectJson.task.boardId;
     trackedTaskIds.push(publicDirectTaskId);
 
-    await todoCol.getByRole('button', { name: `+ ${viMessages.boards.addTaskInColumn}` }).click();
+    await page
+      .getByRole('button', { name: `+ ${viMessages.calendar.createTask}`, exact: true })
+      .click();
     const silentModal = page.getByRole('dialog');
     await silentModal.getByLabel(viMessages.tasks.titleLabel).fill(silentDirectTitle);
     await silentModal.locator('details.task-individual-details > summary').click();
@@ -1346,9 +1358,13 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       .locator('details.task-individual-details label.dept-check-item', { hasText: directFullName })
       .locator('input[type="checkbox"]')
       .check();
-    await silentModal.getByLabel(viMessages.tasks.notifyInAppLabel).uncheck();
-    await expect(silentModal.getByLabel(viMessages.tasks.notifyInAppLabel)).not.toBeChecked();
-    await expect(silentModal.getByLabel(viMessages.tasks.notifyEmailLabel)).toBeChecked();
+    await silentModal.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }).click();
+    await expect(
+      silentModal.getByRole('switch', { name: viMessages.tasks.notifyInAppLabel }),
+    ).toHaveAttribute('aria-checked', 'false');
+    await expect(
+      silentModal.getByRole('switch', { name: viMessages.tasks.notifyEmailLabel }),
+    ).toHaveAttribute('aria-checked', 'true');
     const createSilentDirectPromise = page.waitForResponse(
       (res) => res.url().endsWith('/api/v1/tasks') && res.request().method() === 'POST',
     );
@@ -1363,10 +1379,9 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     const silentDirectTaskId = ((await createSilentDirectRes.json()) as { task: { id: string } }).task.id;
     trackedTaskIds.push(silentDirectTaskId);
 
-    // Silent direct assignment still persists on Kanban card
-    await expect(
-      todoCol.locator('article.kanban-card', { hasText: silentDirectTitle }),
-    ).toBeVisible();
+    // Silent direct assignment still persists on /tasks unscheduled tray
+    await ensureUnscheduledTrayOpen(page);
+    await expect(getTaskChip(page, silentDirectTitle)).toBeVisible();
 
     // Verify DB notifications: actor (leadUserId) excluded from self-notifications; directUserId has 2 task.assigned rows with WQ-27 redaction in DB payload
     const leadSelfRows = await db
@@ -1450,10 +1465,10 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       });
       expect(notifJson.items.find((item) => item.taskId === publicDirectTaskId)).toMatchObject({
         type: 'task.assigned',
-        boardId,
+        boardId: publicDirectBoardId,
         departmentId: null,
         departmentName: null,
-        boardName,
+        boardName: viMessages.calendar.workspaceBoardName,
         taskTitle: publicDirectTitle,
         isHiddenTask: false,
       });

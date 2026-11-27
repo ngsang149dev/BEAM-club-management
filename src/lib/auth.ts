@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const SESSION_COOKIE_NAME = 'beam_session';
-export const DEFAULT_LOGIN_REDIRECT = '/boards';
+export const DEFAULT_LOGIN_REDIRECT = '/tasks';
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
 

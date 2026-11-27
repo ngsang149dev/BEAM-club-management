@@ -20,8 +20,8 @@ export default async function ForbiddenPage() {
       footerText={tApp('footerNote')}
       actions={
         <>
-          <Link href="/boards" className="ui-btn primary">
-            {tCommon('backToBoards')}
+          <Link href="/tasks" className="ui-btn primary">
+            {tCommon('backToTasks')}
           </Link>
           <Link href="/" className="ui-btn secondary">
             {tCommon('goHome')}

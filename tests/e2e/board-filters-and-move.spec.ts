@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import {
@@ -55,22 +55,32 @@ async function attachRuntimeErrorTracker(page: Page): Promise<{
 async function signInAs(
   page: Page,
   studentId: string,
-  returnTo = '/boards',
+  returnTo = '/tasks',
   password = DEV_SEED_PASSWORD,
 ): Promise<void> {
+  const expectedPath = returnTo.startsWith('/boards')
+    ? `/tasks${returnTo.includes('?') ? returnTo.slice(returnTo.indexOf('?')) : ''}`
+    : returnTo;
   await page.goto(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   await page.getByLabel(viMessages.auth.studentIdLabel, { exact: true }).fill(studentId);
   await page.getByLabel(viMessages.auth.passwordLabel, { exact: true }).fill(password);
   await page.getByRole('button', { name: viMessages.auth.signInButton, exact: true }).click();
-  await page.waitForURL(`${BASE_ORIGIN}${returnTo}`);
+  await page.waitForURL(`${BASE_ORIGIN}${expectedPath}`);
 }
 
-function getColumnSection(page: Page, columnName: string): Locator {
-  return page.locator('section.kanban-col', {
-    has: page.locator('h2.kanban-col-name', {
-      hasText: new RegExp(`^${columnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
-    }),
-  });
+async function switchCalendarToYear(page: Page, targetYear: number): Promise<void> {
+  const yearLabel = page.locator('.hcal-year-label');
+  await expect(yearLabel).toBeVisible();
+  for (let i = 0; i < 6; i += 1) {
+    const currentYear = Number((await yearLabel.innerText()).trim());
+    if (currentYear === targetYear) return;
+    const buttonLabel =
+      currentYear > targetYear ? viMessages.calendar.prevYear : viMessages.calendar.nextYear;
+    await page.getByLabel(buttonLabel, { exact: true }).click();
+    const expectedNextYear = currentYear > targetYear ? currentYear - 1 : currentYear + 1;
+    await expect(yearLabel).toHaveText(String(expectedNextYear));
+  }
+  await expect(yearLabel).toHaveText(String(targetYear));
 }
 
 function assertZeroPiiInPayloads(
@@ -323,6 +333,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
         dueAt: pastDueOne,
         priority: 1,
         position: '1000',
+        isCompleted: true,
         isHidden: false,
         createdBy: adminUserId,
       },
@@ -449,27 +460,32 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
     const tracker = await attachRuntimeErrorTracker(page);
     const adminResponses: string[] = [];
 
+    // /boards redirects to /tasks
     await signInAs(page, adminStudentId, '/boards');
+    await switchCalendarToYear(page, 2025);
 
-    const searchInput = page.getByLabel(viMessages.boards.searchLabel, { exact: true });
-    const searchAlphaPromise = page.waitForResponse((res) => {
-      if (!res.url().includes('/api/v1/boards') || res.status() !== 200) return false;
-      return new URL(res.url()).searchParams.get('q') === boardAlphaName;
-    });
-    await searchInput.fill(boardAlphaName);
-    const adminSearchRes = await searchAlphaPromise;
-    adminResponses.push(await adminSearchRes.text());
-
-    const alphaTileAdmin = page.locator('article.board-tile', { hasText: boardAlphaName });
-    await expect(alphaTileAdmin).toBeVisible();
-    await expect(page.locator('article.board-tile', { hasText: boardBetaName })).toHaveCount(0);
+    const adminBoardsRes = await page.request.get(
+      `/api/v1/boards?q=${encodeURIComponent(boardAlphaName)}`,
+    );
+    expect(adminBoardsRes.status()).toBe(200);
+    const adminBoardsText = await adminBoardsRes.text();
+    adminResponses.push(adminBoardsText);
+    const adminBoardsJson = JSON.parse(adminBoardsText) as {
+      items: Array<{ id: string; visibleTaskCount: number; overdueTaskCount: number }>;
+    };
+    const alphaTileAdmin = adminBoardsJson.items.find((item) => item.id === boardAlphaId);
+    expect(alphaTileAdmin).toBeDefined();
     // Admin sees all 4 tasks (including 1 hidden + 1 in Done); only 2 are overdue (Done excluded)
-    await expect(alphaTileAdmin).toContainText('4 task');
-    await expect(alphaTileAdmin).toContainText('2 quá hạn');
+    expect(alphaTileAdmin?.visibleTaskCount).toBe(4);
+    expect(alphaTileAdmin?.overdueTaskCount).toBe(2);
 
-    // Clearing search restores other boards (served from query cache or server)
-    await searchInput.fill('');
-    await expect(page.locator('article.board-tile', { hasText: boardBetaName })).toBeVisible();
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskPublicOverdueId}"]`),
+    ).toBeVisible();
+    await expect(page.locator(`.hcal-task-bar[data-task-id="${taskDoneOverdueId}"]`)).toBeVisible();
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskHiddenOverdueId}"]`),
+    ).toBeVisible();
 
     // Dept A member also sees the hidden task assigned to Dept A
     const deptCtx = await browser.newContext();
@@ -477,16 +493,20 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
     const deptTracker = await attachRuntimeErrorTracker(deptPage);
     try {
       await signInAs(deptPage, deptMemberStudentId, '/boards');
-      const deptSearchPromise = deptPage.waitForResponse((res) => {
-        if (!res.url().includes('/api/v1/boards') || res.status() !== 200) return false;
-        return new URL(res.url()).searchParams.get('q') === boardAlphaName;
-      });
-      await deptPage.getByLabel(viMessages.boards.searchLabel, { exact: true }).fill(boardAlphaName);
-      await deptSearchPromise;
-
-      const alphaTileDept = deptPage.locator('article.board-tile', { hasText: boardAlphaName });
-      await expect(alphaTileDept).toContainText('4 task');
-      await expect(alphaTileDept).toContainText('2 quá hạn');
+      await switchCalendarToYear(deptPage, 2025);
+      const deptBoardsRes = await deptPage.request.get(
+        `/api/v1/boards?q=${encodeURIComponent(boardAlphaName)}`,
+      );
+      expect(deptBoardsRes.status()).toBe(200);
+      const deptBoardsJson = (await deptBoardsRes.json()) as {
+        items: Array<{ id: string; visibleTaskCount: number; overdueTaskCount: number }>;
+      };
+      const alphaTileDept = deptBoardsJson.items.find((item) => item.id === boardAlphaId);
+      expect(alphaTileDept?.visibleTaskCount).toBe(4);
+      expect(alphaTileDept?.overdueTaskCount).toBe(2);
+      await expect(
+        deptPage.locator(`.hcal-task-bar[data-task-id="${taskHiddenOverdueId}"]`),
+      ).toBeVisible();
       await deptTracker.assertClean();
     } finally {
       await deptCtx.close();
@@ -499,20 +519,26 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
     const nonViewerResponses: string[] = [];
     try {
       await signInAs(nonViewerPage, noMemberViewStudentId, '/boards');
-      const nvSearchPromise = nonViewerPage.waitForResponse((res) => {
-        if (!res.url().includes('/api/v1/boards') || res.status() !== 200) return false;
-        return new URL(res.url()).searchParams.get('q') === boardAlphaName;
-      });
-      await nonViewerPage
-        .getByLabel(viMessages.boards.searchLabel, { exact: true })
-        .fill(boardAlphaName);
-      const nvSearchRes = await nvSearchPromise;
-      nonViewerResponses.push(await nvSearchRes.text());
+      await switchCalendarToYear(nonViewerPage, 2025);
+      const nvBoardsRes = await nonViewerPage.request.get(
+        `/api/v1/boards?q=${encodeURIComponent(boardAlphaName)}`,
+      );
+      expect(nvBoardsRes.status()).toBe(200);
+      const nvBoardsText = await nvBoardsRes.text();
+      nonViewerResponses.push(nvBoardsText);
+      const nvBoardsJson = JSON.parse(nvBoardsText) as {
+        items: Array<{ id: string; visibleTaskCount: number; overdueTaskCount: number }>;
+      };
+      const alphaTileNv = nvBoardsJson.items.find((item) => item.id === boardAlphaId);
+      expect(alphaTileNv?.visibleTaskCount).toBe(3);
+      expect(alphaTileNv?.overdueTaskCount).toBe(1);
 
-      const alphaTileNv = nonViewerPage.locator('article.board-tile', { hasText: boardAlphaName });
-      await expect(alphaTileNv).toBeVisible();
-      await expect(alphaTileNv).toContainText('3 task');
-      await expect(alphaTileNv).toContainText('1 quá hạn');
+      await expect(
+        nonViewerPage.locator(`.hcal-task-bar[data-task-id="${taskPublicOverdueId}"]`),
+      ).toBeVisible();
+      await expect(
+        nonViewerPage.locator(`.hcal-task-bar[data-task-id="${taskHiddenOverdueId}"]`),
+      ).toHaveCount(0);
 
       const bodyText = await nonViewerPage.locator('body').innerText();
       assertZeroPiiInPayloads([...nonViewerResponses, bodyText], sensitiveValues);
@@ -525,204 +551,122 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
     await tracker.assertClean();
   });
 
-  test('S04 filters, sort, URL reload persistence, DnD pause notice, drawer close URL retention, and no-member.view assignee hiding', async ({
+  test('S04 calendar & API filters, URL reload persistence, modal close URL retention, and no-member.view assignee hiding', async ({
     browser,
     page,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
     await signInAs(page, leadStudentId, `/boards/${boardAlphaId}`);
+    await switchCalendarToYear(page, 2025);
 
-    await expect(getColumnSection(page, 'Todo')).toBeVisible();
-    await expect(page.getByText(viMessages.boards.dndPausedNotice)).toHaveCount(0);
+    // Done task with past dueAt MUST render .deadline-done and NOT .deadline-overdue
+    const doneBar = page.locator(`.hcal-task-bar[data-task-id="${taskDoneOverdueId}"]`);
+    await expect(doneBar).toBeVisible();
+    await expect(doneBar).toHaveClass(/deadline-done/);
+    await expect(doneBar).not.toHaveClass(/deadline-overdue/);
+    await expect(doneBar).not.toContainText(viMessages.tasks.overdueBadge);
 
-    // Done-column task with past dueAt MUST NOT render overdue warning/danger urgency styling
-    const doneCard = getColumnSection(page, 'Done').locator('article.kanban-card', {
-      hasText: taskDoneOverdueTitle,
-    });
-    await expect(doneCard).toBeVisible();
-    await expect(doneCard).not.toHaveClass(/is-overdue/);
-    await expect(doneCard.locator('.ui-due')).toHaveClass(/is-done/);
-    await expect(doneCard.locator('.ui-due')).not.toHaveClass(/is-overdue/);
-    await expect(doneCard).not.toContainText(viMessages.tasks.overdueBadge);
+    // Verify backend /api/v1/tasks filter & sort parameters still honor priority, dueStatus, assigneeId, sortBy/sortOrder
+    const apiPrioRes = await page.request.get(
+      `/api/v1/tasks?boardId=${boardAlphaId}&priority=4`,
+    );
+    expect(apiPrioRes.status()).toBe(200);
+    const apiPrioIds = ((await apiPrioRes.json()) as { items: Array<{ id: string }> }).items.map(
+      (i) => i.id,
+    );
+    expect(apiPrioIds).toContain(taskPublicOverdueId);
+    expect(apiPrioIds).not.toContain(taskDoneOverdueId);
+    expect(apiPrioIds).not.toContain(taskUpcomingMoveId);
+
+    const apiAssigneeRes = await page.request.get(
+      `/api/v1/tasks?boardId=${boardAlphaId}&assigneeId=${deptMemberUserId}`,
+    );
+    expect(apiAssigneeRes.status()).toBe(200);
+    const apiAssigneeIds = (
+      (await apiAssigneeRes.json()) as { items: Array<{ id: string }> }
+    ).items.map((i) => i.id);
+    expect(apiAssigneeIds).toEqual([taskPublicOverdueId]);
+
+    const apiSortRes = await page.request.get(
+      `/api/v1/tasks?boardId=${boardAlphaId}&sortBy=priority&sortOrder=desc`,
+    );
+    expect(apiSortRes.status()).toBe(200);
+    const apiSortPriorities = (
+      (await apiSortRes.json()) as { items: Array<{ priority: number }> }
+    ).items.map((i) => i.priority);
+    expect(apiSortPriorities).toEqual([4, 3, 1]);
 
     // 1. Search q matching description (desc-needle-...)
-    const searchInput = page.getByLabel(viMessages.boards.filterSearchLabel, { exact: true });
-    const qFilterPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes(`boardId=${boardAlphaId}`) &&
-        res.url().includes(encodeURIComponent(`desc-needle-${suffix}`)) &&
-        res.status() === 200,
-    );
+    const searchInput = page.getByLabel(viMessages.calendar.searchLabel, { exact: true });
     await searchInput.fill(`desc-needle-${suffix}`);
-    await qFilterPromise;
+    await expect(page).toHaveURL(new RegExp(`q=desc-needle-${suffix}`));
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskPublicOverdueId}"]`),
+    ).toBeVisible();
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskDoneOverdueId}"]`),
+    ).toHaveCount(0);
 
-    await expect(page.getByText(viMessages.boards.dndPausedNotice)).toBeVisible();
-    await expect(page.locator('article.kanban-card', { hasText: taskPublicOverdueTitle })).toBeVisible();
-    await expect(page.locator('article.kanban-card', { hasText: taskDoneOverdueTitle })).toHaveCount(0);
-    await expect(page.locator('article.kanban-card', { hasText: taskUpcomingMoveTitle })).toHaveCount(0);
-    await expect(getColumnSection(page, 'Todo')).toContainText('1 task');
+    // Clear search -> Done task returns
+    await searchInput.fill('');
+    await expect(page).not.toHaveURL(/q=/);
+    await expect(page.locator(`.hcal-task-bar[data-task-id="${taskDoneOverdueId}"]`)).toBeVisible();
 
-    // Reset filters -> DnD notice disappears and all public tasks return
-    await page.getByRole('button', { name: viMessages.boards.dndPausedReset }).click();
-    await expect(page.getByText(viMessages.boards.dndPausedNotice)).toHaveCount(0);
-    await expect(page.locator('article.kanban-card', { hasText: taskDoneOverdueTitle })).toBeVisible();
-    await expect(page.locator('article.kanban-card', { hasText: taskUpcomingMoveTitle })).toBeVisible();
+    // 2. Deadline filter pill = overdue (confirms Done task excluded)
+    const filterGroup = page.getByRole('group', { name: viMessages.calendar.deadlineFilterGroup });
+    await filterGroup
+      .locator('button', { hasText: viMessages.calendar.filterOverdue.replace(/\s*\(\{count\}\)/, '') })
+      .click();
+    await expect(page).toHaveURL(/deadline=overdue/);
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskPublicOverdueId}"]`),
+    ).toBeVisible();
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskDoneOverdueId}"]`),
+    ).toHaveCount(0);
 
-    // 2. Priority = 4 (Khẩn)
-    const prioritySelect = page.getByLabel(viMessages.boards.filterPriorityLabel, { exact: true });
-    const prioPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes('priority=4') &&
-        res.status() === 200,
-    );
-    await prioritySelect.selectOption('4');
-    await prioPromise;
-    await expect(page.locator('article.kanban-card', { hasText: taskPublicOverdueTitle })).toBeVisible();
-    await expect(page.locator('article.kanban-card', { hasText: taskUpcomingMoveTitle })).toHaveCount(0);
-    await expect(page.locator('article.kanban-card', { hasText: taskDoneOverdueTitle })).toHaveCount(0);
-
-    // 3. dueStatus=overdue (confirms Done task excluded even when priority filter cleared)
-    await page.getByRole('button', { name: viMessages.boards.clearFilters }).click();
-    await expect(page).not.toHaveURL(/priority=4/);
-    const dueSelect = page.getByLabel(viMessages.boards.filterDueLabel, { exact: true });
-    const duePromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes('dueStatus=overdue') &&
-        res.status() === 200,
-    );
-    await dueSelect.selectOption('overdue');
-    await duePromise;
-    await expect(page.locator('article.kanban-card', { hasText: taskPublicOverdueTitle })).toBeVisible();
-    await expect(page.locator('article.kanban-card', { hasText: taskDoneOverdueTitle })).toHaveCount(0);
-    await expect(page.locator('article.kanban-card', { hasText: taskUpcomingMoveTitle })).toHaveCount(0);
-
-    // 4. departmentId filter
-    const deptSelect = page.getByLabel(viMessages.boards.filterDepartmentLabel, { exact: true });
-    const deptPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes(`departmentId=${deptAId}`) &&
-        res.status() === 200,
-    );
+    // 3. departmentId filter
+    const deptSelect = page.getByLabel(viMessages.calendar.departmentFilterLabel, { exact: true });
     await deptSelect.selectOption(deptAId);
-    await deptPromise;
-    await expect(page.locator('article.kanban-card', { hasText: taskPublicOverdueTitle })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`dept=${deptAId}`));
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskPublicOverdueId}"]`),
+    ).toBeVisible();
 
-    // 5. assigneeId filter (for lead WITH member.view)
-    const assigneeSelect = page.getByLabel(viMessages.boards.filterAssigneeLabel, { exact: true });
-    await expect(assigneeSelect).toBeVisible();
-    const assigneePromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes(`assigneeId=${deptMemberUserId}`) &&
-        res.status() === 200,
-    );
-    await assigneeSelect.selectOption(deptMemberUserId);
-    await assigneePromise;
-    await expect(page.locator('article.kanban-card', { hasText: taskPublicOverdueTitle })).toBeVisible();
+    // 4. Add q back + reload -> verify year, deadline, dept, q all survive reload
+    await searchInput.fill(`desc-needle-${suffix}`);
+    await expect(page).toHaveURL(new RegExp(`q=desc-needle-${suffix}`));
+    await expect(page).toHaveURL(/year=2025/);
+    await expect(page).toHaveURL(/deadline=overdue/);
+    await expect(page).toHaveURL(new RegExp(`dept=${deptAId}`));
 
-    // 6. sortBy & sortOrder + URL reload survival + TaskDetailDrawer close retention
-    await page.getByRole('button', { name: viMessages.boards.clearFilters }).click();
-    await expect(page).not.toHaveURL(/dueStatus=|departmentId=|assigneeId=|priority=/);
-    const sortBySelect = page.getByLabel(viMessages.boards.sortByLabel, { exact: true });
-    const sortOrderSelect = page.getByLabel(viMessages.boards.sortOrderLabel, { exact: true });
-
-    await prioritySelect.selectOption('4');
-    await expect(page).toHaveURL(/priority=4/);
-
-    const dueFilterAgain = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes('priority=4') &&
-        res.url().includes('dueStatus=overdue') &&
-        res.status() === 200,
-    );
-    await dueSelect.selectOption('overdue');
-    await dueFilterAgain;
-
-    const sortByPromise = page.waitForResponse(
-      (res) => res.url().includes('/api/v1/tasks') && res.url().includes('sortBy=dueAt') && res.status() === 200,
-    );
-    await sortBySelect.selectOption('dueAt');
-    await sortByPromise;
-
-    const sortOrderPromise = page.waitForResponse(
-      (res) => res.url().includes('/api/v1/tasks') && res.url().includes('sortOrder=desc') && res.status() === 200,
-    );
-    await sortOrderSelect.selectOption('desc');
-    await sortOrderPromise;
-
-    await expect(page).toHaveURL(/priority=4/);
-    await expect(page).toHaveURL(/dueStatus=overdue/);
-    await expect(page).toHaveURL(/sortBy=dueAt/);
-    await expect(page).toHaveURL(/sortOrder=desc/);
-
-    // Reload and confirm filter/sort params & DnD-paused banner survive
-    const reloadTasksPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes('priority=4') &&
-        res.url().includes('dueStatus=overdue') &&
-        res.url().includes('sortBy=dueAt') &&
-        res.url().includes('sortOrder=desc') &&
-        res.status() === 200,
-    );
     await page.reload();
-    await reloadTasksPromise;
+    await expect(page).toHaveURL(/year=2025/);
+    await expect(page).toHaveURL(/deadline=overdue/);
+    await expect(page).toHaveURL(new RegExp(`dept=${deptAId}`));
+    await expect(page).toHaveURL(new RegExp(`q=desc-needle-${suffix}`));
+    await expect(deptSelect).toHaveValue(deptAId);
+    await expect(searchInput).toHaveValue(`desc-needle-${suffix}`);
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskPublicOverdueId}"]`),
+    ).toBeVisible();
+    await expect(
+      page.locator(`.hcal-task-bar[data-task-id="${taskDoneOverdueId}"]`),
+    ).toHaveCount(0);
 
-    await expect(page).toHaveURL(/priority=4/);
-    await expect(page).toHaveURL(/dueStatus=overdue/);
-    await expect(page).toHaveURL(/sortBy=dueAt/);
-    await expect(page).toHaveURL(/sortOrder=desc/);
-    await expect(prioritySelect).toHaveValue('4');
-    await expect(dueSelect).toHaveValue('overdue');
-    await expect(sortBySelect).toHaveValue('dueAt');
-    await expect(sortOrderSelect).toHaveValue('desc');
-    await expect(page.getByText(viMessages.boards.dndPausedNotice)).toBeVisible();
-    await expect(page.locator('article.kanban-card', { hasText: taskPublicOverdueTitle })).toBeVisible();
-    await expect(page.locator('article.kanban-card', { hasText: taskDoneOverdueTitle })).toHaveCount(0);
+    // Open and close near-fullscreen TaskDetailDrawer modal -> active filters remain in URL
+    await page.locator(`.hcal-task-bar[data-task-id="${taskPublicOverdueId}"]`).click();
+    const modal = page.locator('aside.task-modal-shell[role="dialog"]');
+    await expect(modal).toBeVisible();
+    await modal.getByRole('button', { name: viMessages.common.close }).click();
+    await expect(modal).toHaveCount(0);
 
-    // Open and close TaskDetailDrawer -> active filters remain in URL
-    const cardToOpen = page.locator('article.kanban-card', { hasText: taskPublicOverdueTitle });
-    await cardToOpen.locator('button.kanban-card-open').click();
-    const drawer = page.getByRole('dialog', { name: viMessages.tasks.drawerTitle });
-    await expect(drawer).toBeVisible();
-    await drawer.getByRole('button', { name: viMessages.common.close }).click();
-    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL(/year=2025/);
+    await expect(page).toHaveURL(/deadline=overdue/);
+    await expect(page).toHaveURL(new RegExp(`dept=${deptAId}`));
+    await expect(page).toHaveURL(new RegExp(`q=desc-needle-${suffix}`));
 
-    await expect(page).toHaveURL(/priority=4/);
-    await expect(page).toHaveURL(/dueStatus=overdue/);
-    await expect(page).toHaveURL(/sortBy=dueAt/);
-    await expect(page).toHaveURL(/sortOrder=desc/);
-
-    // Sort-only (without filters) also pauses DnD and returns tasks sorted by priority desc
-    await page.getByRole('button', { name: viMessages.boards.dndPausedReset }).click();
-    await expect(page).not.toHaveURL(/priority=|dueStatus=|sortBy=|sortOrder=/);
-    const sortOnlyPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes('sortBy=priority') &&
-        res.status() === 200,
-    );
-    await sortBySelect.selectOption('priority');
-    await sortOnlyPromise;
-    const sortDescPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/tasks') &&
-        res.url().includes('sortBy=priority') &&
-        res.url().includes('sortOrder=desc') &&
-        res.status() === 200,
-    );
-    await sortOrderSelect.selectOption('desc');
-    const sortDescRes = await sortDescPromise;
-    const sortDescBody = (await sortDescRes.json()) as { items: Array<{ priority: number }> };
-    expect(sortDescBody.items.map((item) => item.priority)).toEqual([4, 3, 1]);
-    await expect(page.getByText(viMessages.boards.dndPausedNotice)).toBeVisible();
-
-    // User WITHOUT member.view: does NOT see assignee select and triggers ZERO /api/v1/members requests
+    // User WITHOUT member.view: triggers ZERO /api/v1/members requests on /tasks and modal
     const noViewCtx = await browser.newContext();
     const noViewPage = await noViewCtx.newPage();
     const noViewTracker = await attachRuntimeErrorTracker(noViewPage);
@@ -735,10 +679,11 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
 
     try {
       await signInAs(noViewPage, noMemberViewStudentId, `/boards/${boardAlphaId}`);
-      await expect(getColumnSection(noViewPage, 'Doing')).toBeVisible();
-      await expect(
-        noViewPage.getByLabel(viMessages.boards.filterAssigneeLabel, { exact: true }),
-      ).toHaveCount(0);
+      await switchCalendarToYear(noViewPage, 2028);
+      const upcomingBar = noViewPage.locator(`.hcal-task-bar[data-task-id="${taskUpcomingMoveId}"]`);
+      await expect(upcomingBar).toBeVisible();
+      await upcomingBar.click();
+      await expect(noViewPage.locator('aside.task-modal-shell[role="dialog"]')).toBeVisible();
       expect(memberRequests).toEqual([]);
       await noViewTracker.assertClean();
     } finally {
@@ -748,68 +693,39 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
     await tracker.assertClean();
   });
 
-  test('S04 card menu "Chuyển tới cột…" moves task while filtered, persists across reload, records task_events, and enforces AC-15 404 + zero PII', async ({
+  test('S04 task move API persists column & task_events without PII, and enforces AC-15 404 on hidden task API + UI', async ({
     page,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
     const interceptedPayloads: string[] = [];
 
+    // Legacy /boards/{id} redirects to /tasks
     await signInAs(page, noMemberViewStudentId, `/boards/${boardAlphaId}`);
-    await expect(getColumnSection(page, 'Doing')).toBeVisible();
+    await switchCalendarToYear(page, 2025);
 
     // Hidden task must never render in DOM for non-viewer
-    await expect(page.locator('article.kanban-card', { hasText: taskHiddenOverdueTitle })).toHaveCount(0);
-
-    // Filter to taskUpcomingMoveTitle (DnD paused) and move via ⋯ -> "Chuyển tới cột…" without opening TaskDetailDrawer
-    const filterQPromise = page.waitForResponse((res) => {
-      if (!res.url().includes('/api/v1/tasks') || res.status() !== 200) return false;
-      return new URL(res.url()).searchParams.get('q') === taskUpcomingMoveTitle;
-    });
-    await page
-      .getByLabel(viMessages.boards.filterSearchLabel, { exact: true })
-      .fill(taskUpcomingMoveTitle);
-    const filterQRes = await filterQPromise;
-    interceptedPayloads.push(await filterQRes.text());
-    await expect(page.getByText(viMessages.boards.dndPausedNotice)).toBeVisible();
-
-    const targetCard = getColumnSection(page, 'Doing').locator('article.kanban-card', {
-      hasText: taskUpcomingMoveTitle,
-    });
-    await expect(targetCard).toBeVisible();
-
-    await targetCard.getByLabel(viMessages.tasks.taskActionsMenu, { exact: true }).click();
-    await expect(targetCard.getByText(viMessages.tasks.moveToColumnMenu)).toBeVisible();
-    await expect(targetCard.getByRole('menuitem', { name: 'Doing' })).toHaveCount(0);
-
-    const movePromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/tasks/${taskUpcomingMoveId}/move`) &&
-        res.request().method() === 'POST',
-    );
-    await targetCard.getByRole('menuitem', { name: 'Review' }).click();
-    expect((await movePromise).status()).toBe(200);
-
-    // TaskDetailDrawer must NOT have opened
-    await expect(page.getByRole('dialog', { name: viMessages.tasks.drawerTitle })).toHaveCount(0);
     await expect(
-      getColumnSection(page, 'Review').locator('article.kanban-card', {
-        hasText: taskUpcomingMoveTitle,
-      }),
-    ).toBeVisible();
-
-    // Reset filter and reload -> task remains in Review
-    await page.getByRole('button', { name: viMessages.boards.dndPausedReset }).click();
-    await page.reload();
-    await expect(
-      getColumnSection(page, 'Review').locator('article.kanban-card', {
-        hasText: taskUpcomingMoveTitle,
-      }),
-    ).toBeVisible();
-    await expect(
-      getColumnSection(page, 'Doing').locator('article.kanban-card', {
-        hasText: taskUpcomingMoveTitle,
-      }),
+      page.locator(`.hcal-task-bar[data-task-id="${taskHiddenOverdueId}"]`),
     ).toHaveCount(0);
+    await expect(page.getByText(taskHiddenOverdueTitle)).toHaveCount(0);
+
+    // Move taskUpcomingMoveId via /api/v1/tasks/{id}/move -> persists in DB & records task_events without PII
+    const moveRes = await page.request.post(`/api/v1/tasks/${taskUpcomingMoveId}/move`, {
+      data: {
+        columnId: colReviewId,
+        version: 1,
+      },
+    });
+    expect(moveRes.status()).toBe(200);
+    const moveBodyText = await moveRes.text();
+    interceptedPayloads.push(moveBodyText);
+
+    const [movedDbTask] = await db
+      .select({ columnId: tasks.columnId })
+      .from(tasks)
+      .where(eq(tasks.id, taskUpcomingMoveId))
+      .limit(1);
+    expect(movedDbTask?.columnId).toBe(colReviewId);
 
     // Verify task_events recorded the move cleanly without PII
     const moveEvents = await db
@@ -857,7 +773,16 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
     const hiddenDetailRes = await page.request.get(`/api/v1/tasks/${taskHiddenOverdueId}`);
     expect(hiddenDetailRes.status()).toBe(404);
 
-    // Move taskUpcomingMoveId via ⋯ -> Done when overdue-like? We already moved it to Review; also verify moving to Done removes overdue badge if overdue
+    // Direct UI /boards/{id}?task={hiddenId} redirects to /tasks?task={hiddenId} & renders 404 ErrorState
+    await page.goto(`/boards/${boardAlphaId}?task=${taskHiddenOverdueId}`);
+    await page.waitForURL(`${BASE_ORIGIN}/tasks?task=${taskHiddenOverdueId}`);
+    const notFoundModal = page.locator('aside.task-modal-shell[role="dialog"]');
+    await expect(notFoundModal).toBeVisible();
+    await expect(notFoundModal.getByText(viMessages.errors['404'].code)).toBeVisible();
+    await expect(notFoundModal.getByText(viMessages.errors['404'].title)).toBeVisible();
+    await expect(notFoundModal.getByText(viMessages.errors['404'].description)).toBeVisible();
+    await expect(notFoundModal).not.toContainText(taskHiddenOverdueTitle);
+
     const domText = await page.locator('body').innerText();
     assertZeroPiiInPayloads(
       [

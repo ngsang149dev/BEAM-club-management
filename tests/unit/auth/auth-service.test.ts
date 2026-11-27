@@ -658,7 +658,7 @@ describe('AuthService', () => {
       ip: '10.0.0.3',
     });
     expect(loginResult.rememberMe).toBe(false);
-    expect(loginResult.response.redirectTo).toBe('/boards');
+    expect(loginResult.response.redirectTo).toBe('/tasks');
     expect(loginResult.response.expiresAt).toBe('2026-11-24T00:30:00.000Z');
 
     const initialInfo = await service.getSessionInfo(loginResult.rawToken);
@@ -851,7 +851,7 @@ describe('AuthService', () => {
     });
     expect(repo.sessions.get(legacyOtherSession.id)?.revokedAt).not.toBeNull();
 
-    // Old password rejected, new password accepted with default /boards redirect
+    // Old password rejected, new password accepted with default /tasks redirect
     const oldPassErr = await captureAppError(() =>
       service.login({
         studentId: 'MSSV-UNIT-FIRST',
@@ -867,7 +867,7 @@ describe('AuthService', () => {
       ip: '10.0.0.7',
     });
     expect(relogin.response.user.mustChangePassword).toBe(false);
-    expect(relogin.response.redirectTo).toBe('/boards');
+    expect(relogin.response.redirectTo).toBe('/tasks');
 
     const stored = repo.profiles.get('user-first-login')!;
     const logsSerialized = JSON.stringify(rawLogs);

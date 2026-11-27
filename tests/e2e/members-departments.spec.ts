@@ -546,7 +546,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
     await tracker.assertClean();
   });
 
-  test('onboards member with explicit initialPassword, redirects to /profile?changePassword=1, enforces 400 INVALID_CURRENT_PASSWORD without logout, updates password cleanly, and relogs directly to /boards (CR-01)', async ({
+  test('onboards member with explicit initialPassword, redirects to /profile?changePassword=1, enforces 400 INVALID_CURRENT_PASSWORD without logout, updates password cleanly, and relogs directly to /tasks (CR-01, CR-10)', async ({
     page,
     browser,
   }) => {
@@ -690,7 +690,7 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
           .mustChangePassword,
       ).toBe(false);
 
-      // Sign out -> old password rejected 401 -> new password lands directly on /boards
+      // Sign out -> old password rejected 401 -> new password lands directly on /tasks
       await memberPage.locator('.profile-signout').click();
       await memberPage.waitForURL(`${BASE_ORIGIN}/login`);
 
@@ -710,10 +710,10 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       const reloginResp = await reloginPromise;
       expect(reloginResp.status()).toBe(200);
       expect(JSON.parse(await reloginResp.text())).toMatchObject({
-        redirectTo: '/boards',
+        redirectTo: '/tasks',
         user: { mustChangePassword: false },
       });
-      await memberPage.waitForURL(`${BASE_ORIGIN}/boards`);
+      await memberPage.waitForURL(`${BASE_ORIGIN}/tasks`);
       await memberTracker.assertClean();
     } finally {
       await memberContext.close();

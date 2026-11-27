@@ -2,9 +2,7 @@
 
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';
-import { TASK_PRIORITIES, type TaskPriority } from '@/lib/tasks';
 import { describeTaskError } from '../error-mapping';
-import { PRIORITY_MESSAGE_KEY } from '../formatters';
 
 export interface TaskAssigneeOption {
   readonly id: string;
@@ -50,60 +48,29 @@ export function TaskErrorBanner({
   );
 }
 
-export function TaskPrioritySelect({
+function TaskDateField({
+  label,
+  clearLabel,
   value,
   disabled = false,
+  errorText,
   onChange,
 }: {
-  value: TaskPriority;
-  disabled?: boolean;
-  onChange: (next: TaskPriority) => void;
+  readonly label: string;
+  readonly clearLabel: string;
+  readonly value: string;
+  readonly disabled?: boolean;
+  readonly errorText?: string | null;
+  readonly onChange: (next: string) => void;
 }) {
-  const tTasks = useTranslations('tasks');
-  const tPrio = useTranslations('priority');
   const id = useId();
-
   return (
     <div className="ui-field">
       <div className="ui-field-label-row">
-        <label className="ui-label" htmlFor={id}>{tTasks('priorityLabel')}</label>
-      </div>
-      <select
-        id={id}
-        className="ui-select"
-        value={String(value)}
-        disabled={disabled}
-        onChange={(e) => onChange(Number(e.target.value) as TaskPriority)}
-      >
-        {[...TASK_PRIORITIES].reverse().map((level) => (
-          <option key={level} value={String(level)}>
-            {tPrio(PRIORITY_MESSAGE_KEY[level])}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-export function TaskDueDateInput({
-  value,
-  disabled = false,
-  onChange,
-}: {
-  value: string;
-  disabled?: boolean;
-  onChange: (next: string) => void;
-}) {
-  const tTasks = useTranslations('tasks');
-  const id = useId();
-
-  return (
-    <div className="ui-field">
-      <div className="ui-field-label-row">
-        <label className="ui-label" htmlFor={id}>{tTasks('dueAtLabel')}</label>
+        <label className="ui-label" htmlFor={id}>{label}</label>
         {value && !disabled ? (
           <button type="button" className="task-due-clear-btn" onClick={() => onChange('')}>
-            {tTasks('clearDueAt')}
+            {clearLabel}
           </button>
         ) : null}
       </div>
@@ -113,9 +80,56 @@ export function TaskDueDateInput({
         type="date"
         value={value}
         disabled={disabled}
+        aria-invalid={Boolean(errorText)}
         onChange={(e) => onChange(e.target.value)}
       />
+      {errorText ? <p className="ui-field-error" role="alert">{errorText}</p> : null}
     </div>
+  );
+}
+
+export function TaskStartDateInput({
+  value,
+  disabled = false,
+  onChange,
+}: {
+  readonly value: string;
+  readonly disabled?: boolean;
+  readonly onChange: (next: string) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+  return (
+    <TaskDateField
+      label={tTasks('startAtLabel')}
+      clearLabel={tTasks('clearStartAt')}
+      value={value}
+      disabled={disabled}
+      onChange={onChange}
+    />
+  );
+}
+
+export function TaskDueDateInput({
+  value,
+  disabled = false,
+  errorText,
+  onChange,
+}: {
+  readonly value: string;
+  readonly disabled?: boolean;
+  readonly errorText?: string | null;
+  readonly onChange: (next: string) => void;
+}) {
+  const tTasks = useTranslations('tasks');
+  return (
+    <TaskDateField
+      label={tTasks('dueAtLabel')}
+      clearLabel={tTasks('clearDueAt')}
+      value={value}
+      disabled={disabled}
+      errorText={errorText}
+      onChange={onChange}
+    />
   );
 }
 

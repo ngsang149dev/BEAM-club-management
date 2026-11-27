@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { TaskToggleCard } from './TaskToggleCard';
 
 export interface TaskNotificationOptionsProps {
   readonly notifyInApp: boolean;
@@ -10,7 +11,7 @@ export interface TaskNotificationOptionsProps {
   readonly disabled?: boolean;
 }
 
-function NotificationBellOptionIcon() {
+export function NotificationBellOptionIcon() {
   return (
     <svg
       className="ic task-notify-option-icon"
@@ -30,7 +31,7 @@ function NotificationBellOptionIcon() {
   );
 }
 
-function NotificationEmailOptionIcon() {
+export function NotificationEmailOptionIcon() {
   return (
     <svg
       className="ic task-notify-option-icon"
@@ -63,26 +64,22 @@ export function TaskNotificationOptions({
     <div className="task-notify-card">
       <h4 className="task-notify-title">{tTasks('notifySectionTitle')}</h4>
       <div className="task-notify-options">
-        <label className={`task-notify-option${notifyInApp ? ' is-checked' : ''}`}>
-          <input
-            type="checkbox"
-            checked={notifyInApp}
-            disabled={disabled}
-            onChange={(event) => onToggleNotifyInApp(event.target.checked)}
-          />
-          <NotificationBellOptionIcon />
-          <span>{tTasks('notifyInAppLabel')}</span>
-        </label>
-        <label className={`task-notify-option${notifyEmail ? ' is-checked' : ''}`}>
-          <input
-            type="checkbox"
-            checked={notifyEmail}
-            disabled={disabled}
-            onChange={(event) => onToggleNotifyEmail(event.target.checked)}
-          />
-          <NotificationEmailOptionIcon />
-          <span>{tTasks('notifyEmailLabel')}</span>
-        </label>
+        <TaskToggleCard
+          className="task-notify-option"
+          checked={notifyInApp}
+          disabled={disabled}
+          label={tTasks('notifyInAppLabel')}
+          icon={<NotificationBellOptionIcon />}
+          onToggle={onToggleNotifyInApp}
+        />
+        <TaskToggleCard
+          className="task-notify-option"
+          checked={notifyEmail}
+          disabled={disabled}
+          label={tTasks('notifyEmailLabel')}
+          icon={<NotificationEmailOptionIcon />}
+          onToggle={onToggleNotifyEmail}
+        />
       </div>
     </div>
   );

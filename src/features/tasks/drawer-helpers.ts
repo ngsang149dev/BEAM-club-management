@@ -1,25 +1,29 @@
 import { z } from 'zod';
-import { taskPrioritySchema, taskTitleSchema } from '@/lib/tasks';
+import { taskTitleSchema } from '@/lib/tasks';
 import { utcIsoToHoChiMinhInput } from './formatters';
-import type { ReplaceTaskAssigneesRequest, TaskDto } from './hooks/useTasks';
+import type { DepartmentDto, ReplaceTaskAssigneesRequest, TaskDto } from './hooks/useTasks';
 import type { TaskAssigneeOption, TaskDepartmentOption } from './components/TaskFormFields';
 
-export const editTaskSchema = z.object({
-  title: taskTitleSchema,
-  description: z.string().max(10000),
-  dueAtInput: z.string(),
-  priority: taskPrioritySchema,
-});
+export const editTaskSchema = z
+  .object({
+    title: taskTitleSchema,
+    description: z.string().max(10000),
+    startAtInput: z.string(),
+    dueAtInput: z.string(),
+  })
+  .refine((d) => !(d.startAtInput && d.dueAtInput && d.startAtInput > d.dueAtInput), {
+    message: 'invalidDateRange',
+    path: ['dueAtInput'],
+  });
 
 export type EditTaskValues = z.infer<typeof editTaskSchema>;
 
 export function toEditTaskValues(task: TaskDto): EditTaskValues {
-  const initialPrio = task.priority >= 1 && task.priority <= 4 ? (task.priority as 1 | 2 | 3 | 4) : 2;
   return {
     title: task.title,
     description: task.description ?? '',
+    startAtInput: utcIsoToHoChiMinhInput(task.startAt),
     dueAtInput: utcIsoToHoChiMinhInput(task.dueAt),
-    priority: initialPrio,
   };
 }
 
@@ -39,6 +43,23 @@ export function mergeDepartmentOptions(
   const seen = new Set(catalog.map((dept) => dept.id));
   const missing = assignedDepartments.filter((dept) => !seen.has(dept.id));
   return [...catalog, ...missing];
+}
+
+export function resolveAssignedDepartmentLeads(
+  assignedDepartments: TaskDto['assignedDepartments'],
+  catalog: readonly DepartmentDto[],
+  leftBadge: string
+): string[] {
+  const byId = new Map(catalog.map((dept) => [dept.id, dept]));
+  const seenIds = new Set<string>();
+  const labels: string[] = [];
+  for (const assigned of assignedDepartments) {
+    const lead = byId.get(assigned.id)?.lead;
+    if (!lead || seenIds.has(lead.id)) continue;
+    seenIds.add(lead.id);
+    labels.push(lead.isActive ? lead.fullName : `${lead.fullName} ${leftBadge}`);
+  }
+  return labels;
 }
 
 export function toggleId(prev: string[], id: string): string[] {

@@ -8,6 +8,7 @@ import { hasTaskVersionChanged } from '../drawer-helpers';
 import { useUndoTaskActionToast } from '../hooks/useTaskEvents';
 import { useUpdateTaskHiddenMutation, type TaskDto } from '../hooks/useTasks';
 import { TaskErrorBanner } from './TaskFormFields';
+import { TaskToggleCard } from './TaskToggleCard';
 
 export function canToggleTaskHidden({
   isAdmin,
@@ -22,6 +23,15 @@ export function canToggleTaskHidden({
   return Boolean(currentUserId && creatorId === currentUserId);
 }
 
+export function HiddenLockIcon() {
+  return (
+    <svg className="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
 function UnassignedHiddenWarning() {
   const tTasks = useTranslations('tasks');
   return (
@@ -30,38 +40,6 @@ function UnassignedHiddenWarning() {
         <span className="ui-banner-title">{tTasks('hiddenUnassignedWarnTitle')}</span>
         <span className="ui-banner-text">{tTasks('hiddenUnassignedWarnBody')}</span>
       </div>
-    </div>
-  );
-}
-
-function HiddenToggleButton({
-  isHidden,
-  isPending,
-  onToggle,
-}: {
-  readonly isHidden: boolean;
-  readonly isPending: boolean;
-  readonly onToggle: () => void;
-}) {
-  const tTasks = useTranslations('tasks');
-  const label = isPending
-    ? tTasks('hiddenTogglePending')
-    : isHidden
-      ? tTasks('hiddenToggleShow')
-      : tTasks('hiddenToggleHide');
-
-  return (
-    <div className="task-section-actions">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={isHidden}
-        className={isHidden ? 'ui-btn secondary is-sm' : 'ui-btn ghost is-sm'}
-        disabled={isPending}
-        onClick={onToggle}
-      >
-        {label}
-      </button>
     </div>
   );
 }
@@ -99,7 +77,7 @@ function useTaskHiddenToggleController(task: TaskDto) {
             boardId: data.task.boardId,
             eventId: data.eventId,
           }),
-      },
+      }
     );
   };
 
@@ -115,15 +93,17 @@ export function TaskHiddenSection({
 }) {
   const tTasks = useTranslations('tasks');
   const { canToggle, hiddenMutation, handleToggle } = useTaskHiddenToggleController(task);
-
-  if (!canToggle) {
-    return null;
-  }
+  if (!canToggle) return null;
 
   const isUnassigned = task.assignees.length === 0 && task.assignedDepartments.length === 0;
+  const toggleLabel = hiddenMutation.isPending
+    ? tTasks('hiddenTogglePending')
+    : task.isHidden
+      ? tTasks('hiddenToggleShow')
+      : tTasks('hiddenToggleHide');
 
   return (
-    <section className="task-drawer-section task-hidden-section">
+    <section className="task-side-card task-hidden-section">
       <div className="task-hidden-head">
         <h3 className="task-section-title">{tTasks('hiddenSectionTitle')}</h3>
         <span className={task.isHidden ? 'ui-chip task-hidden-chip' : 'ui-chip'}>
@@ -141,9 +121,11 @@ export function TaskHiddenSection({
         {task.isHidden ? tTasks('hiddenStatusHiddenDesc') : tTasks('hiddenStatusPublicDesc')}
       </p>
       {isUnassigned ? <UnassignedHiddenWarning /> : null}
-      <HiddenToggleButton
-        isHidden={task.isHidden}
-        isPending={hiddenMutation.isPending}
+      <TaskToggleCard
+        checked={task.isHidden}
+        disabled={hiddenMutation.isPending}
+        label={toggleLabel}
+        icon={<HiddenLockIcon />}
         onToggle={handleToggle}
       />
     </section>

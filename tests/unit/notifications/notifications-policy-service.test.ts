@@ -196,6 +196,10 @@ describe('notifications policy & NotificationsService', () => {
     expect(hiddenVi.text).not.toContain('LEAK_TITLE');
     expect(hiddenVi.html).not.toContain('LEAK_TITLE');
     expect(hiddenVi.html).toContain('Board &lt;1&gt;');
+    expect(hiddenVi.text).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(hiddenVi.html).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(hiddenVi.text).not.toContain('/boards/');
+    expect(hiddenVi.html).not.toContain('/boards/');
 
     const publicEn = buildDepartmentAssignedEmail({
       locale: 'en',
@@ -212,6 +216,10 @@ describe('notifications policy & NotificationsService', () => {
     expect(publicEn.subject).toContain('Design Poster');
     expect(publicEn.text).toContain('Design Poster');
     expect(publicEn.text).toContain('Leader assigned a task to department Media.');
+    expect(publicEn.text).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(publicEn.html).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(publicEn.text).not.toContain('/boards/');
+    expect(publicEn.html).not.toContain('/boards/');
 
     // Direct assignment copy (departmentNames: []) in vi & en (public + WQ-27 hidden)
     const directHiddenVi = buildDepartmentAssignedEmail({
@@ -283,6 +291,18 @@ describe('notifications policy & NotificationsService', () => {
     expect(directPublicEn.subject).toBe('[BEAM] New task assigned to you: Prepare slides');
     expect(directPublicEn.text).toContain('Leader assigned a task to you.');
     expect(directPublicEn.text).not.toContain('department BEAM');
+    const withoutBoardId = buildDepartmentAssignedEmail({
+      locale: 'en',
+      recipientName: 'Alex',
+      actorName: 'Leader',
+      boardName: 'Board Ops',
+      departmentNames: [],
+      taskTitle: 'Prepare slides',
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org/',
+      taskId: TASK_ID,
+    });
+    expect(withoutBoardId.text).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
   });
 
   it('dispatches deduplicated bilingual emails, survives SMTP failure without throwing, and enforces markRead 404/unreadCount', async () => {
@@ -598,6 +618,10 @@ describe('notifications policy & NotificationsService', () => {
     expect(redactedEmail.text).not.toContain('secret.example.com');
     expect(redactedEmail.html).not.toContain('SECRET_DELIVERABLE_TITLE');
     expect(redactedEmail.html).not.toContain('secret.example.com');
+    expect(redactedEmail.text).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(redactedEmail.html).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(redactedEmail.text).not.toContain('/boards/');
+    expect(redactedEmail.html).not.toContain('/boards/');
 
     // Public deliverable email includes both task title and deliverable link
     const publicEmail = buildLeadActivityEmail({
@@ -618,6 +642,24 @@ describe('notifications policy & NotificationsService', () => {
     expect(publicEmail.subject).toContain('Design Poster');
     expect(publicEmail.text).toContain('Final PDF');
     expect(publicEmail.text).toContain('https://drive.google.com/file/1');
+    expect(publicEmail.text).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(publicEmail.html).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
+    expect(publicEmail.text).not.toContain('/boards/');
+    expect(publicEmail.html).not.toContain('/boards/');
+
+    const leadWithoutBoardId = buildLeadActivityEmail({
+      kind: 'task.accepted',
+      locale: 'en',
+      recipientName: 'Lead Member',
+      actorName: 'Assignee Actor',
+      boardName: 'Board Ops',
+      departmentNames: [],
+      taskTitle: 'Design Poster',
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org/',
+      taskId: TASK_ID,
+    });
+    expect(leadWithoutBoardId.text).toContain(`https://beam.example.org/tasks?task=${TASK_ID}`);
 
     // End-to-end service calls with in-memory repo & failing SMTP check
     const repo = new InMemoryNotificationsRepo();

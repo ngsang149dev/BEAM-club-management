@@ -174,11 +174,11 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
     expect(toEditTaskValues(taskV4)).toEqual({
       title: 'Task v4',
       description: 'Desc v4',
+      startAtInput: '',
       dueAtInput: '2026-11-29',
-      priority: 2,
     });
-    expect(toEditTaskValues(taskV5).priority).toBe(4);
-    expect(toEditTaskValues(taskV6).priority).toBe(2);
+    expect(toEditTaskValues(taskV5).title).toBe('Task v5');
+    expect(toEditTaskValues(taskV6).title).toBe('Task v6');
 
     const draftV4 = applyAssigneeSelectionToggle(null, taskV4, 'dept', 'd-extra');
     expect(resolveAssigneeSelection(draftV4, taskV4).deptIds).toEqual(['d-1', 'd-extra']);
@@ -190,7 +190,8 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
       createElement(TaskEditFormSection, { task: taskV5, onReload: vi.fn() }),
       qc
     );
-    expect(editHtmlV5).toContain('<option value="4" selected="">Khẩn</option>');
+    expect(editHtmlV5).not.toContain('prio-p4');
+    expect(editHtmlV5).not.toContain('<option value="4"');
     expect(editHtmlV5).toContain('value="2026-11-29"');
 
     const assigneesHtmlV5 = renderWithProviders(
@@ -310,7 +311,7 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
 
     // 1. Trigger 409 conflict -> observer holds error -> reset() clears it cleanly
     await expect(
-      observer.mutate({ id: taskV4.id, payload: { priority: 4, version: 3 } })
+      observer.mutate({ id: taskV4.id, payload: { title: 'Updated v4', version: 3 } })
     ).rejects.toThrow();
     expect(observer.getCurrentResult().error).toBeInstanceOf(ApiClientError);
     observer.reset();
@@ -318,7 +319,7 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
 
     // 2. Retry with refreshed v4 -> observer stays mounted across v4->v5 -> Undo toast fires
     const mutatePromise = observer.mutate(
-      { id: taskV4.id, payload: { priority: 4, version: 4 } },
+      { id: taskV4.id, payload: { title: 'Updated v5', version: 4 } },
       {
         onSuccess: (data) => {
           perCallOnSuccess(data);
