@@ -31,7 +31,7 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
     const assigneeIds = input.assigneeIds ?? [];
     if (input.departmentIds.length === 0 && assigneeIds.length === 0) return null;
     const [[taskRow], [boardRow], [actorRow], deptRows, memberRows, directRows] = await Promise.all([
-      this.db.select({ id: tasks.id, title: tasks.title, isHidden: tasks.isHidden }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
+      this.db.select({ id: tasks.id, title: tasks.title, description: tasks.description, startAt: tasks.startAt, dueAt: tasks.dueAt, isCompleted: tasks.isCompleted, isHidden: tasks.isHidden }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
       this.db.select({ id: boards.id, name: boards.name }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).limit(1),
       this.db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(eq(profiles.id, input.actorId)).limit(1),
       this.loadAssignedDepartments(input.departmentIds),
@@ -46,7 +46,7 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
     readonly taskId: string; readonly boardId: string; readonly actorId: string; readonly deliverableId?: string;
   }): Promise<TaskActivityNotificationContextRecord | null> {
     const [[taskRow], [boardRow], [actorRow], taskDepts, assigneeRows, deliverableRows] = await Promise.all([
-      this.db.select({ id: tasks.id, title: tasks.title, isHidden: tasks.isHidden, createdBy: tasks.createdBy }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
+      this.db.select({ id: tasks.id, title: tasks.title, description: tasks.description, startAt: tasks.startAt, dueAt: tasks.dueAt, isCompleted: tasks.isCompleted, isHidden: tasks.isHidden, createdBy: tasks.createdBy }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
       this.db.select({ id: boards.id, name: boards.name }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).limit(1),
       this.db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(eq(profiles.id, input.actorId)).limit(1),
       this.db.select({ id: departments.id, name: departments.name, leadUserId: departments.leadUserId }).from(taskDepartments).innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(eq(taskDepartments.taskId, input.taskId)),

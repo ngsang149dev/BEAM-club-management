@@ -3,7 +3,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import type { TaskPriority } from '@/lib/tasks';
 import {
   REMINDER_GROUP_MSG_KEYS,
   formatPreviewDate,
@@ -14,26 +13,6 @@ import {
 } from '../preview-helpers';
 
 export type EmailTranslator = ReturnType<typeof useTranslations<'reminders.emailContent.vi'>>;
-
-export function PreviewPriorityPill({
-  priority,
-  tEmail,
-}: {
-  readonly priority: TaskPriority;
-  readonly tEmail: EmailTranslator;
-}) {
-  const key = `prio${priority}` as const;
-  return (
-    <span className={`ui-prio p${priority}`}>
-      <span className="ui-prio-bars" aria-hidden="true">
-        {[1, 2, 3, 4].map((bar) => (
-          <i key={bar} className={bar <= priority ? 'on' : undefined} />
-        ))}
-      </span>
-      <span>{tEmail(key)}</span>
-    </span>
-  );
-}
 
 export function PreviewDuePill({
   item,
@@ -83,7 +62,6 @@ export function PreviewTaskRow({
 
   return (
     <div className="rem-email-task">
-      <span className="rem-email-task-prio"><PreviewPriorityPill priority={item.priority} tEmail={tEmail} /></span>
       <span className="rem-email-task-main"><b>{title}</b><span>{subtitle}</span></span>
       <span className="rem-email-task-due"><PreviewDuePill item={item} previewLocale={previewLocale} tEmail={tEmail} /></span>
     </div>
@@ -187,7 +165,6 @@ export function PreviewEmailTasksContent({
         </section>
       ))}
       <Link href="/my-tasks" className="ui-btn primary is-sm rem-email-cta">{tEmail('cta')}</Link>
-      <p className="rem-email-foot">{tEmail('foot')}</p>
     </>
   );
 }

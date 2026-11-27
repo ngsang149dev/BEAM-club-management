@@ -78,6 +78,10 @@ export interface AssembleTaskActivityContextParams {
   readonly task: {
     readonly id: string;
     readonly title: string;
+    readonly description?: string | null;
+    readonly startAt?: Date | null;
+    readonly dueAt?: Date | null;
+    readonly isCompleted?: boolean;
     readonly isHidden: boolean;
     readonly createdBy: string;
   };

@@ -269,6 +269,10 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(html).not.toContain('rem-email-kicker');
     expect(html).not.toContain('rem-preview-note');
     expect(html).not.toContain('rem-sample-banner');
+    expect(html).not.toContain('rem-email-task-prio');
+    expect(html).not.toContain('ui-prio');
+    expect(html).not.toContain('rem-email-foot');
+    expect(html).not.toContain('Mỗi người một email, mỗi ngày.');
     expect(html).toContain('Nguyễn Văn A');
     expect(html).toContain('Public overdue task');
     expect(html).toContain('Công việc ẩn (mở ứng dụng để xem chi tiết)');
@@ -461,6 +465,11 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(enPreviewHtml).not.toContain('rem-email-kicker');
     expect(enPreviewHtml).not.toContain('rem-preview-note');
     expect(enPreviewHtml).not.toContain('rem-sample-banner');
+    expect(enPreviewHtml).not.toContain('rem-email-task-prio');
+    expect(enPreviewHtml).not.toContain('ui-prio');
+    expect(enPreviewHtml).not.toContain('rem-email-foot');
+    expect(enPreviewHtml).not.toContain('One email per person, per day.');
+    expect(enPreviewHtml).not.toContain('Urgent');
     expect(enPreviewHtml).not.toContain('CONFIDENTIAL_TODAY_TASK');
     expect(enPreviewHtml).not.toContain('HiddenDept');
     expect(enPreviewHtml).not.toContain('Unmatched 5 days task');

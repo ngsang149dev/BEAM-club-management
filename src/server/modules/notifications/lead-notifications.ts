@@ -41,6 +41,30 @@ export interface LeadNotificationsDeps {
   readonly logger: Logger;
 }
 
+function extractVisibleLeadDetails(
+  context: TaskActivityNotificationContextRecord,
+  isHiddenTask: boolean,
+) {
+  if (isHiddenTask) {
+    return {
+      taskTitle: null,
+      taskDescription: null,
+      startAt: null,
+      dueAt: null,
+      deliverableTitle: null,
+      deliverableUrl: null,
+    };
+  }
+  return {
+    taskTitle: context.task.title,
+    taskDescription: context.task.description ?? null,
+    startAt: context.task.startAt ?? null,
+    dueAt: context.task.dueAt ?? null,
+    deliverableTitle: context.deliverable?.title ?? null,
+    deliverableUrl: context.deliverable?.url ?? null,
+  };
+}
+
 async function sendSingleLeadEmail(params: {
   readonly deps: LeadNotificationsDeps;
   readonly kind: 'task.accepted' | 'task.deliverable_submitted';
@@ -48,8 +72,10 @@ async function sendSingleLeadEmail(params: {
   readonly recipient: DeduplicatedLeadRecipient;
   readonly isHiddenTask: boolean;
   readonly notificationId: string | null;
+  readonly now: Date;
 }): Promise<void> {
   const { context, recipient, isHiddenTask } = params;
+  const details = extractVisibleLeadDetails(context, isHiddenTask);
   const rendered = buildLeadActivityEmail({
     kind: params.kind,
     locale: recipient.locale,
@@ -57,9 +83,8 @@ async function sendSingleLeadEmail(params: {
     actorName: context.actor.fullName,
     boardName: context.board.name,
     departmentNames: recipient.departmentNames,
-    taskTitle: isHiddenTask ? null : context.task.title,
-    deliverableTitle: isHiddenTask ? null : (context.deliverable?.title ?? null),
-    deliverableUrl: isHiddenTask ? null : (context.deliverable?.url ?? null),
+    ...details,
+    now: params.now,
     isHiddenTask,
     appUrl: params.deps.config.appUrl,
     boardId: context.board.id,
@@ -85,6 +110,7 @@ async function deliverLeadEmails(params: {
   readonly recipients: readonly DeduplicatedLeadRecipient[];
   readonly isHiddenTask: boolean;
   readonly idByUser: ReadonlyMap<string, string>;
+  readonly now: Date;
 }): Promise<void> {
   for (const recipient of params.recipients) {
     await sendSingleLeadEmail({
@@ -94,6 +120,7 @@ async function deliverLeadEmails(params: {
       recipient,
       isHiddenTask: params.isHiddenTask,
       notificationId: params.idByUser.get(recipient.userId) ?? null,
+      now: params.now,
     });
   }
 }
@@ -146,7 +173,7 @@ async function dispatchLeadActivityNotification(params: {
     buildLeadNotificationRows({ kind: params.kind, context, recipients, actorId: params.actorId, isHiddenTask, now: params.now }),
   );
   const idByUser = new Map(inserted.map((r) => [r.userId, r.id]));
-  await deliverLeadEmails({ deps: params.deps, kind: params.kind, context, recipients, isHiddenTask, idByUser });
+  await deliverLeadEmails({ deps: params.deps, kind: params.kind, context, recipients, isHiddenTask, idByUser, now: params.now });
   params.deps.logger.info('Lead activity notifications dispatched', {
     taskId: context.task.id, boardId: context.board.id, actorId: params.actorId, kind: params.kind, recipientCount: recipients.length, isHiddenTask,
   });

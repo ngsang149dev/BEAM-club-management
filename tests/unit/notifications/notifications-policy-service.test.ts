@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthActor } from '@/server/shared/authorize';
 import { FakeClock } from '@/server/shared/clock';
+import {
+  computeEmailDeadlinePill,
+  formatEmailVnDateTime,
+  truncateEmailExcerpt,
+} from '@/server/shared/email-layout';
 import { StructuredLogger } from '@/server/shared/logger';
 import type { Mailer, MailMessage } from '@/server/shared/mailer';
 import type { TransactionContext, TransactionRunner } from '@/server/shared/transaction';
@@ -704,5 +709,294 @@ describe('notifications policy & NotificationsService', () => {
     expect(sentMessages.every((m) => !m.text.includes('secret.example.com'))).toBe(true);
     expect(logs.join('\n')).toContain('SMTP connect timeout');
     expect(logs.join('\n')).not.toContain('lead-admin@eiu.edu.vn');
+  });
+
+  it('formats shared email layout helpers (excerpt, VN datetime, deadline pill), renders dual light/dark card HTML without footer, and strictly redacts enriched hidden task context', async () => {
+    // 1. Shared layout helpers
+    expect(truncateEmailExcerpt(null)).toBeNull();
+    expect(truncateEmailExcerpt('   \n\t  ')).toBeNull();
+    expect(truncateEmailExcerpt('  Hello\n\t  BEAM   world  ')).toBe('Hello BEAM world');
+    const longDesc = `${'A'.repeat(235)}   ${'B'.repeat(20)}`;
+    const truncated = truncateEmailExcerpt(longDesc, 240);
+    expect(truncated).not.toBeNull();
+    expect(Array.from(truncated!).length).toBeLessThanOrEqual(240);
+    expect(truncated!.endsWith('…')).toBe(true);
+
+    // VN UTC+7 datetime conversion (2026-11-27T06:30Z -> 13:30 VN; 2026-11-27T18:15Z -> next day 01:15 VN)
+    expect(formatEmailVnDateTime(null, 'vi')).toBeNull();
+    expect(formatEmailVnDateTime(new Date('2026-11-27T06:30:00.000Z'), 'vi')).toBe('27/11/2026 · 13:30');
+    expect(formatEmailVnDateTime(new Date('2026-11-27T06:30:00.000Z'), 'en')).toBe('2026-11-27 · 13:30');
+    expect(formatEmailVnDateTime(new Date('2026-11-27T18:15:00.000Z'), 'vi')).toBe('28/11/2026 · 01:15');
+
+    const now = new Date('2026-11-27T06:30:00.000Z'); // 2026-11-27 13:30 VN
+    expect(computeEmailDeadlinePill({ dueAt: null, now, locale: 'vi' })).toBeNull();
+    expect(computeEmailDeadlinePill({ dueAt: new Date('2026-11-26T14:00:00.000Z'), now, locale: 'vi' })).toEqual({
+      tone: 'urgent',
+      label: 'Quá hạn 1 ngày',
+    });
+    expect(computeEmailDeadlinePill({ dueAt: new Date('2026-11-27T14:00:00.000Z'), now, locale: 'en' })).toEqual({
+      tone: 'urgent',
+      label: 'Urgent · Due today',
+    });
+    expect(computeEmailDeadlinePill({ dueAt: new Date('2026-11-28T14:00:00.000Z'), now, locale: 'vi' })).toEqual({
+      tone: 'urgent',
+      label: 'Gấp · Còn 1 ngày',
+    });
+    expect(computeEmailDeadlinePill({ dueAt: new Date('2026-11-30T14:00:00.000Z'), now, locale: 'en' })).toEqual({
+      tone: 'neutral',
+      label: 'Due soon · In 3 days',
+    });
+    expect(computeEmailDeadlinePill({ dueAt: new Date('2026-12-03T14:00:00.000Z'), now, locale: 'en' })).toEqual({
+      tone: 'ok',
+      label: 'On track · In 6 days',
+    });
+
+    // 2. Department assignment HTML layout: light + soft-dark card, gradient header, rows, no footer below CTA
+    const publicAssigned = buildDepartmentAssignedEmail({
+      locale: 'vi',
+      recipientName: 'Đào Văn Thanh',
+      actorName: 'Nguyễn Bá Minh Sang',
+      boardName: 'Workshop AI',
+      departmentNames: ['Ban Truyền thông', 'Ban Sự kiện'],
+      taskTitle: 'Chụp ảnh & dựng recap',
+      taskDescription: `  Chuẩn bị máy ảnh\n  ${'chi tiết '.repeat(35)}`,
+      startAt: new Date('2026-11-27T06:30:00.000Z'),
+      dueAt: new Date('2026-11-28T14:00:00.000Z'),
+      now,
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org',
+      taskId: TASK_ID,
+    });
+    expect(publicAssigned.html).toContain('<meta charset="UTF-8">');
+    expect(publicAssigned.html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(publicAssigned.html).toContain('<meta name="supported-color-schemes" content="light dark">');
+    expect(publicAssigned.html).toContain('@media (prefers-color-scheme: dark)');
+    expect(publicAssigned.html).toContain('.beam-email-card { background-color: #23252f !important;');
+    expect(publicAssigned.html).toContain('.beam-email-outer { background-color: #181920 !important;');
+    expect(publicAssigned.html).toContain('linear-gradient(135deg,#be185d 0%,#db2777 52%,#ea580c 100%)');
+    expect(publicAssigned.html).toContain('Ban Truyền thông · Ban Sự kiện');
+    expect(publicAssigned.html).toContain('27/11/2026 · 13:30');
+    expect(publicAssigned.html).toContain('28/11/2026 · 21:00');
+    expect(publicAssigned.html).toContain('Gấp · Còn 1 ngày');
+    expect(publicAssigned.html).toContain('…');
+    expect(publicAssigned.html).toMatch(
+      /Mở công việc trên BEAM<\/a><\/div>\s*<\/div><\/div><\/div><\/td><\/tr><\/table><\/body><\/html>$/,
+    );
+    expect(publicAssigned.text.trimEnd().endsWith(`https://beam.example.org/tasks?task=${TASK_ID}`)).toBe(true);
+
+    // 3. WQ-27 defense-in-depth on department email even if secrets passed with isHiddenTask=true
+    const hiddenAssignedDefense = buildDepartmentAssignedEmail({
+      locale: 'en',
+      recipientName: 'Alex',
+      actorName: 'Leader',
+      boardName: 'Board Secret',
+      departmentNames: ['Media'],
+      taskTitle: 'SECRET_TITLE_XYZ',
+      taskDescription: 'SECRET_DESCRIPTION_XYZ',
+      startAt: new Date('2026-11-27T06:30:00.000Z'),
+      dueAt: new Date('2026-11-28T14:00:00.000Z'),
+      now,
+      isHiddenTask: true,
+      appUrl: 'https://beam.example.org',
+      taskId: TASK_ID,
+    });
+    for (const secret of ['SECRET_TITLE_XYZ', 'SECRET_DESCRIPTION_XYZ', '2026-11-27 · 13:30', '2026-11-28 · 21:00', 'Due in 1 day']) {
+      expect(hiddenAssignedDefense.subject).not.toContain(secret);
+      expect(hiddenAssignedDefense.text).not.toContain(secret);
+      expect(hiddenAssignedDefense.html).not.toContain(secret);
+    }
+    expect(hiddenAssignedDefense.html).toContain('Creator, assignees &amp; Admins only');
+
+    // 4. Lead emails: task.accepted & task.deliverable_submitted (public + hidden + unsafe URL sanitization)
+    const publicAccepted = buildLeadActivityEmail({
+      kind: 'task.accepted',
+      locale: 'vi',
+      recipientName: 'Nguyễn Bá Minh Sang',
+      actorName: 'Đào Văn Thanh',
+      boardName: 'Workshop AI',
+      departmentNames: ['Ban Truyền thông'],
+      taskTitle: 'Chụp ảnh Workshop',
+      dueAt: new Date('2026-11-28T14:00:00.000Z'),
+      now,
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org',
+      taskId: TASK_ID,
+    });
+    expect(publicAccepted.html).toContain('BEAM CLUB — ĐÃ NHẬN CÔNG VIỆC');
+    expect(publicAccepted.html).toContain('27/11/2026 · 13:30');
+    expect(publicAccepted.html).toContain('28/11/2026 · 21:00');
+    expect(publicAccepted.html).toMatch(
+      /Mở công việc trên BEAM<\/a><\/div>\s*<\/div><\/div><\/div><\/td><\/tr><\/table><\/body><\/html>$/,
+    );
+
+    const publicDeliverableOnTime = buildLeadActivityEmail({
+      kind: 'task.deliverable_submitted',
+      locale: 'en',
+      recipientName: 'Lead',
+      actorName: 'Member',
+      boardName: 'Workshop AI',
+      departmentNames: ['Media'],
+      taskTitle: 'Recap Video',
+      dueAt: new Date('2026-11-28T14:00:00.000Z'),
+      now,
+      deliverableTitle: 'Final Reel',
+      deliverableUrl: 'https://drive.google.com/drive/folders/beam-recap',
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org',
+      taskId: TASK_ID,
+    });
+    expect(publicDeliverableOnTime.html).toContain('beam-email-pill-ok');
+    expect(publicDeliverableOnTime.html).toContain('Submitted ahead of deadline (2026-11-28 · 21:00)');
+    expect(publicDeliverableOnTime.html).toContain('href="https://drive.google.com/drive/folders/beam-recap"');
+
+    const unsafeUrlDeliverable = buildLeadActivityEmail({
+      kind: 'task.deliverable_submitted',
+      locale: 'en',
+      recipientName: 'Lead',
+      actorName: 'Member',
+      boardName: 'Workshop AI',
+      departmentNames: [],
+      taskTitle: 'Recap Video',
+      deliverableTitle: 'XSS Link',
+      deliverableUrl: 'javascript:alert(1)',
+      isHiddenTask: false,
+      appUrl: 'https://beam.example.org',
+      taskId: TASK_ID,
+    });
+    expect(unsafeUrlDeliverable.html).not.toContain('href="javascript:');
+
+    const hiddenDeliverableDefense = buildLeadActivityEmail({
+      kind: 'task.deliverable_submitted',
+      locale: 'vi',
+      recipientName: 'Lead',
+      actorName: 'Member',
+      boardName: 'Board Ops',
+      departmentNames: ['Media'],
+      taskTitle: 'SECRET_DELIV_TASK',
+      taskDescription: 'SECRET_DELIV_DESC',
+      startAt: new Date('2026-11-27T06:30:00.000Z'),
+      dueAt: new Date('2026-11-28T14:00:00.000Z'),
+      now,
+      deliverableTitle: 'SECRET_DELIV_FILE',
+      deliverableUrl: 'https://secret.example.org/file',
+      isHiddenTask: true,
+      appUrl: 'https://beam.example.org',
+      taskId: TASK_ID,
+    });
+    for (const secret of ['SECRET_DELIV_TASK', 'SECRET_DELIV_DESC', 'SECRET_DELIV_FILE', 'secret.example.org', '27/11/2026 · 13:30', '28/11/2026 · 21:00']) {
+      expect(hiddenDeliverableDefense.subject).not.toContain(secret);
+      expect(hiddenDeliverableDefense.text).not.toContain(secret);
+      expect(hiddenDeliverableDefense.html).not.toContain(secret);
+    }
+
+    // 5. NotificationsService passes enriched context for public tasks & strips for hidden tasks
+    const repo = new InMemoryNotificationsRepo();
+    const clock = new FakeClock(now);
+    const sentMessages: MailMessage[] = [];
+    const service = new NotificationsService({
+      notificationsRepo: repo,
+      transactionRunner: MOCK_TX,
+      mailer: { send: async (m) => { sentMessages.push(m); } },
+      clock,
+      config: { appUrl: 'https://beam.example.org' },
+      logger: new StructuredLogger({ writeOut: () => {}, writeErr: () => {} }),
+    });
+
+    repo.context = {
+      task: {
+        id: TASK_ID,
+        title: 'Public Enriched Task',
+        description: 'Enriched description content',
+        startAt: new Date('2026-11-27T06:30:00.000Z'),
+        dueAt: new Date('2026-11-28T14:00:00.000Z'),
+        isCompleted: false,
+        isHidden: false,
+      },
+      board: { id: BOARD_ID, name: 'Board Ops' },
+      actor: { id: ACTOR_ID, fullName: 'Coordinator' },
+      departments: [{ id: DEPT_MEDIA, name: 'Media' }],
+      members: [{ userId: USER_A, email: 'a@eiu.edu.vn', fullName: 'User A', locale: 'vi', departmentId: DEPT_MEDIA }],
+    };
+    await service.notifyDepartmentAssignment({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ACTOR_ID,
+      departmentIds: [DEPT_MEDIA],
+      isHiddenTask: false,
+      now: clock.now(),
+    });
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]!.html).toContain('Enriched description content');
+    expect(sentMessages[0]!.html).toContain('27/11/2026 · 13:30');
+    expect(sentMessages[0]!.html).toContain('28/11/2026 · 21:00');
+
+    sentMessages.length = 0;
+    repo.context = {
+      ...repo.context,
+      task: {
+        id: TASK_ID,
+        title: 'HIDDEN_SERVICE_TITLE',
+        description: 'HIDDEN_SERVICE_DESC',
+        startAt: new Date('2026-11-27T06:30:00.000Z'),
+        dueAt: new Date('2026-11-28T14:00:00.000Z'),
+        isCompleted: false,
+        isHidden: true,
+      },
+    };
+    await service.notifyDepartmentAssignment({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ACTOR_ID,
+      departmentIds: [DEPT_MEDIA],
+      isHiddenTask: true,
+      now: clock.now(),
+    });
+    expect(sentMessages).toHaveLength(1);
+    for (const secret of ['HIDDEN_SERVICE_TITLE', 'HIDDEN_SERVICE_DESC', '27/11/2026 · 13:30', '28/11/2026 · 21:00']) {
+      expect(sentMessages[0]!.subject).not.toContain(secret);
+      expect(sentMessages[0]!.text).not.toContain(secret);
+      expect(sentMessages[0]!.html).not.toContain(secret);
+    }
+
+    sentMessages.length = 0;
+    repo.activityContext = {
+      task: {
+        id: TASK_ID,
+        title: 'HIDDEN_LEAD_TITLE',
+        description: 'HIDDEN_LEAD_DESC',
+        startAt: new Date('2026-11-27T06:30:00.000Z'),
+        dueAt: new Date('2026-11-28T14:00:00.000Z'),
+        isCompleted: false,
+        isHidden: true,
+        createdBy: USER_A,
+        assigneeIds: [ACTOR_ID],
+        assignedDepartmentIds: [DEPT_MEDIA],
+      },
+      board: { id: BOARD_ID, name: 'Board Ops' },
+      actor: { id: ACTOR_ID, fullName: 'Assignee Actor' },
+      assignedDepartments: [{ id: DEPT_MEDIA, name: 'Media' }],
+      deliverable: {
+        id: '60000000-0000-4000-8000-000000000009',
+        title: 'HIDDEN_DELIV_TITLE',
+        url: 'https://hidden-deliv.example.org/doc',
+      },
+      candidates: [
+        { userId: USER_A, email: 'a@eiu.edu.vn', fullName: 'User A', locale: 'vi', isAdmin: false, memberDepartmentIds: [], leadDepartmentIds: [], isCreator: true },
+      ],
+    };
+    await service.notifyDeliverableSubmitted({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ACTOR_ID,
+      deliverableId: '60000000-0000-4000-8000-000000000009',
+      isHiddenTask: true,
+      now: clock.now(),
+    });
+    expect(sentMessages).toHaveLength(1);
+    for (const secret of ['HIDDEN_LEAD_TITLE', 'HIDDEN_LEAD_DESC', 'HIDDEN_DELIV_TITLE', 'hidden-deliv.example.org', '27/11/2026 · 13:30', '28/11/2026 · 21:00']) {
+      expect(sentMessages[0]!.subject).not.toContain(secret);
+      expect(sentMessages[0]!.text).not.toContain(secret);
+      expect(sentMessages[0]!.html).not.toContain(secret);
+    }
   });
 });
