@@ -531,9 +531,9 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     const scroller = page.locator('#hcal-scroller');
     const canvas = page.locator('#hcal-canvas');
     await expect(scroller).toBeVisible();
-    await expect(canvas).toHaveAttribute('data-zoom-tier', 'month');
+    await expect(canvas).toHaveAttribute('data-zoom-tier', 'week');
 
-    // Verify initial mount computed --day-w for month tier (not stuck on 45px fallback) and centered around Today
+    // Verify initial mount computed --day-w for week tier (not stuck on 45px fallback) and centered around Today
     const initialMetrics = await page.evaluate(() => {
       const scrollerEl = document.getElementById('hcal-scroller');
       const canvasEl = document.getElementById('hcal-canvas');
@@ -548,13 +548,30 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
       };
     });
     expect(initialMetrics).not.toBeNull();
-    expect(initialMetrics!.dayW).toBeGreaterThanOrEqual(60);
+    expect(initialMetrics!.dayW).toBeGreaterThanOrEqual(180);
     if (initialMetrics!.todayOffsetLeft > initialMetrics!.clientWidth / 2) {
       expect(initialMetrics!.scrollLeft).toBeGreaterThan(0);
       const todayScreenCenter =
         initialMetrics!.todayOffsetLeft + initialMetrics!.dayW / 2 - initialMetrics!.scrollLeft;
       expect(Math.abs(todayScreenCenter - initialMetrics!.clientWidth / 2)).toBeLessThan(120);
     }
+
+    // Verify toolbar alignment: 3-point zoom labels sit left-to-right on one row, dept & search sit side-by-side
+    const yearPresetBox = await page.getByRole('button', { name: viMessages.calendar.zoomYear, exact: true }).boundingBox();
+    const monthPresetBox = await page.getByRole('button', { name: viMessages.calendar.zoomMonth, exact: true }).boundingBox();
+    const weekPresetBox = await page.getByRole('button', { name: viMessages.calendar.zoomWeek, exact: true }).boundingBox();
+    const deptSelectBox = await page.locator('.hcal-dept-select').boundingBox();
+    const searchInputBox = await page.locator('.hcal-search-input').boundingBox();
+    expect(yearPresetBox).not.toBeNull();
+    expect(monthPresetBox).not.toBeNull();
+    expect(weekPresetBox).not.toBeNull();
+    expect(yearPresetBox!.x).toBeLessThan(monthPresetBox!.x);
+    expect(monthPresetBox!.x).toBeLessThan(weekPresetBox!.x);
+    expect(Math.abs(yearPresetBox!.y - weekPresetBox!.y)).toBeLessThanOrEqual(2);
+    expect(deptSelectBox).not.toBeNull();
+    expect(searchInputBox).not.toBeNull();
+    expect(Math.abs(deptSelectBox!.y - searchInputBox!.y)).toBeLessThanOrEqual(4);
+    expect(deptSelectBox!.x + deptSelectBox!.width).toBeLessThanOrEqual(searchInputBox!.x);
 
     // 2. Verify all 5 deadline color classes + zero Priority UI on /tasks
     await expect(page.locator(`.hcal-task-bar.deadline-overdue[data-task-id="${overdueTaskId}"]`)).toBeVisible();

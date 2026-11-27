@@ -202,7 +202,9 @@ describe('CalendarWorkspaceView & CR-10 components', () => {
   it('renders horizontal calendar workspace in vi & en, permissions, deadline tiers, hidden lock, and unscheduled tray', () => {
     const htmlVi = renderWithIntl(<CalendarWorkspaceView />, { permissions: ['task.create', 'task.delete'] });
     expect(htmlVi).toContain('hcal-shell');
+    expect(htmlVi).toContain('data-zoom-tier="week"');
     expect(htmlVi).toContain('type="range"');
+    expect(htmlVi).toContain('value="100"');
     expect(htmlVi).toContain('Hôm nay');
     expect(htmlVi).toContain('Năm');
     expect(htmlVi).toContain('Tháng');

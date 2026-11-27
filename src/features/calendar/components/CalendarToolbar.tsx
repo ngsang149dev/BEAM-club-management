@@ -44,6 +44,16 @@ const DEADLINE_FILTERS: readonly { readonly id: CalendarDeadlineFilter; readonly
   { id: 'done', key: 'filterDone' },
 ];
 
+const ZOOM_PRESETS: readonly {
+  readonly tier: ZoomTier;
+  readonly value: number;
+  readonly key: 'zoomYear' | 'zoomMonth' | 'zoomWeek';
+}[] = [
+  { tier: 'year', value: 0, key: 'zoomYear' },
+  { tier: 'month', value: 50, key: 'zoomMonth' },
+  { tier: 'week', value: 100, key: 'zoomWeek' },
+];
+
 function CalendarPeriodControls({
   year,
   selectedMonthIndex,
@@ -113,13 +123,6 @@ function CalendarZoomControls({
 
   return (
     <div className="hcal-zoom-box">
-      <button
-        type="button"
-        className={`hcal-zoom-label${zoomTier === 'year' ? ' is-active' : ''}`}
-        onClick={() => onZoomPreset(0)}
-      >
-        {t('zoomYear')}
-      </button>
       <input
         type="range"
         min={0}
@@ -130,21 +133,18 @@ function CalendarZoomControls({
         className="hcal-zoom-range"
         onChange={(e) => onZoomSliderChange(Number(e.target.value))}
       />
-      <button
-        type="button"
-        className={`hcal-zoom-label${zoomTier === 'month' ? ' is-active' : ''}`}
-        onClick={() => onZoomPreset(50)}
-      >
-        {t('zoomMonth')}
-      </button>
-      <span className="hcal-zoom-sep" aria-hidden="true">|</span>
-      <button
-        type="button"
-        className={`hcal-zoom-label${zoomTier === 'week' ? ' is-active' : ''}`}
-        onClick={() => onZoomPreset(100)}
-      >
-        {t('zoomWeek')}
-      </button>
+      <div className="hcal-zoom-ticks">
+        {ZOOM_PRESETS.map((preset) => (
+          <button
+            key={preset.tier}
+            type="button"
+            className={`hcal-zoom-label${zoomTier === preset.tier ? ' is-active' : ''}`}
+            onClick={() => onZoomPreset(preset.value)}
+          >
+            {t(preset.key)}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

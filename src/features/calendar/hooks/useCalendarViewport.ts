@@ -7,7 +7,8 @@ import {
   type YearCalendarModel,
 } from '../calendar-math';
 
-const INITIAL_ZOOM = 50;
+const INITIAL_ZOOM = 100;
+const MONTH_ZOOM = 50;
 const ZOOM_ANIMATION_MS = 300;
 const PAN_DRAG_THRESHOLD = 5;
 
@@ -219,8 +220,8 @@ export function useCalendarViewport(calendar: YearCalendarModel, isReady = true)
   const { zoomRef, dayWidthRef, setSelectedMonthIndex, applyRangeZoom, animateZoomTo, stopZoomAnim } = zoom;
 
   const scrollToCenterDay = useCallback(
-    (centerDay: number, smooth: boolean) => {
-      if (zoomRef.current < 32) { animateZoomTo(INITIAL_ZOOM, centerDay); return; }
+    (centerDay: number, smooth: boolean, zoomFromYear = MONTH_ZOOM) => {
+      if (zoomRef.current < 32) { animateZoomTo(zoomFromYear, centerDay); return; }
       const w = computeDayWidth(zoomRef.current, scrollerRef.current?.clientWidth || 1200);
       dayWidthRef.current = w;
       scrollScrollerToDay(scrollerRef.current, w, centerDay, smooth);
@@ -233,13 +234,13 @@ export function useCalendarViewport(calendar: YearCalendarModel, isReady = true)
     const mInfo = calendar.months[clamped];
     if (!mInfo) return;
     setSelectedMonthIndex(clamped);
-    scrollToCenterDay(mInfo.startIndex + mInfo.dayCount / 2, smooth);
+    scrollToCenterDay(mInfo.startIndex + mInfo.dayCount / 2, smooth, MONTH_ZOOM);
   }, [calendar.months, scrollToCenterDay, setSelectedMonthIndex]);
 
   const centerOnToday = useCallback((smooth = true) => {
     if (calendar.todayIndex < 0) return;
     setSelectedMonthIndex(calendar.days[calendar.todayIndex]?.monthIndex ?? 0);
-    scrollToCenterDay(calendar.todayIndex + 0.5, smooth);
+    scrollToCenterDay(calendar.todayIndex + 0.5, smooth, INITIAL_ZOOM);
   }, [calendar.days, calendar.todayIndex, scrollToCenterDay, setSelectedMonthIndex]);
 
   useEffect(() => {
