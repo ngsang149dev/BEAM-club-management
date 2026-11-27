@@ -271,4 +271,4 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
      - **`migrate-neon`**: chỉ chạy `npm run db:migrate` với `NODE_ENV=production` qua `secrets.NEON_DIRECT_DATABASE_URL` (Direct URL không `-pooler`); nghiêm cấm `db:seed`, `db:backup`, `db:restore`; bỏ qua an toàn khi chưa cấu hình secret.
      - **`deploy-vercel`**: cài cố định `vercel@54`, truyền `VERCEL_TOKEN` qua env (cấm cờ `--token`), chạy `vercel pull --yes --environment=production`, `vercel build --prod`, `vercel deploy --prebuilt --prod --yes`, và smoke check `GET /api/v1/branding`; bỏ qua an toàn khi chưa cấu hình `VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID`.
 - **Ảnh hưởng (`workflows`, tài liệu):** `.github/workflows/{ci,deploy}.yml`, `tests/unit/shared/cicd-workflows.test.ts`, `docs/{OPERATIONS,BACKLOG,STATUS,DECISIONS}.md`. (Không sửa schema CSDL hay `openapi.yaml`).
-- **Trạng thái:** `Ready for PR [RỦI RO CAO]` trên nhánh `feat/CR11-cicd-neon-vercel`.
+- **Trạng thái:** `Done` (đã duyệt & merge `main`).

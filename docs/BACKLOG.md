@@ -914,7 +914,7 @@
 
 ---
 
-## Epic CR-11 — CI/CD tự động deploy Neon & Vercel qua GitHub Actions `[RỦI RO CAO]` *(Ready for PR)*
+## Epic CR-11 — CI/CD tự động deploy Neon & Vercel qua GitHub Actions `[RỦI RO CAO]` *(Done — đã duyệt & merge vào main)*
 
 ### CR-11-01
 - **ID:** `CR-11-01`
@@ -932,4 +932,4 @@
   5. Unit test `cicd-workflows.test.ts` + toàn bộ cổng kiểm tra (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`) xanh; audit ngữ cảnh sạch `qa-reviewer` đạt `VERDICT: PASS`.
 - **Ngoài phạm vi:** Chạy migration/deploy trực tiếp lên Neon/Vercel thật từ máy agent (`AGENTS.md §0 #4`).
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR`
+- **Trạng thái:** `Done` (`qa-reviewer` `VERDICT: PASS`)
