@@ -1,14 +1,22 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -29,8 +37,7 @@ jobs:
       DATABASE_URL: postgresql://beam_dev:beam_dev_password@localhost:5432/beam_test
       TEST_DATABASE_URL: postgresql://beam_dev:beam_dev_password@localhost:5432/beam_test
       SESSION_SECRET: ci-only-session-secret-placeholder-32bytes
-      SESSION_TTL_DEFAULT_HOURS: "24"
-      SESSION_TTL_REMEMBER_DAYS: "30"
+      SESSION_TTL_MINUTES: "30"
       ALLOWED_EMAIL_DOMAIN: eiu.edu.vn
       CRON_SECRET: ci-only-cron-secret
       NEXT_PUBLIC_APP_URL: http://localhost:3000
@@ -52,4 +59,5 @@ jobs:
       - run: npm run openapi:check
       - run: npm run test:unit
       - run: npm run test:integration
+      - run: npm run db:restore:verify -- --test
       - run: npm run build

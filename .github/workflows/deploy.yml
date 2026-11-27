@@ -1,0 +1,188 @@
+name: Deploy Production (Neon & Vercel)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: 'Run pending PostgreSQL migrations on Neon before deploying to Vercel'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  migrate-neon:
+    needs: [verify]
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.run_migrations == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    outputs:
+      configured: ${{ steps.config.outputs.configured }}
+      status: ${{ steps.config.outputs.status }}
+
+    steps:
+      - name: Check Neon migration secret
+        id: config
+        env:
+          NEON_DIRECT_DATABASE_URL: ${{ secrets.NEON_DIRECT_DATABASE_URL }}
+        run: |
+          if [ -z "${NEON_DIRECT_DATABASE_URL}" ]; then
+            echo "::notice::Skipping Neon migration because NEON_DIRECT_DATABASE_URL secret is not configured yet."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "${NEON_DIRECT_DATABASE_URL}" in
+            postgresql://*|postgres://*) ;;
+            *)
+              echo "::error::NEON_DIRECT_DATABASE_URL must start with postgresql:// or postgres://."
+              exit 1
+              ;;
+          esac
+
+          case "${NEON_DIRECT_DATABASE_URL}" in
+            *-pooler*)
+              echo "::warning::NEON_DIRECT_DATABASE_URL appears to use a Neon pooler host; switch to the direct (non-pooler) Neon connection string for DDL migrations."
+              ;;
+          esac
+
+          case "${NEON_DIRECT_DATABASE_URL}" in
+            *sslmode=*) ;;
+            *)
+              echo "::warning::NEON_DIRECT_DATABASE_URL should include ?sslmode=require for Neon TLS."
+              ;;
+          esac
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "status=applied" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.config.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.config.outputs.configured == 'true'
+        run: npm ci
+
+      - name: Apply unapplied Neon migrations
+        if: steps.config.outputs.configured == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DIRECT_DATABASE_URL }}
+          NODE_ENV: production
+        run: npm run db:migrate
+
+  deploy-vercel:
+    needs: [verify, migrate-neon]
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.verify.result == 'success' &&
+      (needs.migrate-neon.result == 'success' || needs.migrate-neon.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      VERCEL_CLI_VERSION: "54"
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      PROD_APP_URL: ${{ secrets.PROD_APP_URL }}
+
+    steps:
+      - name: Check Vercel deployment secrets
+        id: config
+        run: |
+          if [ -z "${VERCEL_TOKEN}" ] || [ -z "${VERCEL_ORG_ID}" ] || [ -z "${VERCEL_PROJECT_ID}" ]; then
+            echo "::notice::Skipping Vercel production deploy because VERCEL_TOKEN, VERCEL_ORG_ID, or VERCEL_PROJECT_ID secrets are not configured yet."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.config.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.config.outputs.configured == 'true'
+        run: npm ci
+
+      - name: Install pinned Vercel CLI
+        if: steps.config.outputs.configured == 'true'
+        run: npm install --global "vercel@${VERCEL_CLI_VERSION}"
+
+      - name: Pull Vercel Production Environment
+        if: steps.config.outputs.configured == 'true'
+        run: vercel pull --yes --environment=production
+
+      - name: Build Project Artifacts
+        if: steps.config.outputs.configured == 'true'
+        run: vercel build --prod
+
+      - name: Deploy Prebuilt Artifacts to Vercel Production
+        id: deploy
+        if: steps.config.outputs.configured == 'true'
+        run: |
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod --yes)
+          echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-check public branding endpoint
+        if: steps.config.outputs.configured == 'true'
+        run: |
+          TARGET_URL="${PROD_APP_URL:-${{ steps.deploy.outputs.url }}}"
+          TARGET_URL="${TARGET_URL%/}"
+          if [ -z "${TARGET_URL}" ]; then
+            echo "::notice::Skipping smoke check because deployment URL was empty."
+            exit 0
+          fi
+
+          HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "${TARGET_URL}/api/v1/branding" || echo "000")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Smoke check passed on ${TARGET_URL}/api/v1/branding (HTTP 200)."
+          elif [ "${HTTP_CODE}" = "401" ] || [ "${HTTP_CODE}" = "403" ]; then
+            echo "::notice::Smoke check received HTTP ${HTTP_CODE} (likely Vercel Deployment Protection is enabled)."
+          else
+            echo "::error::Smoke check failed on ${TARGET_URL}/api/v1/branding (HTTP ${HTTP_CODE})."
+            exit 1
+          fi
+
+      - name: Write Deploy Summary
+        if: always()
+        run: |
+          {
+            echo "## Production Deploy Summary"
+            echo "- **Commit**: \`${GITHUB_SHA}\`"
+            echo "- **Verify**: ${NEEDS_VERIFY_RESULT}"
+            echo "- **Neon Migrate**: ${NEEDS_MIGRATE_RESULT} (${MIGRATE_STATUS:-skipped})"
+            echo "- **Vercel Configured**: ${VERCEL_CONFIGURED}"
+            echo "- **Deployment URL**: ${DEPLOY_URL:-n/a}"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          NEEDS_VERIFY_RESULT: ${{ needs.verify.result }}
+          NEEDS_MIGRATE_RESULT: ${{ needs.migrate-neon.result }}
+          MIGRATE_STATUS: ${{ needs.migrate-neon.outputs.status }}
+          VERCEL_CONFIGURED: ${{ steps.config.outputs.configured }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}

@@ -26,8 +26,7 @@ Tham chiếu lược đồ chuẩn tại `src/server/shared/config.ts` và `.env
 | `CRON_SECRET` | Có | Chuỗi bí mật tối thiểu `16`–`32` byte | Vercel tự gắn `Authorization: Bearer <CRON_SECRET>` khi gọi Cron |
 | `ALLOWED_EMAIL_DOMAIN` | Có | `eiu.edu.vn` | Ràng buộc tên miền email hợp lệ khi tạo/sửa thành viên (`AC-14`) |
 | `DEFAULT_INITIAL_PASSWORD` | Khuyến nghị | Mật khẩu khởi tạo quy ước CLB hoặc để trống theo quy trình Admin cấp riêng | Ở `production`, hệ thống **không** tự fallback về `BeamDev@2026` (`config.ts`) |
-| `SESSION_TTL_DEFAULT_HOURS` | Tùy chọn | `24` | Session cookie khi không tích "Ghi nhớ đăng nhập" |
-| `SESSION_TTL_REMEMBER_DAYS` | Tùy chọn | `30` | Phiên trượt khi tích "Ghi nhớ đăng nhập" |
+| `SESSION_TTL_MINUTES` | Tùy chọn | `30` | Thời hạn trượt cho phiên duy nhất (`1..1440` phút, thay thế 2 biến cũ từ `CR-08`; `SESSION_TTL_DEFAULT_HOURS` & `SESSION_TTL_REMEMBER_DAYS` chỉ còn giữ tương thích ngược) |
 | `UNDO_TOAST_SECONDS` | Tùy chọn | `10` | Thời gian hiển thị nút Hoàn tác (`1..120`s) |
 | `NEXT_PUBLIC_APP_URL` | Có | Domain HTTPS chính thức (vd `https://beam.example.com`) | Dùng cho link CTA trong email nhắc & thông báo |
 | `SMTP_HOST` / `SMTP_PORT` | Có | `smtp.gmail.com` / `587` | Máy chủ SMTP gửi mail của CLB |
@@ -38,10 +37,10 @@ Tham chiếu lược đồ chuẩn tại `src/server/shared/config.ts` và `.env
 
 ---
 
-## 3. CI/CD & Triển khai Production (Vercel + Neon)
+## 3. CI/CD Tự động & Triển khai Production (GitHub Actions → Neon + Vercel)
 
 ### 3.1 Cổng kiểm tra tự động (GitHub Actions `.github/workflows/ci.yml`)
-Mỗi Pull Request / push vào `main` chạy lần lượt **9 kiểm tra**:
+Mỗi Pull Request vào `main` (và bước `verify` khi chạy pipeline deploy) thực thi lần lượt **10 kiểm tra** trên dịch vụ `postgres:16-alpine` cô lập:
 1. `npm run db:migrate -- --test`
 2. `npm run db:seed -- --test`
 3. `npm run typecheck` (`tsc --noEmit`)
@@ -50,15 +49,45 @@ Mỗi Pull Request / push vào `main` chạy lần lượt **9 kiểm tra**:
 6. `npm run openapi:check` (`schema.d.ts` khớp `docs/openapi.yaml`)
 7. `npm run test:unit`
 8. `npm run test:integration`
-9. `npm run build` (`next build`)
+9. `npm run db:restore:verify -- --test`
+10. `npm run build` (`next build`)
 
 *Lưu ý:* Trước khi mở đợt phát hành chính thức, chủ dự án hoặc QA chạy thêm toàn bộ `npm run test:e2e` cục bộ trên `beam_test`.
 
-### 3.2 Quy trình áp migration lên Neon Production (Chỉ chủ dự án thực hiện)
-1. **Luôn sao lưu database trước khi chạy migration mới** (mục 5 bên dưới) hoặc tạo snapshot/branch trên Neon Console.
-2. Kiểm tra danh sách migration tuần tự trong `db/migrations/` (`0001_initial_schema.sql` .. `0007_system_catalog_defaults.sql` và các bản cộng thêm sau này).
-3. Từ máy cá nhân của chủ dự án, trỏ `DATABASE_URL` tạm thời vào **Direct Connection String** của Neon (không qua `-pooler`) và chạy `npm run db:migrate` — script tự đối chiếu bảng `schema_migrations`, bỏ qua các bản đã áp, ẩn mật khẩu khỏi log, và nạp sẵn `18` quyền + `3` mẫu quyền + cấu hình nhắc hạn mặc định (`0007_system_catalog_defaults.sql`) mà **không** chèn bất kỳ dữ liệu mẫu dev nào.
-4. Đợi Vercel hoàn tất build từ nhánh `main` (vùng Serverless Function đã ghim tại `"sin1"` Singapore trong `vercel.json` để giảm độ trễ tới Neon `ap-southeast-1`) và kiểm tra sức khỏe các màn hình chính (`/login`, `/boards`, `/admin/reminders`, `/admin/branding`).
+### 3.2 Pipeline CD tự động đẩy lên Neon + Vercel (`.github/workflows/deploy.yml`)
+Mỗi khi merge / `push` vào nhánh `main` (hoặc bấm `Run workflow` thủ công), workflow `Deploy Production (Neon & Vercel)` chạy tuần tự **3 pha** với `concurrency: { group: deploy-production, cancel-in-progress: false }` và `permissions: contents: read`:
+
+1. **`verify`** (`uses: ./.github/workflows/ci.yml`): chặn ngay nếu bất kỳ cổng kiểm tra nào thất bại.
+2. **`migrate-neon`** (`environment: production`):
+   - Dùng `secrets.NEON_DIRECT_DATABASE_URL` (**Direct Connection String** không có `-pooler`) chạy `npm run db:migrate` với `NODE_ENV=production`.
+   - Chỉ áp các file `.sql` mới chưa có trong `schema_migrations`; **tuyệt đối không chạy `db:seed`, `db:backup` hay `db:restore` lên production**.
+3. **`deploy-vercel`** (`needs: [verify, migrate-neon]`, `environment: production`):
+   - Cài cố định `vercel@54` (không dùng `@latest`, truyền `VERCEL_TOKEN` qua env thay vì cờ `--token`).
+   - Chạy `vercel pull --yes --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod --yes`.
+   - Kiểm tra nhanh `GET /api/v1/branding` trên URL vừa deploy (hoặc `PROD_APP_URL`) và ghi tóm tắt vào GitHub Step Summary.
+
+*(Nếu chưa khai báo đủ secrets bên dưới, cả `migrate-neon` và `deploy-vercel` đều tự bỏ qua an toàn với `::notice::`, không làm đỏ pipeline).*
+
+### 3.3 Khai báo 4 GitHub Secrets bắt buộc để kích hoạt Auto-Deploy
+Vào **GitHub Repository → Settings → Secrets and variables → Actions → New repository secret** (hoặc đặt trong Environment **`production`** nếu muốn bật *Required reviewers* phê duyệt trước khi đẩy lên thật):
+
+| Secret | Nơi lấy giá trị | Mục đích |
+|---|---|---|
+| `NEON_DIRECT_DATABASE_URL` | **Neon Console → Connect → bỏ tick Connection pooling** (giữ `?sslmode=require`) | Chạy `npm run db:migrate` tự động cho schema mới (DDL) |
+| `VERCEL_TOKEN` | **Vercel Account Settings → Tokens → Create** (Scope khớp Team/Account giữ project) | Xác thực `vercel pull/build/deploy` từ GitHub Actions |
+| `VERCEL_ORG_ID` | Chạy cục bộ `npx vercel link` rồi mở `.vercel/project.json` (trường `orgId`), hoặc xem trong Vercel Team/Account Settings | Định danh Team/User sở hữu project trên Vercel |
+| `VERCEL_PROJECT_ID` | Mở `.vercel/project.json` (trường `projectId`), hoặc **Vercel Project → Settings → General** | Định danh Project Next.js trên Vercel |
+| `PROD_APP_URL` *(khuyến nghị)* | Domain chính thức (vd `https://beam-club.vercel.app`, không `/` cuối) | Dùng cho smoke check sau deploy & workflow `.github/workflows/daily-cron.yml` |
+| `CRON_SECRET` *(nếu dùng `daily-cron.yml`)* | Khớp biến `CRON_SECRET` trong Vercel Project Settings | Gọi `/api/v1/internal/cron/*` hằng ngày |
+
+**Lưu ý tránh build trùng trên Vercel khi bật CI/CD:**
+- Khi đã dùng `.github/workflows/deploy.yml` đẩy bản `--prebuilt`, nên vào **Vercel Project → Settings → Git** cấu hình **Ignored Build Step** (`exit 0` cho nhánh `main`) hoặc tắt Auto-Deploy Git trên nhánh `main` để Vercel **không** tự deploy song song trước khi bước `verify` + `migrate-neon` trên GitHub Actions hoàn tất (vẫn có thể giữ Preview Deploy cho các nhánh PR nếu muốn).
+
+### 3.4 Lưu ý dự phòng khi cần thao tác migration thủ công từ máy chủ dự án
+1. **Luôn sao lưu database trước khi chạy migration lớn** hoặc tạo branch/restore point trên Neon Console.
+2. Kiểm tra danh sách migration tuần tự trong `db/migrations/` (`0001_initial_schema.sql` .. `0008_calendar_tasks_leads_deliverables.sql` và các bản cộng thêm sau này).
+3. Nếu cần chạy tay từ máy cá nhân của chủ dự án, trỏ `DATABASE_URL` tạm thời vào **Direct Connection String** của Neon (không qua `-pooler`) và chạy `npm run db:migrate` — script tự đối chiếu bảng `schema_migrations`, bỏ qua các bản đã áp, ẩn mật khẩu khỏi log, và nạp sẵn `18` quyền + `3` mẫu quyền + cấu hình nhắc hạn mặc định (`0007_system_catalog_defaults.sql`) mà **không** chèn bất kỳ dữ liệu mẫu dev nào.
+4. Kiểm tra sức khỏe các màn hình chính sau deploy (`/login`, `/tasks`, `/admin/reminders`, `/admin/branding`).
 
 ---
 
@@ -102,8 +131,8 @@ npm run db:restore:verify -- --test
 ```
 
 `db:restore:verify` xác minh tự động trên DB tạm:
-- Đủ toàn bộ **23 bảng `public`** (`22` bảng miền + `schema_migrations`).
-- Đủ **`18` mã quyền `permissions`**, `>= 3` `permission_presets`, `>= 7` `schema_migrations` và đối chiếu khớp số dòng.
+- Đủ toàn bộ **24 bảng `public`** (`23` bảng miền + `schema_migrations`).
+- Đủ **`18` mã quyền `permissions`**, `>= 3` `permission_presets`, `>= 8` `schema_migrations` và đối chiếu khớp số dòng.
 - Tồn tại và hoạt động đúng các trigger bảo toàn dữ liệu: `prevent_append_only_mutation` (`task_events`, `audit_logs`), `prevent_last_active_admin_update/delete` (`profiles`), `prevent_student_id_change` (`profiles`), và `prevent_entity_unpurge` (`boards`, `tasks`), rồi xóa sạch DB tạm trong khối `finally`.
 
 ### 5.2 Quy trình Admin CLB sao lưu thủ công Production hàng tuần
@@ -163,14 +192,14 @@ Hướng dẫn từng bước dành cho chủ dự án / Admin kỹ thuật CLB 
    ```
    Mở hộp thư đến của `<email-thật-của-admin>` xác nhận email `[BEAM Club] Kiểm tra kết nối SMTP / SMTP Verification` vào thẳng **Inbox** (không rơi vào Spam). Sau khi xác nhận xong, có thể hoàn nguyên `.env.local` về cấu hình dev.
 
-### Bước 3 — Áp Migration `0001..0007` & Tạo Admin đầu tiên (Từ máy chủ dự án)
-Tuyệt đối **không** chạy `npm run db:seed` lên Production (script `db:seed` cũng đã tự khóa `NODE_ENV=production` và remote URL). Thay vào đó:
+### Bước 3 — Áp Migration `0001..0008` & Tạo Admin đầu tiên (Lần Go-Live đầu)
+Tuyệt đối **không** chạy `npm run db:seed` lên Production (script `db:seed` cũng đã tự khóa `NODE_ENV=production` và remote URL). Từ các lần cập nhật sau trở đi, `.github/workflows/deploy.yml` sẽ tự động chạy `npm run db:migrate`; riêng **lần khởi tạo đầu tiên** cần tạo tài khoản Admin:
 
-1. **Áp toàn bộ schema & danh mục quyền nền tảng (`0007_system_catalog_defaults.sql`):**
+1. **Áp toàn bộ schema & danh mục quyền nền tảng (`0001..0008`):**
    ```bash
    DATABASE_URL="<NEON_DIRECT_URL>" npm run db:migrate
    ```
-   Lệnh này tạo đủ 23 bảng, 7 trigger bảo toàn dữ liệu, `18` mã quyền `PERMISSIONS`, `3` mẫu quyền (`basic_member`, `department_lead`, `hr_manager`) và cấu hình nhắc hạn mặc định (`07:00 UTC+7`), hoàn toàn **không có dữ liệu giả**.
+   Lệnh này tạo đủ 24 bảng, 7 trigger bảo toàn dữ liệu, `18` mã quyền `PERMISSIONS`, `3` mẫu quyền (`basic_member`, `department_lead`, `hr_manager`) và cấu hình nhắc hạn mặc định (`07:00 UTC+7`), hoàn toàn **không có dữ liệu giả**.
 2. **Tạo tài khoản Admin CLB đầu tiên (`must_change_password = true`):**
    ```bash
    DATABASE_URL="<NEON_DIRECT_URL>" \

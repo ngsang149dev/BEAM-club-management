@@ -259,3 +259,16 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
      - Hỗ trợ `deadlineStatus` (`overdue`, `urgent` `<= 1` ngày, `soon` `2–3` ngày, `safe` `> 3` ngày tính theo ngày lịch `Asia/Ho_Chi_Minh`, `done`), khoảng `[from, to]` (overlap `COALESCE(start_at, due_at) <= to AND COALESCE(due_at, start_at) >= from` hoặc không gắn ngày), và nâng giới hạn `limit` tối đa lên `200`. Mở rộng `PATCH /tasks/{id}` & `task-events` revert cho `start_at` và `is_completed`.
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Migration `0008_calendar_tasks_leads_deliverables.sql`, `db/schema/*`, `docs/ERD.md` (`23` bảng miền / `24` bảng public), `docs/openapi.yaml` (`src/features/shared/api/schema.d.ts`), `scripts/db-restore-verify.mjs`.
 - **Trạng thái:** Đã hoàn tất và merge `main` (`CR-09` & `CR-10`).
+
+---
+
+## CR-11 (`[RỦI RO CAO]`): CI/CD tự động deploy lên Neon và Vercel qua GitHub Actions (2026-11-27)
+- **Người quyết định:** Chủ dự án (`Sang`) yêu cầu thiết lập CI/CD tự động deploy lên Neon và Vercel sau khi merge `CR-10`.
+- **Bối cảnh:** Trước đây `.github/workflows/ci.yml` chỉ xác minh kiểm thử trên `postgres:16-alpine` (9 bước, thiếu `db:restore:verify`), còn việc chạy `db:migrate` lên Neon và deploy lên Vercel phải thao tác tay hoặc tách rời thứ tự khiến deploy Vercel có nguy cơ chạy trước khi migration Neon hoàn tất.
+- **Quyết định:**
+  1. Tái sử dụng `.github/workflows/ci.yml` qua `workflow_call` (cùng `pull_request` trên `main` và `workflow_dispatch`), bổ sung bước `npm run db:restore:verify -- --test` và `SESSION_TTL_MINUTES: "30"`.
+  2. Thêm `.github/workflows/deploy.yml` kích hoạt khi `push` vào `main` (hoặc `workflow_dispatch` kèm tùy chọn `run_migrations`), thực thi tuần tự **`verify` → `migrate-neon` → `deploy-vercel`** với `concurrency: { group: deploy-production, cancel-in-progress: false }`, `permissions: contents: read`, `environment: production`:
+     - **`migrate-neon`**: chỉ chạy `npm run db:migrate` với `NODE_ENV=production` qua `secrets.NEON_DIRECT_DATABASE_URL` (Direct URL không `-pooler`); nghiêm cấm `db:seed`, `db:backup`, `db:restore`; bỏ qua an toàn khi chưa cấu hình secret.
+     - **`deploy-vercel`**: cài cố định `vercel@54`, truyền `VERCEL_TOKEN` qua env (cấm cờ `--token`), chạy `vercel pull --yes --environment=production`, `vercel build --prod`, `vercel deploy --prebuilt --prod --yes`, và smoke check `GET /api/v1/branding`; bỏ qua an toàn khi chưa cấu hình `VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID`.
+- **Ảnh hưởng (`workflows`, tài liệu):** `.github/workflows/{ci,deploy}.yml`, `tests/unit/shared/cicd-workflows.test.ts`, `docs/{OPERATIONS,BACKLOG,STATUS,DECISIONS}.md`. (Không sửa schema CSDL hay `openapi.yaml`).
+- **Trạng thái:** `Ready for PR [RỦI RO CAO]` trên nhánh `feat/CR11-cicd-neon-vercel`.
