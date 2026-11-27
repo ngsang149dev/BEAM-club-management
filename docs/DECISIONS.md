@@ -258,4 +258,4 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
   5. **Bộ lọc Lịch & Deadline (`GET /tasks`):**
      - Hỗ trợ `deadlineStatus` (`overdue`, `urgent` `<= 1` ngày, `soon` `2–3` ngày, `safe` `> 3` ngày tính theo ngày lịch `Asia/Ho_Chi_Minh`, `done`), khoảng `[from, to]` (overlap `COALESCE(start_at, due_at) <= to AND COALESCE(due_at, start_at) >= from` hoặc không gắn ngày), và nâng giới hạn `limit` tối đa lên `200`. Mở rộng `PATCH /tasks/{id}` & `task-events` revert cho `start_at` và `is_completed`.
 - **Ảnh hưởng (`openapi`, `schema`, tài liệu):** Migration `0008_calendar_tasks_leads_deliverables.sql`, `db/schema/*`, `docs/ERD.md` (`23` bảng miền / `24` bảng public), `docs/openapi.yaml` (`src/features/shared/api/schema.d.ts`), `scripts/db-restore-verify.mjs`.
-- **Trạng thái:** Đang triển khai trên nhánh `feat/CR09-lead-accept-deliverables`.
+- **Trạng thái:** Đã hoàn tất và merge `main` (`CR-09` & `CR-10`).

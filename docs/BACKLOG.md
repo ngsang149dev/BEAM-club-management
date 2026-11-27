@@ -859,7 +859,7 @@
 
 ---
 
-## Epic CR-10 — Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Cảnh báo/Lọc Deadline & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) *(Ready for PR)*
+## Epic CR-10 — Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Cảnh báo/Lọc Deadline & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) *(Done — đã duyệt & merge vào main)*
 
 ### CR-10-01
 - **ID:** `CR-10-01`
@@ -876,7 +876,7 @@
 - **Kiểm thử bắt buộc:** `npm run typecheck`, `npm run lint`, `npm run arch:check`, `tests/unit/{auth,notifications}`, `tests/integration/auth`.
 - **Ngoài phạm vi:** Xóa endpoint `/api/v1/boards*` (bắt buộc giữ additive), giao diện frontend (`CR-10-02`).
 - **Mức rủi ro:** Thấp
-- **Trạng thái:** `Ready for PR`
+- **Trạng thái:** `Done`
 
 ### CR-10-02
 - **ID:** `CR-10-02`
@@ -894,7 +894,7 @@
 - **Kiểm thử bắt buộc:** Unit test `calendar-math`, `calendar-workspace`, cập nhật `app-shell`, `home-redirect`, `my-tasks`, `notifications-bell`, `task-drawer-toast`, `task-history-undo`, `i18n-parity`, `typecheck`, `lint`, `arch:check`.
 - **Ngoài phạm vi:** API backend, xóa route `/api/v1/boards*`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready for PR`
+- **Trạng thái:** `Done`
 
 ### CR-10-03
 - **ID:** `CR-10-03`
@@ -910,4 +910,4 @@
 - **Kiểm thử bắt buộc:** Full Vitest + Restore Verify + Next Build + Full Playwright Chrome E2E.
 - **Ngoài phạm vi:** Sửa code nghiệp vụ trực tiếp hoặc merge `main`.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready for PR`
+- **Trạng thái:** `Done`
