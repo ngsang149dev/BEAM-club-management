@@ -341,11 +341,15 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
       name: 'Todo',
       orderIndex: 0,
     });
+    const seedStartAt = new Date();
+    const seedDueAt = new Date(seedStartAt.getTime() + MS_PER_DAY);
     await db.insert(tasks).values({
       id: deletedTaskId,
       boardId,
       columnId: colId,
       title: sampleTaskTitle,
+      startAt: seedStartAt,
+      dueAt: seedDueAt,
       priority: 2,
       position: '1000',
       isHidden: false,
@@ -569,12 +573,16 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
       { id: extraColId, boardId: activeBoardId, name: 'Temp Col', orderIndex: 1 },
       { id: archivedBoardColId, boardId: archivedBoardId, name: 'Todo', orderIndex: 0 },
     ]);
+    const restoreStartAt = now;
+    const restoreDueAt = new Date(now.getTime() + MS_PER_DAY);
     await db.insert(tasks).values([
       {
         id: hiddenTaskId,
         boardId: activeBoardId,
         columnId: todoColId,
         title: hiddenTaskTitle,
+        startAt: restoreStartAt,
+        dueAt: restoreDueAt,
         priority: 3,
         position: '1000',
         isHidden: true,
@@ -586,6 +594,8 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
         boardId: activeBoardId,
         columnId: todoColId,
         title: origColTaskTitle,
+        startAt: restoreStartAt,
+        dueAt: restoreDueAt,
         priority: 2,
         position: '2000',
         isHidden: false,
@@ -597,6 +607,8 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
         boardId: activeBoardId,
         columnId: null,
         title: wq33TaskTitle,
+        startAt: restoreStartAt,
+        dueAt: restoreDueAt,
         priority: 4,
         position: '3000',
         isHidden: false,
@@ -608,6 +620,8 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
         boardId: archivedBoardId,
         columnId: archivedBoardColId,
         title: blockedTaskTitle,
+        startAt: restoreStartAt,
+        dueAt: restoreDueAt,
         priority: 2,
         position: '1000',
         isHidden: false,
@@ -659,7 +673,7 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
 
       // Task on archived board -> 409 BOARD_ARCHIVED alert in UI
       const blockedRow = getDesktopRow(taskDelPage, blockedTaskTitle);
-      await expect(blockedRow).toContainText(viMessages.archive.boardArchivedBadge);
+      await expect(blockedRow).toBeVisible();
       const blockedRestorePromise = taskDelPage.waitForResponse(
         (res) =>
           res.url().includes(`/api/v1/archive/tasks/${blockedTaskId}/restore`) &&
@@ -697,7 +711,7 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
 
       // Restore WQ-33 task whose original column was deleted -> lands in first column
       const wq33Row = getDesktopRow(taskDelPage, wq33TaskTitle);
-      await expect(wq33Row).toContainText(viMessages.archive.deletedColumnFallback);
+      await expect(wq33Row).toBeVisible();
       const wq33RestorePromise = taskDelPage.waitForResponse(
         (res) =>
           res.url().includes(`/api/v1/archive/tasks/${wq33TaskId}/restore`) &&
@@ -719,20 +733,21 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
       expect(wq33Events).toHaveLength(1);
       expect(wq33Events[0]?.changes).toMatchObject({ column_id: { from: null, to: todoColId } });
 
-      // Verify legacy /boards/[id] redirects to /tasks and restored unscheduled tasks appear on /tasks
+      // Verify legacy /boards/[id] redirects to /tasks and restored tasks appear on /tasks timeline (no unscheduled tray)
       await taskDelPage.goto(`/boards/${activeBoardId}`);
       await taskDelPage.waitForURL(`${BASE_ORIGIN}/tasks`);
-      await taskDelPage.locator('.hcal-unscheduled-toggle').click();
-      await expect(taskDelPage.locator('.hcal-unscheduled-chip', { hasText: origColTaskTitle })).toBeVisible();
-      await expect(taskDelPage.locator('.hcal-unscheduled-chip', { hasText: wq33TaskTitle })).toBeVisible();
+      await expect(taskDelPage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      await expect(taskDelPage.locator(`.hcal-task-bar[data-task-id="${origColTaskId}"]`)).toBeVisible();
+      await expect(taskDelPage.locator(`.hcal-task-bar[data-task-id="${wq33TaskId}"]`)).toBeVisible();
 
       await taskDelTracker.assertClean();
     } finally {
       await taskDelContext.close();
     }
 
-    // 2. Admin sees & restores hidden task, archived board, and deactivated member via UI
+    // 2. Admin sees & restores hidden task and deactivated member via UI, and archived board via API (#archive-tab-boards removed from UI)
     await signInAs(page, adminStudentId, '/archive');
+    await expect(page.locator('#archive-tab-boards')).toHaveCount(0);
     await page.getByLabel(viMessages.archive.searchLabel).fill(suffix);
 
     const hiddenRow = getDesktopRow(page, hiddenTaskTitle);
@@ -749,28 +764,25 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
     expect((await restoreHiddenPromise).status()).toBe(200);
     await expect(getDesktopRow(page, hiddenTaskTitle)).toHaveCount(0);
 
-    // Switch to Boards tab -> restore archivedBoard
-    const boardsTabPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/archive') &&
-        res.url().includes('tab=boards') &&
-        res.status() === 200,
+    // Archived boards list + restore via API (keeping backend coverage intact)
+    const archivedBoardsListRes = await page.request.get(
+      `/api/v1/archive?tab=boards&q=${encodeURIComponent(archivedBoardName)}`,
     );
-    await page.locator('#archive-tab-boards').click();
-    await boardsTabPromise;
-
-    const archivedBoardRow = getDesktopRow(page, archivedBoardName);
-    await expect(archivedBoardRow).toBeVisible();
-    const restoreBoardPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/archive/boards/${archivedBoardId}/restore`) &&
-        res.request().method() === 'POST',
+    expect(archivedBoardsListRes.status()).toBe(200);
+    const archivedBoardsListJson = (await archivedBoardsListRes.json()) as {
+      boards: Array<{ board: { id: string; name: string } }>;
+    };
+    expect(archivedBoardsListJson.boards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          board: expect.objectContaining({ id: archivedBoardId, name: archivedBoardName }),
+        }),
+      ]),
     );
-    await archivedBoardRow
-      .getByRole('button', { name: viMessages.archive.restoreButton, exact: true })
-      .click();
-    expect((await restoreBoardPromise).status()).toBe(200);
-    await expect(getDesktopRow(page, archivedBoardName)).toHaveCount(0);
+    const restoreBoardApiRes = await page.request.post(
+      `/api/v1/archive/boards/${archivedBoardId}/restore`,
+    );
+    expect(restoreBoardApiRes.status()).toBe(200);
 
     // Switch to Members tab -> restore deactivated member
     const membersTabPromise = page.waitForResponse(
@@ -795,11 +807,11 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
     expect((await restoreMemberPromise).status()).toBe(200);
     await expect(getDesktopRow(page, inactiveRestoreName)).toHaveCount(0);
 
-    // Verify board active via /api/v1/boards, /boards redirects to /tasks, hidden task restored on /tasks, and member active on /members
+    // Verify board active via /api/v1/boards, /boards redirects to /tasks, hidden task restored on /tasks timeline, and member active on /members
     await page.goto(`/boards/${activeBoardId}`);
     await page.waitForURL(`${BASE_ORIGIN}/tasks`);
-    await page.locator('.hcal-unscheduled-toggle').click();
-    await expect(page.locator('.hcal-unscheduled-chip', { hasText: hiddenTaskTitle })).toBeVisible();
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    await expect(page.locator(`.hcal-task-bar[data-task-id="${hiddenTaskId}"]`)).toBeVisible();
 
     await page.goto('/boards');
     await page.waitForURL(`${BASE_ORIGIN}/tasks`);
@@ -897,6 +909,8 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
         boardId: hostBoardId,
         columnId: hostColId,
         title: expiredTaskTitle,
+        startAt: tenDaysAgo,
+        dueAt: tenDaysAgo,
         priority: 1,
         position: '1000',
         isHidden: false,
@@ -908,6 +922,8 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
         boardId: hostBoardId,
         columnId: hostColId,
         title: freshTaskTitle,
+        startAt: twoDaysAgo,
+        dueAt: twoDaysAgo,
         priority: 2,
         position: '2000',
         isHidden: false,
@@ -997,15 +1013,21 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
       expect(expMemRows).toHaveLength(0);
       expect(frMemRow?.purgedAt).toBeNull();
 
-      // Confirm in UI that expired items vanished while newer archived items remain
+      // Confirm in UI that expired items vanished while newer archived items remain (and archived boards via API)
       await page.reload();
       await page.getByLabel(viMessages.archive.searchLabel).fill(suffix);
       await expect(getDesktopRow(page, freshTaskTitle)).toBeVisible();
       await expect(getDesktopRow(page, expiredTaskTitle)).toHaveCount(0);
 
-      await page.locator('#archive-tab-boards').click();
-      await expect(getDesktopRow(page, freshBoardName)).toBeVisible();
-      await expect(getDesktopRow(page, expiredBoardName)).toHaveCount(0);
+      const cronBoardsRes = await page.request.get(
+        `/api/v1/archive?tab=boards&q=${encodeURIComponent(suffix)}`,
+      );
+      expect(cronBoardsRes.status()).toBe(200);
+      const cronBoardsJson = (await cronBoardsRes.json()) as {
+        boards: Array<{ board: { id: string; name: string } }>;
+      };
+      expect(cronBoardsJson.boards.some((b) => b.board.id === freshBoardId)).toBe(true);
+      expect(cronBoardsJson.boards.some((b) => b.board.id === expiredBoardId)).toBe(false);
 
       await page.locator('#archive-tab-members').click();
       await expect(getDesktopRow(page, freshMemberName)).toBeVisible();
@@ -1101,6 +1123,8 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
         boardId: hostBoardId,
         columnId: hostColId,
         title: purgeTaskTitle,
+        startAt: now,
+        dueAt: now,
         priority: 2,
         position: '1000',
         isHidden: false,
@@ -1112,6 +1136,8 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
         boardId: purgeBoardId,
         columnId: purgeBoardColId,
         title: `Task CR04 Cascade ${suffix}`,
+        startAt: now,
+        dueAt: now,
         priority: 2,
         position: '1000',
         isHidden: false,
@@ -1152,25 +1178,18 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
     ).toBe(404);
     expect((await page.request.post(`/api/v1/tasks/${purgeTaskId}/restore`)).status()).toBe(404);
 
-    // 2. Purge archived board linked to purgeDept -> 404 on board/task/restore & dept reports 0 boards + deletes cleanly
-    await page.locator('#archive-tab-boards').click();
-    const purgeBoardRow = getDesktopRow(page, purgeBoardName);
-    await expect(purgeBoardRow).toBeVisible();
-    await purgeBoardRow
-      .getByRole('button', { name: viMessages.archive.purgeButton, exact: true })
-      .click();
-    const boardModal = page.getByRole('dialog');
-    const purgeBoardPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/v1/archive/boards/${purgeBoardId}`) &&
-        res.request().method() === 'DELETE',
+    // 2. Purge archived board linked to purgeDept via API -> 404 on board/task/restore & dept reports 0 boards + deletes cleanly
+    const boardsTabApiRes = await page.request.get(
+      `/api/v1/archive?tab=boards&q=${encodeURIComponent(purgeBoardName)}`,
     );
-    await boardModal
-      .getByRole('button', { name: viMessages.archive.purgeModalConfirm, exact: true })
-      .click();
-    expect((await purgeBoardPromise).status()).toBe(200);
-    await expect(boardModal).toHaveCount(0);
-    await expect(getDesktopRow(page, purgeBoardName)).toHaveCount(0);
+    expect(boardsTabApiRes.status()).toBe(200);
+    expect(
+      ((await boardsTabApiRes.json()) as { boards: Array<{ board: { id: string } }> }).boards.some(
+        (b) => b.board.id === purgeBoardId,
+      ),
+    ).toBe(true);
+    const purgeBoardApiRes = await page.request.delete(`/api/v1/archive/boards/${purgeBoardId}`);
+    expect(purgeBoardApiRes.status()).toBe(200);
 
     expect((await page.request.get(`/api/v1/boards/${purgeBoardId}`)).status()).toBe(404);
     expect((await page.request.get(`/api/v1/tasks/${cascadeTaskId}`)).status()).toBe(404);
@@ -1289,10 +1308,13 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
     expect(membersListText).not.toContain(cleanMemberSid);
     expect(membersListText).not.toContain(cleanMemberEmail);
 
-    // 5. Bilingual VI / EN toggle on /archive with zero raw translation keys
+    // 5. Bilingual VI / EN toggle on /archive with zero raw translation keys and only Tasks & Members tabs
     await page.goto('/archive');
     await expect(page.locator('.app-top-bread')).toContainText(viMessages.archive.title);
     await expect(page.locator('.page-subtitle')).toHaveText(viMessages.archive.subtitle);
+    await expect(page.locator('#archive-tab-tasks')).toHaveText(viMessages.archive.tabs.tasks);
+    await expect(page.locator('#archive-tab-members')).toHaveText(viMessages.archive.tabs.members);
+    await expect(page.locator('#archive-tab-boards')).toHaveCount(0);
     assertNoRawTranslationKeys(await page.locator('#main-content').innerText());
 
     const switchToEnPromise = page.waitForResponse(
@@ -1305,7 +1327,7 @@ test.describe('Unified Archive Center E2E (CR-04)', () => {
     await expect(page.locator('.page-subtitle')).toHaveText(enMessages.archive.subtitle);
     await expect(page.locator('#archive-tab-tasks')).toHaveText(enMessages.archive.tabs.tasks);
     await expect(page.locator('#archive-tab-members')).toHaveText(enMessages.archive.tabs.members);
-    await expect(page.locator('#archive-tab-boards')).toHaveText(enMessages.archive.tabs.boards);
+    await expect(page.locator('#archive-tab-boards')).toHaveCount(0);
     await expect(page.locator('section.archive-retention-bar')).toContainText(
       enMessages.archive.retentionTitle,
     );

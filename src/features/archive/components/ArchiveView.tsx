@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ErrorState } from '@/components/ErrorState';
+import { useDebouncedValue } from '@/features/shared/hooks/useDebouncedValue';
 import { usePermissions } from '@/features/shared/permissions/can';
 import type { ArchiveRetentionDays } from '@/lib/archive';
 import { describeArchiveError, resolveArchiveErrorMessage } from '../error-mapping';
@@ -13,16 +14,13 @@ import {
   useArchiveInfiniteQuery,
   useArchiveRetentionQuery,
   usePurgeArchiveItemMutation,
-  useRestoreArchiveBoardMutation,
   useRestoreArchiveMemberMutation,
   useRestoreArchiveTaskMutation,
   useUpdateArchiveRetentionMutation,
-  type ArchiveBoardItem,
   type ArchiveTab,
   type ArchiveTaskItem,
   type MemberListItem,
 } from '../hooks/useArchive';
-import { ArchiveBoardsTable } from './ArchiveBoardsTable';
 import { ArchiveMembersTable } from './ArchiveMembersTable';
 import { ArchivePurgeModal, type ArchivePurgeTarget } from './ArchivePurgeModal';
 import { ArchiveRetentionBar } from './ArchiveRetentionBar';
@@ -44,7 +42,6 @@ function ArchiveToolbar({
   readonly onResetSearch: () => void;
 }) {
   const t = useTranslations('archive');
-
   return (
     <div className="directory-toolbar">
       <div className="ui-segmented" role="tablist" aria-label={t('tabsAriaLabel')}>
@@ -88,14 +85,11 @@ function ArchiveErrorBanner({ error }: { readonly error: unknown }) {
   const descriptor = describeArchiveError(error);
   const message = resolveArchiveErrorMessage(error, tErr);
   if (!message) return null;
-
   return (
     <div className="ui-banner is-danger" role="alert">
       <div className="ui-banner-body">
         <span className="ui-banner-text">{message}</span>
-        {descriptor?.requestId ? (
-          <span className="ui-banner-meta">{tErr('requestIdLabel')}: {descriptor.requestId}</span>
-        ) : null}
+        {descriptor?.requestId ? <span className="ui-banner-meta">{tErr('requestIdLabel')}: {descriptor.requestId}</span> : null}
       </div>
     </div>
   );
@@ -107,7 +101,6 @@ function ArchiveQueryErrorState({ error, onRetry }: { readonly error: unknown; r
   const tErr = useTranslations('errors');
   const err = describeArchiveError(error);
   const is403 = err?.key === 'forbidden';
-
   return (
     <ErrorState
       variant={is403 ? '403' : '500'}
@@ -144,26 +137,14 @@ function ArchiveActiveTable({
       />
     );
   }
-  if (activeTab === 'members') {
-    return (
-      <ArchiveMembersTable
-        items={pages.flatMap((p) => p.members)}
-        isAdmin={isAdmin}
-        restoringId={actions.restoringId}
-        isBusy={actions.isBusy}
-        onRestore={actions.onRestoreMember}
-        onPurge={(member) => actions.openPurge({ entityType: 'members', id: member.id, label: member.fullName })}
-      />
-    );
-  }
   return (
-    <ArchiveBoardsTable
-      items={pages.flatMap((p) => p.boards)}
+    <ArchiveMembersTable
+      items={pages.flatMap((p) => p.members)}
       isAdmin={isAdmin}
       restoringId={actions.restoringId}
       isBusy={actions.isBusy}
-      onRestore={actions.onRestoreBoard}
-      onPurge={(item) => actions.openPurge({ entityType: 'boards', id: item.board.id, label: item.board.name })}
+      onRestore={actions.onRestoreMember}
+      onPurge={(member) => actions.openPurge({ entityType: 'members', id: member.id, label: member.fullName })}
     />
   );
 }
@@ -174,7 +155,7 @@ function countTabItems(
 ): number {
   if (activeTab === 'tasks') return pages.reduce((sum, p) => sum + p.tasks.length, 0);
   if (activeTab === 'members') return pages.reduce((sum, p) => sum + p.members.length, 0);
-  return pages.reduce((sum, p) => sum + p.boards.length, 0);
+  return 0;
 }
 
 function ArchiveTabPanel({
@@ -194,13 +175,8 @@ function ArchiveTabPanel({
 }) {
   const t = useTranslations('archive');
   const tCommon = useTranslations('common');
-
-  if (archiveQuery.isPending) {
-    return <p className="auth-loading" role="status">{tCommon('loading')}</p>;
-  }
-  if (archiveQuery.isError) {
-    return <ArchiveQueryErrorState error={archiveQuery.error} onRetry={() => void archiveQuery.refetch()} />;
-  }
+  if (archiveQuery.isPending) return <p className="auth-loading" role="status">{tCommon('loading')}</p>;
+  if (archiveQuery.isError) return <ArchiveQueryErrorState error={archiveQuery.error} onRetry={() => void archiveQuery.refetch()} />;
   const pages = archiveQuery.data?.pages ?? [];
   if (countTabItems(activeTab, pages) === 0) {
     return (
@@ -231,16 +207,15 @@ function useArchiveActions(isAdmin: boolean) {
   const retentionMut = useUpdateArchiveRetentionMutation();
   const taskMut = useRestoreArchiveTaskMutation();
   const memberMut = useRestoreArchiveMemberMutation();
-  const boardMut = useRestoreArchiveBoardMutation();
   const purgeMut = usePurgeArchiveItemMutation();
 
-  const resetRestoreErrors = () => { taskMut.reset(); memberMut.reset(); boardMut.reset(); };
-  const restoringId = taskMut.isPending ? (taskMut.variables ?? null) : memberMut.isPending ? (memberMut.variables ?? null) : boardMut.isPending ? (boardMut.variables ?? null) : null;
+  const resetRestoreErrors = () => { taskMut.reset(); memberMut.reset(); };
+  const restoringId = taskMut.isPending ? (taskMut.variables ?? null) : memberMut.isPending ? (memberMut.variables ?? null) : null;
 
   return {
     purgeTarget, retentionMut, purgeMut, restoringId,
     isBusy: Boolean(restoringId) || purgeMut.isPending,
-    restoreError: taskMut.error ?? memberMut.error ?? boardMut.error,
+    restoreError: taskMut.error ?? memberMut.error,
     resetRestoreErrors,
     onSaveRetention: (retentionDays: ArchiveRetentionDays) => {
       if (isAdmin) retentionMut.mutate({ retentionDays }, { onSuccess: () => toast.success(t('retentionSavedToast')) });
@@ -252,10 +227,6 @@ function useArchiveActions(isAdmin: boolean) {
     onRestoreMember: (member: MemberListItem) => {
       resetRestoreErrors();
       memberMut.mutate(member.id, { onSuccess: () => toast.success(t('memberRestoredToast', { name: member.fullName })) });
-    },
-    onRestoreBoard: (item: ArchiveBoardItem) => {
-      resetRestoreErrors();
-      boardMut.mutate(item.board.id, { onSuccess: () => toast.success(t('boardRestoredToast', { name: item.board.name })) });
     },
     openPurge: (target: ArchivePurgeTarget) => { if (isAdmin) { purgeMut.reset(); setPurgeTarget(target); } },
     closePurge: () => { purgeMut.reset(); setPurgeTarget(null); },
@@ -291,9 +262,10 @@ export function ArchiveView() {
   const hasAccess = permittedTabs.length > 0;
   const [selectedTab, setSelectedTab] = useState<ArchiveTab>('tasks');
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQ = useDebouncedValue(searchQuery, 250);
   const activeTab: ArchiveTab = permittedTabs.includes(selectedTab) ? selectedTab : (permittedTabs[0] ?? 'tasks');
 
-  const archiveQuery = useArchiveInfiniteQuery({ tab: activeTab, q: searchQuery }, hasAccess);
+  const archiveQuery = useArchiveInfiniteQuery({ tab: activeTab, q: debouncedQ }, hasAccess);
   const retentionQuery = useArchiveRetentionQuery(hasAccess);
   const actions = useArchiveActions(isAdmin);
 

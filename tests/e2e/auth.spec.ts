@@ -457,13 +457,19 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     await page.waitForURL(`${BASE_ORIGIN}/profile`);
     const mePayload = await (await meResponsePromise).text();
 
-    await expect(page.getByRole('heading', { level: 1, name: viMessages.profile.title })).toBeVisible();
+    await expect(page.locator('.app-top-bread')).toContainText(viMessages.profile.title);
     await expect(page.locator('.profile-main')).toContainText(activeFullName);
     await expect(page.locator('.profile-main')).toContainText(activeStudentId);
     await expect(page.locator('.profile-main')).toContainText(activeEmail);
-    await expect(page.locator('.profile-perms')).toContainText('member.view');
-    await expect(page.locator('.profile-perms')).toContainText('task.update_assigned');
-    await expect(page.locator('.profile-perms')).toContainText('comment.create');
+    await expect(page.locator('.profile-perms')).toContainText(
+      viMessages.permissions.catalog.member_view,
+    );
+    await expect(page.locator('.profile-perms')).toContainText(
+      viMessages.permissions.catalog.task_update_assigned,
+    );
+    await expect(page.locator('.profile-perms')).toContainText(
+      viMessages.permissions.catalog.comment_create,
+    );
 
     const profileSide = page.locator('.profile-side');
     await expect(profileSide).toContainText(viMessages.profile.sessionModeLabel);
@@ -505,11 +511,11 @@ test.describe('Auth & Session E2E (S01, S08)', () => {
     const patchResponse = await patchPromise;
     expect(patchResponse.status()).toBe(200);
     expect(patchResponse.request().postDataJSON()).toEqual({ locale: 'en' });
-    await expect(page.getByRole('heading', { level: 1, name: enMessages.profile.title })).toBeVisible();
+    await expect(page.locator('.app-top-bread')).toContainText(enMessages.profile.title);
     await expect(profileSide).toContainText(enMessages.profile.sessionModeSingleDevice);
 
     await page.reload();
-    await expect(page.getByRole('heading', { level: 1, name: enMessages.profile.title })).toBeVisible();
+    await expect(page.locator('.app-top-bread')).toContainText(enMessages.profile.title);
     await expect(
       page.locator('.app-side .app-side-lang').getByRole('button', { name: 'EN', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true');

@@ -22,13 +22,11 @@ export type RevertTaskEventResponse = components['schemas']['RevertTaskEventResp
 export type ArchiveTaskItem = components['schemas']['ArchiveTaskItem'];
 
 export const TASK_EVENTS_PAGE_SIZE = 15;
-export const BOARD_TRASH_PAGE_SIZE = 10;
 export const WORKSPACE_TRASH_PAGE_SIZE = 50;
 export const UNDO_TOAST_DURATION_MS = 10_000;
 
 export const TASK_EVENTS_QUERY_KEYS = {
   byTask: (taskId: string) => ['taskEvents', taskId] as const,
-  boardTrash: (boardId: string) => ['boardTrash', boardId] as const,
   workspaceTrash: ['tasks', 'workspaceTrash'] as const,
 };
 
@@ -90,18 +88,13 @@ function shouldRetryTaskEventQuery(failureCount: number, error: unknown): boolea
 
 export async function invalidateTaskEventQueries(
   queryClient: QueryClient,
-  taskId: string,
-  boardId: string
+  taskId: string
 ): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: TASK_EVENTS_QUERY_KEYS.byTask(taskId) }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.detail(taskId) }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.calendarRoot }),
-    queryClient.invalidateQueries({ queryKey: ['boards'] }),
-    queryClient.invalidateQueries({ queryKey: ['boardDetail', boardId] }),
-    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.boardListRoot }),
-    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.myTasksRoot }),
-    queryClient.invalidateQueries({ queryKey: TASK_EVENTS_QUERY_KEYS.boardTrash(boardId) }),
+    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.progressRoot }),
     queryClient.invalidateQueries({ queryKey: TASK_EVENTS_QUERY_KEYS.workspaceTrash }),
     queryClient.invalidateQueries({ queryKey: ['archive'] }),
     queryClient.invalidateQueries({ queryKey: ['notifications'] }),
@@ -125,7 +118,7 @@ export function useTaskEventsInfiniteQuery(taskId: string | null, enabled = true
   });
 }
 
-export function useRevertTaskEventMutation(boardId: string) {
+export function useRevertTaskEventMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -144,25 +137,8 @@ export function useRevertTaskEventMutation(boardId: string) {
         body: { force },
       }),
     onSuccess: async (data) => {
-      await invalidateTaskEventQueries(queryClient, data.task.id, boardId || data.task.boardId);
+      await invalidateTaskEventQueries(queryClient, data.task.id);
     },
-  });
-}
-
-export function useBoardTrashInfiniteQuery(boardId: string, enabled = true) {
-  return useInfiniteQuery({
-    queryKey: TASK_EVENTS_QUERY_KEYS.boardTrash(boardId),
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      apiFetch('/boards/{id}/trash', {
-        params: { id: boardId },
-        query: { ...(pageParam ? { cursor: pageParam } : {}), limit: BOARD_TRASH_PAGE_SIZE },
-        signal,
-      }),
-    getNextPageParam: (lastPage) => lastPage.meta.nextCursor ?? undefined,
-    enabled: enabled && Boolean(boardId),
-    retry: shouldRetryTaskEventQuery,
-    refetchOnMount: 'always',
   });
 }
 
@@ -186,7 +162,7 @@ export function useWorkspaceTrashInfiniteQuery(enabled = true) {
   });
 }
 
-export function useRestoreBoardTaskMutation(boardId: string) {
+export function useRestoreTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -196,7 +172,7 @@ export function useRestoreBoardTaskMutation(boardId: string) {
         params: { id: taskId },
       }),
     onSuccess: async (data) => {
-      await invalidateTaskEventQueries(queryClient, data.task.id, boardId || data.task.boardId);
+      await invalidateTaskEventQueries(queryClient, data.task.id);
     },
   });
 }
@@ -210,13 +186,11 @@ export interface QuickUndoMessages {
 export async function executeQuickUndo({
   queryClient,
   taskId,
-  boardId,
   eventId,
   messages,
 }: {
   readonly queryClient: QueryClient;
   readonly taskId: string;
-  readonly boardId: string;
   readonly eventId: string;
   readonly messages: QuickUndoMessages;
 }): Promise<void> {
@@ -226,7 +200,7 @@ export async function executeQuickUndo({
       params: { id: taskId, eventId },
       body: { force: false },
     });
-    await invalidateTaskEventQueries(queryClient, result.task.id, boardId || result.task.boardId);
+    await invalidateTaskEventQueries(queryClient, result.task.id);
     toast.success(messages.success);
   } catch (error) {
     if (isRevertConflictError(error)) {
@@ -241,7 +215,6 @@ export async function executeQuickUndo({
 export interface ShowUndoToastInput {
   readonly message: string;
   readonly taskId: string;
-  readonly boardId: string;
   readonly eventId: string | null | undefined;
 }
 
@@ -250,7 +223,7 @@ export function useUndoTaskActionToast() {
   const tHistory = useTranslations('taskHistory');
   const tErr = useTranslations('errors');
 
-  return ({ message, taskId, boardId, eventId }: ShowUndoToastInput) => {
+  return ({ message, taskId, eventId }: ShowUndoToastInput) => {
     void queryClient.invalidateQueries({ queryKey: TASK_EVENTS_QUERY_KEYS.byTask(taskId) });
     if (!eventId) {
       toast.success(message);
@@ -270,7 +243,7 @@ export function useUndoTaskActionToast() {
         onClick: () => {
           if (triggered) return;
           triggered = true;
-          void executeQuickUndo({ queryClient, taskId, boardId, eventId, messages });
+          void executeQuickUndo({ queryClient, taskId, eventId, messages });
         },
       },
     });

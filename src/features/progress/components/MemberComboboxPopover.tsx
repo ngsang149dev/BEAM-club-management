@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { MemberAvatar } from '@/components/MemberAvatar';
-import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import type { MemberListItem } from '@/features/members/hooks/useMembers';
 import { filterPopoverMembers } from '../member-helpers';
 import type { MemberWorkloadStats, ProgressPopoverFilter } from '../progress-helpers';

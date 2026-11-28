@@ -39,8 +39,8 @@ export interface TaskDto {
   readonly columnId: string | null;
   readonly title: string;
   readonly description: string | null;
-  readonly startAt: string | null;
-  readonly dueAt: string | null;
+  readonly startAt: string;
+  readonly dueAt: string;
   readonly isCompleted: boolean;
   readonly completedAt: string | null;
   readonly priority: TaskPriority;
@@ -135,8 +135,8 @@ export function toTaskDto(record: TaskRecord): TaskDto {
     columnId: record.columnId,
     title: record.title,
     description: record.description,
-    startAt: record.startAt ? record.startAt.toISOString() : null,
-    dueAt: record.dueAt ? record.dueAt.toISOString() : null,
+    startAt: record.startAt.toISOString(),
+    dueAt: record.dueAt.toISOString(),
     isCompleted: record.isCompleted,
     completedAt: record.completedAt ? record.completedAt.toISOString() : null,
     priority: record.priority,

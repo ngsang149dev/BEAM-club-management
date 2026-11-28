@@ -202,7 +202,7 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
     expect(safeNoStart.barPct).toBeLessThanOrEqual(48);
 
     expect(computeDeadlineBarMetrics({ startAt: null, dueAt: null, isCompleted: false }, NOW_FIXED_MS)).toEqual({
-      tier: 'unscheduled', daysDiff: null, barPct: 0, fillHex: '#a1a1aa',
+      tier: 'safe', daysDiff: 4, barPct: 36, fillHex: '#10b981',
     });
 
     // Clamping elapsed ratio 12..96% when both startAt & dueAt are valid
@@ -219,11 +219,12 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
     expect(safeDeliverableHref('javascript:alert(1)')).toBe('#');
   });
 
-  it('enforces direct-only task filtering (excluding department-only tasks), status tabs, stats, and workload map', () => {
+  it('enforces direct-only filtering in team mode, includes Việc của Ban tasks when allowDepartmentTasks=true, and builds workload map', () => {
     const directOverdue = makeTask({
       id: 't-direct-over',
       title: 'Direct overdue task',
       dueAt: '2026-11-24T00:00:00.000Z',
+      assignedDepartments: [],
       deliverables: [{ id: 'd-1', title: 'Draft', url: 'https://docs.google.com/1', submittedBy: PEER_PUBLIC, createdAt: '2026-11-24T00:00:00Z' }],
       deliverableCount: 1,
     });
@@ -233,11 +234,12 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
       isCompleted: true,
       dueAt: '2026-11-25T00:00:00.000Z',
       assignees: [{ ...ME_PROFILE, acceptedAt: '2026-11-21T00:00:00Z' }],
+      assignedDepartments: [],
       deliverableCount: 2,
     });
     const deptOnlyNotDirectlyAssigned = makeTask({
       id: 't-dept-only',
-      title: 'Department only task MUST NOT SHOW',
+      title: 'Department task for my dept',
       assignees: [{ ...PEER_PUBLIC, acceptedAt: null }],
       assignedDepartments: [{ id: 'dept-media', name: 'Ban Truyền thông' }],
     });
@@ -264,6 +266,24 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
     expect(filterProgressTasks(allTasks, { filter: 'done', q: 'completed', selectedMemberId: 'u-me', nowMs: NOW_FIXED_MS }).map((t) => t.id)).toEqual([
       't-direct-done',
     ]);
+    expect(
+      filterProgressTasks(allTasks, {
+        filter: 'department',
+        q: '',
+        selectedMemberId: 'u-me',
+        allowDepartmentTasks: true,
+        nowMs: NOW_FIXED_MS,
+      }).map((t) => t.id)
+    ).toEqual(['t-dept-only']);
+    expect(
+      filterProgressTasks(allTasks, {
+        filter: 'open',
+        q: '',
+        selectedMemberId: 'u-me',
+        allowDepartmentTasks: true,
+        nowMs: NOW_FIXED_MS,
+      }).map((t) => t.id)
+    ).toEqual(['t-direct-over', 't-dept-only']);
 
     const directOnly = filterProgressTasks(allTasks, { filter: 'all', q: '', selectedMemberId: 'u-me', nowMs: NOW_FIXED_MS });
     expect(computeMemberProgressStats(directOnly, NOW_FIXED_MS)).toEqual({
@@ -278,12 +298,18 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
     });
   });
 
-  it('gates Thành viên CLB mode by member.view and disables club queries when unauthorized', () => {
+  it('hides mode switcher when missing member.view, shows Việc của Ban & Giao cho Ban pill in mine mode, and disables club queries when unauthorized', () => {
     const qc = new QueryClient();
     const directTask = makeTask({ id: 't-mine-1', title: 'My direct task' });
-    qc.setQueryData([...TASKS_QUERY_KEYS.progressRoot, 'member', 'u-me'], {
-      items: [directTask],
-      meta: { nextCursor: null, limit: 200 },
+    const deptTask = makeTask({
+      id: 't-dept-1',
+      title: 'Ban media task',
+      assignees: [],
+      assignedDepartments: [{ id: 'dept-media', name: 'Truyền thông' }],
+    });
+    qc.setQueryData([...TASKS_QUERY_KEYS.progressRoot, 'mine'], {
+      items: [directTask, deptTask],
+      meta: { nextCursor: null, limit: 100 },
     });
 
     const withoutMemberViewHtml = renderWithProviders(<MemberProgressView />, {
@@ -291,11 +317,14 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
       isAdmin: false,
       queryClient: qc,
     });
-    expect(withoutMemberViewHtml).toContain('Của tôi');
+    expect(withoutMemberViewHtml).not.toContain('prog-mode-switch');
     expect(withoutMemberViewHtml).not.toContain('Thành viên CLB');
+    expect(withoutMemberViewHtml).toContain('Việc của Ban');
+    expect(withoutMemberViewHtml).toContain('Giao cho Ban');
     expect(membersHooksMock.useMembersInfiniteQuery).toHaveBeenCalledWith(expect.any(Object), false);
     expect(tasksHooksMock.useTaskDepartmentsQuery).toHaveBeenCalledWith(false);
     expect(withoutMemberViewHtml).toContain('My direct task');
+    expect(withoutMemberViewHtml).toContain('Ban media task');
     expect(withoutMemberViewHtml).toContain('2131200045'); // self sees own PII
 
     const withMemberViewHtml = renderWithProviders(<MemberProgressView />, {
@@ -303,6 +332,7 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
       isAdmin: false,
       queryClient: qc,
     });
+    expect(withMemberViewHtml).toContain('prog-mode-switch');
     expect(withMemberViewHtml).toContain('Thành viên CLB');
     // Still in 'mine' mode initially so /members remains disabled until switching to 'team'
     expect(membersHooksMock.useMembersInfiniteQuery).toHaveBeenLastCalledWith(expect.any(Object), false);
@@ -483,7 +513,7 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
 
     const qc = new QueryClient();
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
-    await invalidateTaskQueries(qc, 'b-1', 't-1');
+    await invalidateTaskQueries(qc, 't-1');
     const keys = invalidateSpy.mock.calls.map(([arg]) => arg?.queryKey);
     expect(keys).toContainEqual(TASKS_QUERY_KEYS.progressRoot);
   });

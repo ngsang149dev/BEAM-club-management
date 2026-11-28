@@ -1,4 +1,21 @@
 import { z } from 'zod';
+import {
+  createQueryLimitSchema,
+  defaultQueryLimitSchema,
+  emptyToUndefined,
+  optionalCursorQuerySchema,
+  optionalIsoDateQuerySchema,
+  optionalUuidQuerySchema,
+  parseIntegerInput,
+  parseStrictBooleanInput,
+} from './query-params';
+
+export {
+  emptyToUndefined,
+  optionalCursorQuerySchema,
+  parseIntegerInput,
+  parseStrictBooleanInput,
+};
 
 export const TASK_PRIORITIES = [1, 2, 3, 4] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -61,10 +78,9 @@ export const taskPrioritySchema = z.union([
   z.literal(3),
   z.literal(4),
 ]);
-export const nullableIsoDateSchema = z.iso
+export const requiredIsoDateSchema = z.iso
   .datetime({ offset: true })
-  .transform((iso) => new Date(iso))
-  .nullable();
+  .transform((iso) => new Date(iso));
 
 export const createTaskRequestSchema = z
   .object({
@@ -72,8 +88,8 @@ export const createTaskRequestSchema = z
     columnId: z.uuid().optional(),
     title: taskTitleSchema,
     description: taskDescriptionSchema.optional(),
-    startAt: nullableIsoDateSchema.optional(),
-    dueAt: nullableIsoDateSchema.optional(),
+    startAt: requiredIsoDateSchema,
+    dueAt: requiredIsoDateSchema,
     priority: taskPrioritySchema.default(2),
     assigneeIds: z.array(z.uuid()).default([]),
     departmentIds: z.array(z.uuid()).default([]),
@@ -92,7 +108,7 @@ export const createTaskRequestSchema = z
       path: ['boardId'],
     },
   )
-  .refine((d) => !(d.startAt && d.dueAt && d.startAt > d.dueAt), {
+  .refine((d) => d.startAt <= d.dueAt, {
     message: 'errors.invalidDateRange',
     path: ['dueAt'],
   });
@@ -103,13 +119,17 @@ export const updateTaskRequestSchema = z
   .object({
     title: taskTitleSchema.optional(),
     description: taskDescriptionSchema.optional(),
-    startAt: nullableIsoDateSchema.optional(),
-    dueAt: nullableIsoDateSchema.optional(),
+    startAt: requiredIsoDateSchema.optional(),
+    dueAt: requiredIsoDateSchema.optional(),
     isCompleted: z.boolean().optional(),
     priority: taskPrioritySchema.optional(),
     version: z.number().int().min(1),
   })
-  .strict();
+  .strict()
+  .refine((d) => !(d.startAt && d.dueAt && d.startAt > d.dueAt), {
+    message: 'errors.invalidDateRange',
+    path: ['dueAt'],
+  });
 
 export type UpdateTaskRequestInput = z.infer<typeof updateTaskRequestSchema>;
 
@@ -195,72 +215,12 @@ export function resolveTaskNotificationChannels(input: {
   };
 }
 
-export function emptyToUndefined(value: unknown): unknown {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value === 'string' && value.trim() === '') {
-    return undefined;
-  }
-  return value;
-}
-
-export function parseStrictBooleanInput(raw: unknown): unknown {
-  const value = emptyToUndefined(raw);
-  if (value === undefined || typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true') return true;
-    if (normalized === 'false') return false;
-  }
-  return raw;
-}
-
-export function parseIntegerInput(raw: unknown): unknown {
-  const value = emptyToUndefined(raw);
-  if (value === undefined || typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return Number(value.trim());
-  }
-  return Number.NaN;
-}
-
-const optionalUuidQuerySchema = z.preprocess(
-  emptyToUndefined,
-  z.uuid().optional(),
-);
-
 const optionalPriorityQuerySchema = z.preprocess(
   parseIntegerInput,
   taskPrioritySchema.optional(),
 );
 
-export const optionalCursorQuerySchema = z.preprocess(
-  emptyToUndefined,
-  z.string().trim().min(1).max(512).optional(),
-);
-
-const optionalIsoDateQuerySchema = z.preprocess(
-  emptyToUndefined,
-  z.iso
-    .datetime({ offset: true })
-    .transform((iso) => new Date(iso))
-    .optional(),
-);
-
-const queryLimitSchema = z.preprocess(
-  parseIntegerInput,
-  z.number().int().min(1).max(100).default(20),
-);
-
-const calendarTasksLimitSchema = z.preprocess(
-  parseIntegerInput,
-  z.number().int().min(1).max(200).default(20),
-);
+const calendarTasksLimitSchema = createQueryLimitSchema(200, 20);
 
 export const listTasksQuerySchema = z
   .object({
@@ -305,7 +265,7 @@ export const listMyTasksQuerySchema = z.object({
   ),
   priority: optionalPriorityQuerySchema,
   cursor: optionalCursorQuerySchema,
-  limit: queryLimitSchema,
+  limit: defaultQueryLimitSchema,
 });
 
 export type ListMyTasksQueryInput = z.infer<typeof listMyTasksQuerySchema>;

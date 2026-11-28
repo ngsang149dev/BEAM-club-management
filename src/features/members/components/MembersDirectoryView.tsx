@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
 import { useDepartmentsQuery } from '@/features/departments/hooks/useDepartments';
 import { isApiClientError } from '@/features/shared/api/client';
+import { useDebouncedValue } from '@/features/shared/hooks/useDebouncedValue';
 import { Can, usePermissions } from '@/features/shared/permissions/can';
 import { describeMemberError } from '../error-mapping';
 import {
@@ -238,8 +239,9 @@ export function MembersDirectoryView() {
   const tCommon = useTranslations('common');
   const tErr = useTranslations('errors');
   const [filters, setFilters] = useState<MembersFilterState>(DEFAULT_FILTERS);
+  const debouncedQ = useDebouncedValue(filters.q, 250);
   const departmentsQuery = useDepartmentsQuery(canView);
-  const membersQuery = useMembersInfiniteQuery(filters, canView);
+  const membersQuery = useMembersInfiniteQuery({ ...filters, q: debouncedQ }, canView);
 
   if (!canView) {
     return (

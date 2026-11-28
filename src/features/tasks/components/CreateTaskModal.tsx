@@ -6,10 +6,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { taskDescriptionSchema, taskTitleSchema } from '@/lib/tasks';
-import { hoChiMinhInputToUtcIso } from '../formatters';
+import { getTodayVnIso, requireHoChiMinhInputToUtcIso } from '../formatters';
 import {
   useCreateTaskMutation,
   useTaskAssigneeMembersQuery,
@@ -32,8 +32,8 @@ const createTaskFormSchema = z
   .object({
     title: taskTitleSchema,
     description: z.string().max(10000),
-    startAtInput: z.string(),
-    dueAtInput: z.string(),
+    startAtInput: z.string().trim().min(1, 'required'),
+    dueAtInput: z.string().trim().min(1, 'required'),
     isHidden: z.boolean(),
   })
   .refine((d) => !(d.startAtInput && d.dueAtInput && d.startAtInput > d.dueAtInput), {
@@ -44,9 +44,6 @@ const createTaskFormSchema = z
 export type CreateTaskFormValues = z.infer<typeof createTaskFormSchema>;
 
 export interface CreateTaskModalProps {
-  readonly boardId?: string;
-  readonly columnId?: string;
-  readonly columnName?: string;
   readonly onClose: () => void;
 }
 
@@ -80,8 +77,6 @@ function buildAssignmentPayloadFields(params: {
 }
 
 export function buildCreateTaskRequestPayload(params: {
-  readonly boardId?: string;
-  readonly columnId?: string;
   readonly values: CreateTaskFormValues;
   readonly canAssign: boolean;
   readonly assigneeIds: readonly string[];
@@ -90,25 +85,18 @@ export function buildCreateTaskRequestPayload(params: {
   readonly notifyEmail: boolean;
 }): CreateTaskRequest {
   const parsedDesc = taskDescriptionSchema.safeParse(params.values.description.trim() || null);
-  const scope = params.boardId && params.columnId
-    ? { boardId: params.boardId, columnId: params.columnId }
-    : {};
   return {
-    ...scope,
     title: params.values.title.trim(),
     description: parsedDesc.success ? parsedDesc.data : null,
-    startAt: hoChiMinhInputToUtcIso(params.values.startAtInput),
-    dueAt: hoChiMinhInputToUtcIso(params.values.dueAtInput),
+    startAt: requireHoChiMinhInputToUtcIso(params.values.startAtInput),
+    dueAt: requireHoChiMinhInputToUtcIso(params.values.dueAtInput),
+    priority: 2,
     ...buildAssignmentPayloadFields(params),
     isHidden: params.values.isHidden,
   };
 }
 
-function useCreateTaskController(
-  boardId: string | undefined,
-  columnId: string | undefined,
-  onClose: () => void
-) {
+function useCreateTaskController(onClose: () => void) {
   const tTasks = useTranslations('tasks');
   const { can } = usePermissions();
   const canAssign = can('task.assign');
@@ -122,13 +110,17 @@ function useCreateTaskController(
   const createMutation = useCreateTaskMutation();
   const form = useForm<CreateTaskFormValues>({
     resolver: zodResolver(createTaskFormSchema),
-    defaultValues: { title: '', description: '', startAtInput: '', dueAtInput: '', isHidden: false },
+    defaultValues: {
+      title: '',
+      description: '',
+      startAtInput: getTodayVnIso(),
+      dueAtInput: '',
+      isHidden: false,
+    },
   });
 
   const submitForm = (values: CreateTaskFormValues) => {
     const payload = buildCreateTaskRequestPayload({
-      boardId,
-      columnId,
       values,
       canAssign,
       assigneeIds,
@@ -163,6 +155,15 @@ function useCreateTaskController(
   };
 }
 
+function resolveDueErrorText(
+  error: { message?: string } | undefined,
+  tTasks: ReturnType<typeof useTranslations<'tasks'>>,
+  tErr: ReturnType<typeof useTranslations<'errors'>>
+): string | null {
+  if (!error) return null;
+  return error.message === 'invalidDateRange' ? tErr('invalidDateRange') : tTasks('validationDueAt');
+}
+
 function CreateTaskFormFields({
   ctrl,
   baseId,
@@ -179,7 +180,8 @@ function CreateTaskFormFields({
   const dueAtInput = useWatch({ control, name: 'dueAtInput' });
   const isHidden = useWatch({ control, name: 'isHidden' });
   const hasAnyAssignment = ctrl.assigneeIds.length > 0 || ctrl.departmentIds.length > 0;
-  const dateRangeError = errors.dueAtInput ? tErr('invalidDateRange') : null;
+  const startAtError = errors.startAtInput ? tTasks('validationStartAt') : null;
+  const dueAtError = resolveDueErrorText(errors.dueAtInput, tTasks, tErr);
 
   return (
     <form className="ui-modal-body" method="post" onSubmit={handleSubmit(ctrl.submitForm)} noValidate>
@@ -194,8 +196,8 @@ function CreateTaskFormFields({
         <textarea id={`${baseId}-desc`} className="ui-textarea" rows={4} placeholder={tTasks('descriptionPlaceholder')} {...register('description')} />
       </div>
       <div className="task-form-two-col">
-        <TaskStartDateInput value={startAtInput} onChange={(next) => setValue('startAtInput', next, { shouldValidate: true })} />
-        <TaskDueDateInput value={dueAtInput} errorText={dateRangeError} onChange={(next) => setValue('dueAtInput', next, { shouldValidate: true })} />
+        <TaskStartDateInput value={startAtInput} errorText={startAtError} onChange={(next) => setValue('startAtInput', next, { shouldValidate: true })} />
+        <TaskDueDateInput value={dueAtInput} errorText={dueAtError} onChange={(next) => setValue('dueAtInput', next, { shouldValidate: true })} />
       </div>
       <CreateTaskAssignmentFields
         canAssign={ctrl.canAssign}
@@ -224,16 +226,16 @@ function CreateTaskFormFields({
   );
 }
 
-export function CreateTaskModal({ boardId, columnId, columnName, onClose }: CreateTaskModalProps) {
+export function CreateTaskModal({ onClose }: CreateTaskModalProps) {
   const titleId = useId();
   const baseId = useId();
   useEscapeClose(true, onClose);
-  const ctrl = useCreateTaskController(boardId, columnId, onClose);
+  const ctrl = useCreateTaskController(onClose);
 
   return (
     <div className="ui-modal-backdrop" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ui-modal ui-modal-lg" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <CreateTaskModalHeader titleId={titleId} columnName={columnName} onClose={onClose} />
+        <CreateTaskModalHeader titleId={titleId} onClose={onClose} />
         <CreateTaskFormFields ctrl={ctrl} baseId={baseId} onClose={onClose} />
       </div>
     </div>

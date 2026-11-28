@@ -15,14 +15,11 @@ export interface Config {
   readonly testDatabaseUrl?: string;
   readonly sessionSecret: string;
   readonly sessionTtlMinutes: number;
-  readonly sessionTtlDefaultHours: number;
-  readonly sessionTtlRememberDays: number;
   readonly allowedEmailDomain: string;
   readonly defaultInitialPassword?: string;
   readonly cronSecret: string;
   readonly smtp: SmtpConfig;
   readonly appUrl: string;
-  readonly undoToastSeconds: number;
 }
 
 function emptyToUndefined(value: unknown): unknown {
@@ -54,14 +51,6 @@ const envSchema = z.object({
     emptyToUndefined,
     z.coerce.number().int().min(1).max(1440).default(30),
   ),
-  SESSION_TTL_DEFAULT_HOURS: z.preprocess(
-    emptyToUndefined,
-    z.coerce.number().int().positive().default(24),
-  ),
-  SESSION_TTL_REMEMBER_DAYS: z.preprocess(
-    emptyToUndefined,
-    z.coerce.number().int().positive().default(30),
-  ),
   ALLOWED_EMAIL_DOMAIN: z.preprocess(
     emptyToUndefined,
     z
@@ -84,10 +73,6 @@ const envSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.preprocess(
     emptyToUndefined,
     z.url().default('http://localhost:3000'),
-  ),
-  UNDO_TOAST_SECONDS: z.preprocess(
-    emptyToUndefined,
-    z.coerce.number().int().min(1).max(120).default(10),
   ),
 });
 
@@ -112,8 +97,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     testDatabaseUrl: data.TEST_DATABASE_URL,
     sessionSecret: data.SESSION_SECRET,
     sessionTtlMinutes: data.SESSION_TTL_MINUTES,
-    sessionTtlDefaultHours: data.SESSION_TTL_DEFAULT_HOURS,
-    sessionTtlRememberDays: data.SESSION_TTL_REMEMBER_DAYS,
     allowedEmailDomain: data.ALLOWED_EMAIL_DOMAIN,
     defaultInitialPassword:
       data.DEFAULT_INITIAL_PASSWORD ??
@@ -127,6 +110,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       from: data.SMTP_FROM,
     },
     appUrl: data.NEXT_PUBLIC_APP_URL,
-    undoToastSeconds: data.UNDO_TOAST_SECONDS,
   };
 }

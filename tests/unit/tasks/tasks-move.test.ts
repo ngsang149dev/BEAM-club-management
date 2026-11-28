@@ -291,7 +291,7 @@ describe('TasksService.moveTask authorization, optimistic lock & noop', () => {
     const now = clock.now();
     repo.records.set(TASK_TARGET, {
       id: TASK_TARGET, boardId: BOARD_ID, columnId: COL_A, title: 'Visible', description: null,
-      startAt: null, dueAt: null, isCompleted: false, completedAt: null,
+      startAt: now, dueAt: now, isCompleted: false, completedAt: null,
       priority: 2, position: '1000', isHidden: false, version: 1, deletedAt: null,
       createdBy: CREATOR_ID, assignees: [{ ...makeUser(ASSIGNEE_ID, 'Assignee'), acceptedAt: null }], assignedDepartments: [],
       deliverables: [], deliverableCount: 0, creator: makeUser(CREATOR_ID, 'Creator'),
@@ -299,7 +299,7 @@ describe('TasksService.moveTask authorization, optimistic lock & noop', () => {
     });
     repo.records.set(TASK_HIDDEN, {
       id: TASK_HIDDEN, boardId: BOARD_ID, columnId: COL_A, title: 'Hidden', description: null,
-      startAt: null, dueAt: null, isCompleted: false, completedAt: null,
+      startAt: now, dueAt: now, isCompleted: false, completedAt: null,
       priority: 2, position: '2000', isHidden: true, version: 1, deletedAt: null,
       createdBy: CREATOR_ID, assignees: [{ ...makeUser(ASSIGNEE_ID, 'Assignee'), acceptedAt: null }], assignedDepartments: [],
       deliverables: [], deliverableCount: 0, creator: makeUser(CREATOR_ID, 'Creator'),

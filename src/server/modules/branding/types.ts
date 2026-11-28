@@ -69,6 +69,13 @@ export interface BrandingRepository {
     key: string,
     tx?: TransactionContext,
   ): Promise<ClubAssetMetadataRecord | null>;
+  findBrandingAssetsMetadata?(
+    tx?: TransactionContext,
+  ): Promise<{
+    readonly logoAsset: ClubAssetMetadataRecord | null;
+    readonly wordmarkAsset: ClubAssetMetadataRecord | null;
+    readonly galleryItems: LoginGalleryItemMetadataRecord[];
+  }>;
   findAssetByKey(key: string): Promise<ClubAssetBinaryRecord | null>;
   upsertAsset(
     input: UpsertClubAssetParams,

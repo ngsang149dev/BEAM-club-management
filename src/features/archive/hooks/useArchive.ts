@@ -14,7 +14,6 @@ export type ArchiveTab = components['schemas']['ArchiveTab'];
 export type ArchivePurgeMode = components['schemas']['ArchivePurgeMode'];
 export type ArchiveRetentionDays = components['schemas']['ArchiveRetentionDays'];
 export type ArchiveTaskItem = components['schemas']['ArchiveTaskItem'];
-export type ArchiveBoardItem = components['schemas']['ArchiveBoardItem'];
 export type ArchivePageResponse = components['schemas']['ArchivePageResponse'];
 export type PurgeArchiveItemResponse = components['schemas']['PurgeArchiveItemResponse'];
 export type ArchiveRetentionSettingsDto = components['schemas']['ArchiveRetentionSettingsDto'];
@@ -37,16 +36,13 @@ export const ARCHIVE_QUERY_KEYS = {
 
 const ARCHIVE_INVALIDATION_KEYS = [
   ['archive'],
-  ['boards'],
-  ['boardDetail'],
-  ['board'],
-  ['myTasks'],
+  ['tasks'],
   ['taskDetail'],
-  ['tasks', 'assigneeMembers'],
   ['members'],
   ['departments'],
   ['auditLogs'],
   ['permissions', 'members'],
+  ['notifications'],
 ] as const;
 
 export function getPermittedArchiveTabs(
@@ -56,7 +52,6 @@ export function getPermittedArchiveTabs(
   const tabs: ArchiveTab[] = [];
   if (isAdmin || can('task.delete')) tabs.push('tasks');
   if (isAdmin || can('member.deactivate')) tabs.push('members');
-  if (isAdmin || can('board.delete')) tabs.push('boards');
   return tabs;
 }
 
@@ -88,10 +83,7 @@ export function useArchiveInfiniteQuery(filters: ArchiveListFilters, enabled = t
     queryKey: ARCHIVE_QUERY_KEYS.list(filters),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
-      apiFetch('/archive', {
-        query: buildArchiveListQuery(filters, pageParam),
-        signal,
-      }),
+      apiFetch('/archive', { query: buildArchiveListQuery(filters, pageParam), signal }),
     getNextPageParam: (lastPage) => lastPage.meta.nextCursor ?? undefined,
     enabled,
     retry: shouldRetryArchiveQuery,
@@ -137,17 +129,6 @@ export function useRestoreArchiveMemberMutation() {
   return useMutation({
     mutationFn: (id: string) =>
       apiFetch('/archive/members/{id}/restore', { method: 'post', params: { id } }),
-    onSuccess: async () => {
-      await invalidateAfterArchiveMutation(queryClient);
-    },
-  });
-}
-
-export function useRestoreArchiveBoardMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch('/archive/boards/{id}/restore', { method: 'post', params: { id } }),
     onSuccess: async () => {
       await invalidateAfterArchiveMutation(queryClient);
     },

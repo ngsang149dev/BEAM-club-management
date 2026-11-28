@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  defaultQueryLimitSchema,
+  emptyToUndefined,
+  optionalCursorQuerySchema,
+  optionalIsoDateQuerySchema,
+  optionalUuidQuerySchema,
+} from './query-params';
 
 export interface PermissionDefinition {
   readonly code: PermissionCode;
@@ -203,40 +210,6 @@ export type UpdateAdminFlagRequestInput = z.infer<
   typeof updateAdminFlagRequestSchema
 >;
 
-function emptyToUndefined(value: unknown): unknown {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value === 'string' && value.trim() === '') {
-    return undefined;
-  }
-  return value;
-}
-
-function parseLimitInput(raw: unknown): unknown {
-  const value = emptyToUndefined(raw);
-  if (value === undefined || typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return Number(value.trim());
-  }
-  return Number.NaN;
-}
-
-const optionalUuidQuerySchema = z.preprocess(
-  emptyToUndefined,
-  z.uuid().optional(),
-);
-
-const optionalIsoDateQuerySchema = z.preprocess(
-  emptyToUndefined,
-  z.iso
-    .datetime({ offset: true })
-    .transform((iso) => new Date(iso))
-    .optional(),
-);
-
 export const listAuditLogsQuerySchema = z
   .object({
     actorId: optionalUuidQuerySchema,
@@ -247,14 +220,8 @@ export const listAuditLogsQuerySchema = z
     ),
     from: optionalIsoDateQuerySchema,
     to: optionalIsoDateQuerySchema,
-    cursor: z.preprocess(
-      emptyToUndefined,
-      z.string().trim().min(1).max(512).optional(),
-    ),
-    limit: z.preprocess(
-      parseLimitInput,
-      z.number().int().min(1).max(100).default(20),
-    ),
+    cursor: optionalCursorQuerySchema,
+    limit: defaultQueryLimitSchema,
   })
   .refine(
     (data) => !data.from || !data.to || data.from.getTime() <= data.to.getTime(),

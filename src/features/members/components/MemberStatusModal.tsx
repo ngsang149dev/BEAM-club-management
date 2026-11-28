@@ -2,7 +2,7 @@
 
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';
-import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import type { MemberListItem } from '../hooks/useMembers';
 import { formatMemberServerError } from './MemberFormFields';
 

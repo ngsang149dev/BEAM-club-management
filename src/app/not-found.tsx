@@ -20,11 +20,11 @@ export default async function NotFoundPage() {
       footerText={tApp('footerNote')}
       actions={
         <>
-          <Link href="/my-tasks" className="ui-btn primary">
-            {tCommon('backToMyTasks')}
-          </Link>
-          <Link href="/tasks" className="ui-btn secondary">
+          <Link href="/tasks" className="ui-btn primary">
             {tCommon('backToTasks')}
+          </Link>
+          <Link href="/progress" className="ui-btn secondary">
+            {tCommon('backToProgress')}
           </Link>
         </>
       }

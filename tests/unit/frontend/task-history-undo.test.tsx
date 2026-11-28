@@ -14,10 +14,6 @@ const toastMock = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-const boardsHooksMock = vi.hoisted(() => ({
-  useBoardDetailQuery: vi.fn(),
-}));
-
 const tasksHooksMock = vi.hoisted(() => ({
   useTaskAssigneeMembersQuery: vi.fn(),
   useTaskDepartmentsQuery: vi.fn(),
@@ -30,9 +26,8 @@ const authHooksMock = vi.hoisted(() => ({
 const taskEventsHooksMock = vi.hoisted(() => ({
   useTaskEventsInfiniteQuery: vi.fn(),
   useRevertTaskEventMutation: vi.fn(),
-  useBoardTrashInfiniteQuery: vi.fn(),
   useWorkspaceTrashInfiniteQuery: vi.fn(),
-  useRestoreBoardTaskMutation: vi.fn(),
+  useRestoreTaskMutation: vi.fn(),
   useUndoTaskActionToast: vi.fn(() => vi.fn()),
 }));
 
@@ -44,13 +39,6 @@ vi.mock('@/features/shared/api/client', async () => {
 });
 
 vi.mock('sonner', () => ({ toast: toastMock }));
-
-vi.mock('@/features/boards/hooks/useBoards', async () => {
-  const actual = await vi.importActual<typeof import('@/features/boards/hooks/useBoards')>(
-    '@/features/boards/hooks/useBoards'
-  );
-  return { ...actual, ...boardsHooksMock };
-});
 
 vi.mock('@/features/tasks/hooks/useTasks', async () => {
   const actual = await vi.importActual<typeof import('@/features/tasks/hooks/useTasks')>(
@@ -74,22 +62,22 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-import { BoardTrashModal } from '@/features/boards/components/BoardTrashModal';
 import { TaskHistorySection } from '@/features/tasks/components/TaskHistorySection';
 import { TaskRevertConflictModal } from '@/features/tasks/components/TaskRevertConflictModal';
+import { WorkspaceTrashModal } from '@/features/tasks/components/WorkspaceTrashModal';
 import {
   canActorRevertEvent,
   formatTaskEventSummary,
   type TaskHistoryLookup,
 } from '@/features/tasks/event-formatters';
 import {
-  BOARD_TRASH_PAGE_SIZE,
   executeQuickUndo,
   extractRevertConflictFields,
   TASK_EVENTS_PAGE_SIZE,
   TASK_EVENTS_QUERY_KEYS,
   UNDO_TOAST_DURATION_MS,
   useUndoTaskActionToast,
+  WORKSPACE_TRASH_PAGE_SIZE,
 } from '@/features/tasks/hooks/useTaskEvents';
 import { TASKS_QUERY_KEYS } from '@/features/tasks/hooks/useTasks';
 
@@ -104,7 +92,7 @@ const SAMPLE_TASK: TaskDto = {
   columnId: '33333333-3333-4333-8333-333333333333',
   title: 'Chuẩn bị slide Open Day',
   description: '8 trang giới thiệu CLB',
-  startAt: null,
+  startAt: '2026-11-20T02:00:00Z',
   dueAt: '2026-11-28T17:00:00Z',
   isCompleted: false,
   completedAt: null,
@@ -180,38 +168,29 @@ function makeEvent(overrides: Partial<TaskEventDto>): TaskEventDto {
 
 function renderWithIntl(
   node: ReactNode,
-  options: { permissions?: PermissionCode[]; isAdmin?: boolean; locale?: 'vi' | 'en' } = {}
+  options: { permissions?: PermissionCode[]; isAdmin?: boolean; locale?: 'vi' | 'en'; queryClient?: QueryClient } = {}
 ) {
   const locale = options.locale ?? 'vi';
+  const qc = options.queryClient ?? new QueryClient();
   return renderToStaticMarkup(
-    <NextIntlClientProvider
-      locale={locale}
-      messages={locale === 'vi' ? viMessages : enMessages}
-      timeZone="Asia/Ho_Chi_Minh"
-    >
-      <PermissionsProvider isAdmin={options.isAdmin ?? false} permissions={options.permissions ?? []}>
-        {node}
-      </PermissionsProvider>
-    </NextIntlClientProvider>
+    <QueryClientProvider client={qc}>
+      <NextIntlClientProvider
+        locale={locale}
+        messages={locale === 'vi' ? viMessages : enMessages}
+        timeZone="Asia/Ho_Chi_Minh"
+      >
+        <PermissionsProvider isAdmin={options.isAdmin ?? false} permissions={options.permissions ?? []}>
+          {node}
+        </PermissionsProvider>
+      </NextIntlClientProvider>
+    </QueryClientProvider>
   );
 }
 
-describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
+describe('E7A-02 Task History, Quick Undo & Workspace Trash', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authHooksMock.useMeQuery.mockReturnValue({ data: { profile: { id: 'u-viewer', departments: [] } } });
-    boardsHooksMock.useBoardDetailQuery.mockReturnValue({
-      data: {
-        board: {
-          id: SAMPLE_TASK.boardId,
-          name: 'Open Day 2026',
-          columns: [
-            { id: '33333333-3333-4333-8333-333333333333', name: 'Cần làm', orderIndex: 0 },
-            { id: '77777777-7777-4777-8777-777777777777', name: 'Đang làm', orderIndex: 1 },
-          ],
-        },
-      },
-    });
     tasksHooksMock.useTaskDepartmentsQuery.mockReturnValue({
       data: {
         items: [
@@ -228,7 +207,7 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
       error: null,
       variables: undefined,
     });
-    taskEventsHooksMock.useRestoreBoardTaskMutation.mockReturnValue({
+    taskEventsHooksMock.useRestoreTaskMutation.mockReturnValue({
       mutate: vi.fn(),
       reset: vi.fn(),
       isPending: false,
@@ -240,9 +219,7 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
 
   it('formats all 9 event types cleanly in vi & en without leaking raw UUIDs or PII', () => {
     const tHistoryVi = createTranslator({ locale: 'vi', messages: viMessages, namespace: 'taskHistory' });
-    const tPrioVi = createTranslator({ locale: 'vi', messages: viMessages, namespace: 'priority' });
     const tHistoryEn = createTranslator({ locale: 'en', messages: enMessages, namespace: 'taskHistory' });
-    const tPrioEn = createTranslator({ locale: 'en', messages: enMessages, namespace: 'priority' });
 
     const cases: Array<{ event: TaskEventDto; vi: string; en: string }> = [
       {
@@ -395,14 +372,12 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
         locale: 'vi',
         lookup: LOOKUP,
         tHistory: tHistoryVi as never,
-        tPrio: tPrioVi as never,
       });
       const enText = formatTaskEventSummary({
         event: c.event,
         locale: 'en',
         lookup: LOOKUP,
         tHistory: tHistoryEn as never,
-        tPrio: tPrioEn as never,
       });
       expect(viText).toContain(c.vi);
       expect(enText).toContain(c.en);
@@ -414,7 +389,6 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
         locale: 'vi',
         lookup: emptyLookup,
         tHistory: tHistoryVi as never,
-        tPrio: tPrioVi as never,
       });
       expect(fallbackVi).not.toMatch(UUID_REGEX);
     }
@@ -475,7 +449,7 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
 
   it('executes quick undo with captured queryClient, invalidates all keys, and handles 409/403/404 errors', async () => {
     expect(TASK_EVENTS_PAGE_SIZE).toBe(15);
-    expect(BOARD_TRASH_PAGE_SIZE).toBe(10);
+    expect(WORKSPACE_TRASH_PAGE_SIZE).toBe(50);
     expect(UNDO_TOAST_DURATION_MS).toBe(10_000);
 
     const queryClient = new QueryClient();
@@ -495,7 +469,6 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     await executeQuickUndo({
       queryClient,
       taskId: SAMPLE_TASK.id,
-      boardId: SAMPLE_TASK.boardId,
       eventId: 'ev-1',
       messages,
     });
@@ -508,12 +481,8 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     const keys = invalidateSpy.mock.calls.map(([arg]) => arg?.queryKey);
     expect(keys).toContainEqual(['taskEvents', SAMPLE_TASK.id]);
     expect(keys).toContainEqual(TASKS_QUERY_KEYS.detail(SAMPLE_TASK.id));
-    expect(keys).toContainEqual(['boards']);
-    expect(keys).toContainEqual(['boardDetail', SAMPLE_TASK.boardId]);
-    expect(keys).toContainEqual(TASKS_QUERY_KEYS.boardListRoot);
     expect(keys).toContainEqual(TASKS_QUERY_KEYS.calendarRoot);
-    expect(keys).toContainEqual(TASKS_QUERY_KEYS.myTasksRoot);
-    expect(keys).toContainEqual(['boardTrash', SAMPLE_TASK.boardId]);
+    expect(keys).toContainEqual(TASKS_QUERY_KEYS.progressRoot);
     expect(keys).toContainEqual(TASK_EVENTS_QUERY_KEYS.workspaceTrash);
     expect(keys).toContainEqual(['archive']);
     expect(keys).toContainEqual(['notifications']);
@@ -527,19 +496,19 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     });
     expect(extractRevertConflictFields(conflictErr)).toEqual(['priority', 'title']);
     apiFetchMock.mockRejectedValueOnce(conflictErr);
-    await executeQuickUndo({ queryClient, taskId: SAMPLE_TASK.id, boardId: SAMPLE_TASK.boardId, eventId: 'ev-2', messages });
+    await executeQuickUndo({ queryClient, taskId: SAMPLE_TASK.id, eventId: 'ev-2', messages });
     expect(toastMock.error).toHaveBeenLastCalledWith(messages.conflict);
 
     apiFetchMock.mockRejectedValueOnce(
       new ApiClientError({ status: 403, code: 'FORBIDDEN', messageKey: 'errors.forbidden', details: {} })
     );
-    await executeQuickUndo({ queryClient, taskId: SAMPLE_TASK.id, boardId: SAMPLE_TASK.boardId, eventId: 'ev-3', messages });
+    await executeQuickUndo({ queryClient, taskId: SAMPLE_TASK.id, eventId: 'ev-3', messages });
     expect(toastMock.error).toHaveBeenLastCalledWith('ERR:forbidden');
 
     apiFetchMock.mockRejectedValueOnce(
       new ApiClientError({ status: 409, code: 'TASK_DELETED', messageKey: 'errors.taskDeletedConflict', details: {} })
     );
-    await executeQuickUndo({ queryClient, taskId: SAMPLE_TASK.id, boardId: SAMPLE_TASK.boardId, eventId: 'ev-4', messages });
+    await executeQuickUndo({ queryClient, taskId: SAMPLE_TASK.id, eventId: 'ev-4', messages });
     expect(toastMock.error).toHaveBeenLastCalledWith('ERR:taskDeletedConflict');
   });
 
@@ -562,13 +531,13 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     );
     expect(capturedShow).toBeTypeOf('function');
 
-    capturedShow!({ message: 'No-op saved', taskId: SAMPLE_TASK.id, boardId: SAMPLE_TASK.boardId, eventId: null });
+    capturedShow!({ message: 'No-op saved', taskId: SAMPLE_TASK.id, eventId: null });
     expect(toastMock.success).toHaveBeenLastCalledWith('No-op saved');
 
     apiFetchMock.mockResolvedValueOnce({ task: SAMPLE_TASK, eventId: 'ev-undo-new', revertedEventId: 'ev-9' });
-    capturedShow!({ message: 'Đã cập nhật task.', taskId: SAMPLE_TASK.id, boardId: SAMPLE_TASK.boardId, eventId: 'ev-9' });
+    capturedShow!({ message: 'Đã cập nhật công việc.', taskId: SAMPLE_TASK.id, eventId: 'ev-9' });
     const lastCall = toastMock.success.mock.calls.at(-1);
-    expect(lastCall?.[0]).toBe('Đã cập nhật task.');
+    expect(lastCall?.[0]).toBe('Đã cập nhật công việc.');
     const opts = lastCall?.[1] as { duration: number; action: { label: string; onClick: () => void } };
     expect(opts.duration).toBe(10_000);
     expect(opts.action.label).toBe('Hoàn tác');
@@ -641,7 +610,6 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     const viewerHtml = renderWithIntl(<TaskHistorySection task={SAMPLE_TASK} onTaskDeleted={vi.fn()} />, {
       permissions: [],
     });
-    expect(boardsHooksMock.useBoardDetailQuery).toHaveBeenCalledWith(SAMPLE_TASK.boardId, true);
     expect(tasksHooksMock.useTaskAssigneeMembersQuery).toHaveBeenCalledWith(false);
     expect(viewerHtml).toContain('Vũ Quốc F');
     expect(viewerHtml).toContain('(đã rời)');
@@ -649,7 +617,7 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     expect(viewerHtml).toContain('Hoàn tác');
     expect(viewerHtml).toContain('Ghi đè xung đột');
     expect(viewerHtml).toContain('Xem thêm lịch sử cũ hơn');
-    expect(viewerHtml).toContain('Lịch sử chỉ ghi thêm. Không ai sửa hoặc xóa, kể cả admin.');
+    expect(viewerHtml).not.toContain('task-history-foot');
     expect(viewerHtml).not.toContain('Khôi phục giá trị này');
     expect(viewerHtml).not.toMatch(UUID_REGEX);
     expect(viewerHtml).not.toContain('@eiu.edu.vn');
@@ -664,6 +632,43 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     expect(editorHtml).toContain('Reverted');
     expect(editorHtml).toContain('Forced');
     expect(editorHtml).not.toMatch(UUID_REGEX);
+
+    const movedEvent = makeEvent({
+      id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      type: 'task.moved',
+      changes: {
+        column_id: {
+          from: '33333333-3333-4333-8333-333333333333',
+          to: '77777777-7777-4777-8777-777777777777',
+        },
+      },
+    });
+    taskEventsHooksMock.useTaskEventsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [movedEvent], meta: { nextCursor: null, limit: 15 } }], pageParams: [undefined] },
+    });
+    const boardQc = new QueryClient();
+    boardQc.setQueryData(['boardColumns', SAMPLE_TASK.boardId], {
+      board: {
+        id: SAMPLE_TASK.boardId,
+        columns: [
+          { id: '33333333-3333-4333-8333-333333333333', name: 'Cần làm' },
+          { id: '77777777-7777-4777-8777-777777777777', name: 'Đang làm' },
+        ],
+      },
+    });
+    const movedHtml = renderWithIntl(<TaskHistorySection task={SAMPLE_TASK} onTaskDeleted={vi.fn()} />, {
+      queryClient: boardQc,
+    });
+    expect(movedHtml).toContain('Cần làm');
+    expect(movedHtml).toContain('Đang làm');
+    expect(movedHtml).not.toContain(viMessages.taskHistory.unknownColumn);
   });
 
   it('renders TaskRevertConflictModal with all 12 conflict field labels and force confirm button', () => {
@@ -716,8 +721,8 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
     expect(htmlEn).toContain('Deletion status');
   });
 
-  it('renders BoardTrashModal states, column fallback, restore CTA, and /archive footer link', () => {
-    taskEventsHooksMock.useBoardTrashInfiniteQuery.mockReturnValueOnce({
+  it('renders WorkspaceTrashModal states, restore CTA, and /archive footer link without board/column clutter', () => {
+    taskEventsHooksMock.useWorkspaceTrashInfiniteQuery.mockReturnValueOnce({
       isPending: false,
       isError: true,
       error: new ApiClientError({ status: 403, code: 'FORBIDDEN', messageKey: 'errors.forbidden', details: {}, requestId: 'req-trash-403' }),
@@ -727,56 +732,9 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
       refetch: vi.fn(),
       data: undefined,
     });
-    const forbiddenHtml = renderWithIntl(
-      <BoardTrashModal boardId={SAMPLE_TASK.boardId} boardName="Open Day 2026" onClose={vi.fn()} />
-    );
+    const forbiddenHtml = renderWithIntl(<WorkspaceTrashModal onClose={vi.fn()} />);
     expect(forbiddenHtml).toContain('403');
     expect(forbiddenHtml).toContain('req-trash-403');
-
-    taskEventsHooksMock.useBoardTrashInfiniteQuery.mockReturnValueOnce({
-      isPending: false,
-      isError: false,
-      error: null,
-      hasNextPage: true,
-      isFetchingNextPage: false,
-      fetchNextPage: vi.fn(),
-      refetch: vi.fn(),
-      data: {
-        pages: [
-          {
-            items: [
-              { ...SAMPLE_TASK, deletedAt: '2026-11-23T07:30:00Z', isHidden: true },
-              { ...SAMPLE_TASK, id: 'f1111111-1111-4111-8111-111111111111', title: 'Task mất cột', columnId: null, deletedAt: '2026-11-22T02:00:00Z' },
-            ],
-            meta: { nextCursor: 'cur-trash-2', limit: 10 },
-          },
-        ],
-        pageParams: [undefined],
-      },
-    });
-
-    const loadedHtml = renderWithIntl(
-      <BoardTrashModal
-        boardId={SAMPLE_TASK.boardId}
-        boardName="Open Day 2026"
-        columns={[{ id: '33333333-3333-4333-8333-333333333333', boardId: SAMPLE_TASK.boardId, name: 'Cần làm', orderIndex: 0, taskCount: 0, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z' }]}
-        onClose={vi.fn()}
-      />
-    );
-    expect(loadedHtml).toContain('Thùng rác · Open Day 2026');
-    expect(loadedHtml).toContain('board-trash-modal-icon');
-    expect(loadedHtml).toContain('board-trash-row-icon');
-    expect(loadedHtml).toContain('board-trash-restore-btn');
-    expect(loadedHtml).toContain('Chuẩn bị slide Open Day');
-    expect(loadedHtml).toContain('Task ẩn');
-    expect(loadedHtml).toContain('Cột cũ: Cần làm');
-    expect(loadedHtml).toContain('Cột cũ đã xóa (sẽ khôi phục vào cột đầu)');
-    expect(loadedHtml).toContain('14:30');
-    expect(loadedHtml).toContain('Khôi phục');
-    expect(loadedHtml).toContain('Tải thêm task đã xóa');
-    expect(loadedHtml).toContain('href="/archive"');
-    expect(loadedHtml).not.toContain('ui-prio');
-    expect(loadedHtml).not.toMatch(UUID_REGEX);
 
     taskEventsHooksMock.useWorkspaceTrashInfiniteQuery.mockReturnValueOnce({
       isPending: false,
@@ -812,15 +770,21 @@ describe('E7A-02 Task History, Quick Undo & Board Trash', () => {
         pageParams: [undefined],
       },
     });
-    const workspaceTrashHtml = renderWithIntl(
-      <BoardTrashModal boardId={null} boardName="BEAM Workspace" onClose={vi.fn()} />
-    );
-    expect(workspaceTrashHtml).toContain('Thùng rác · BEAM Workspace');
+    const workspaceTrashHtml = renderWithIntl(<WorkspaceTrashModal onClose={vi.fn()} />);
+    expect(workspaceTrashHtml).toContain('Thùng rác');
+    expect(workspaceTrashHtml).toContain('board-trash-modal-icon');
+    expect(workspaceTrashHtml).toContain('board-trash-row-icon');
+    expect(workspaceTrashHtml).toContain('board-trash-restore-btn');
     expect(workspaceTrashHtml).toContain('Chuẩn bị slide Open Day');
-    expect(workspaceTrashHtml).toContain('Cột cũ: Design');
+    expect(workspaceTrashHtml).toContain('Công việc ẩn');
     expect(workspaceTrashHtml).toContain('Task workspace xóa cột');
-    expect(workspaceTrashHtml).toContain('Cột cũ đã xóa (sẽ khôi phục vào cột đầu)');
+    expect(workspaceTrashHtml).toContain('14:30');
     expect(workspaceTrashHtml).toContain('Khôi phục');
+    expect(workspaceTrashHtml).toContain('Tải thêm công việc đã xóa');
+    expect(workspaceTrashHtml).toContain('href="/archive"');
+    expect(workspaceTrashHtml).not.toContain('Cột cũ:');
+    expect(workspaceTrashHtml).not.toContain('Không có xóa vĩnh viễn');
     expect(workspaceTrashHtml).not.toContain('ui-prio');
+    expect(workspaceTrashHtml).not.toMatch(UUID_REGEX);
   });
 });

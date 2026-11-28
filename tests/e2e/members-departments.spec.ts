@@ -679,9 +679,9 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await memberPage.waitForURL(`${BASE_ORIGIN}/profile`);
       await expect(passwordCard.locator('.ui-banner.is-warn')).toHaveCount(0);
       await expect(passwordCard).not.toHaveClass(/is-highlighted/);
-      await expect(passwordCard.locator('.ui-banner.is-success')).toContainText(
-        viMessages.profile.passwordChangedBanner,
-      );
+      await expect(
+        memberPage.locator('[data-sonner-toast]', { hasText: viMessages.profile.passwordChangedToast }),
+      ).toBeVisible();
 
       const postChangeMeRes = await memberPage.request.get('/api/v1/me');
       expect(postChangeMeRes.status()).toBe(200);
@@ -1125,6 +1125,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
 
     const createdRow = page.locator('li.dept-row', { hasText: createdDeptName });
     await expect(createdRow).toBeVisible();
+    await expect(createdRow).not.toContainText(/\d+\s*board/i);
+    await expect(page.locator('li.dept-row', { hasText: /\d+\s*board/i })).toHaveCount(0);
 
     await createdRow.getByRole('button', { name: viMessages.departmentsAdmin.renameAction }).click();
     const renameModal = page.getByRole('dialog');

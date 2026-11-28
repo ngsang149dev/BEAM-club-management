@@ -18,8 +18,6 @@ describe('loadConfig', () => {
       testDatabaseUrl: undefined,
       sessionSecret: BASE_ENV.SESSION_SECRET,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       defaultInitialPassword: 'BeamDev@2026',
       cronSecret: BASE_ENV.CRON_SECRET,
@@ -31,7 +29,6 @@ describe('loadConfig', () => {
         from: undefined,
       },
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     });
   });
 
@@ -45,17 +42,11 @@ describe('loadConfig', () => {
       SMTP_PASS: '',
       SMTP_FROM: '',
       SESSION_TTL_MINUTES: '45',
-      SESSION_TTL_DEFAULT_HOURS: '12',
-      SESSION_TTL_REMEMBER_DAYS: '14',
-      UNDO_TOAST_SECONDS: '15',
       NEXT_PUBLIC_APP_URL: 'https://beam.example.org',
     });
 
     expect(config.allowedEmailDomain).toBe('eiu.edu.vn');
     expect(config.sessionTtlMinutes).toBe(45);
-    expect(config.sessionTtlDefaultHours).toBe(12);
-    expect(config.sessionTtlRememberDays).toBe(14);
-    expect(config.undoToastSeconds).toBe(15);
     expect(config.appUrl).toBe('https://beam.example.org');
     expect(config.smtp.host).toBeUndefined();
     expect(config.smtp.port).toBeUndefined();

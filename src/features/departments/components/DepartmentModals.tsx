@@ -1,12 +1,13 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect, useId } from 'react';
+import { useId } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
 import { departmentNameSchema, uuidSchema } from '@/lib/members';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import { describeDepartmentError } from '../error-mapping';
 import type {
   DepartmentDto,
@@ -58,17 +59,6 @@ export function buildDepartmentUpsertPayload(
   const normalizedLead = rawLead === '' ? null : rawLead;
   uuidSchema.nullable().parse(normalizedLead);
   return { name, leadUserId: normalizedLead };
-}
-
-export function useEscapeClose(isOpen: boolean, onClose: () => void) {
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
 }
 
 function getDepartmentErrorText(
@@ -240,7 +230,7 @@ export function DepartmentDeleteModal({
   const tCommon = useTranslations('common');
   const tErr = useTranslations('errors');
   const serverError = getDepartmentErrorText(error, tErr);
-  const hasUsage = department.memberCount > 0 || department.boardCount > 0;
+  const hasUsage = department.memberCount > 0;
 
   return (
     <DepartmentModalFrame title={t('deleteModalTitle')} onClose={onClose}>
@@ -250,7 +240,7 @@ export function DepartmentDeleteModal({
           <div className="ui-banner is-warn" role="status">
             <div className="ui-banner-body">
               <span className="ui-banner-text">
-                {t('deleteBlockedHint', { memberCount: department.memberCount, boardCount: department.boardCount })}
+                {t('deleteBlockedHint', { memberCount: department.memberCount })}
               </span>
             </div>
           </div>

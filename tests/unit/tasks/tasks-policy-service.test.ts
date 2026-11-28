@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '@/lib/errors';
+import type { AuditLogEntry } from '@/server/shared/audit-writer';
 import type { AuthActor } from '@/server/shared/authorize';
 import { FakeClock } from '@/server/shared/clock';
 import { StructuredLogger } from '@/server/shared/logger';
@@ -330,7 +331,7 @@ function createHarness(options: { failDispatch?: boolean } = {}) {
     columnId: COL_TODO,
     title: 'Public Task',
     description: 'Initial',
-    startAt: null,
+    startAt: new Date('2026-11-24T00:00:00.000Z'),
     dueAt: new Date('2026-11-25T00:00:00.000Z'),
     isCompleted: false,
     completedAt: null,
@@ -356,8 +357,8 @@ function createHarness(options: { failDispatch?: boolean } = {}) {
     columnId: COL_TODO,
     title: 'Hidden Task',
     description: null,
-    startAt: null,
-    dueAt: null,
+    startAt: new Date('2026-11-24T00:00:00.000Z'),
+    dueAt: new Date('2026-11-25T00:00:00.000Z'),
     isCompleted: false,
     completedAt: null,
     priority: 3,
@@ -376,14 +377,20 @@ function createHarness(options: { failDispatch?: boolean } = {}) {
     updatedAt: now,
   });
 
+  const auditEntries: AuditLogEntry[] = [];
   const service = new TasksService({
     tasksRepo: repo,
+    auditWriter: {
+      record: async (entry) => {
+        auditEntries.push(entry);
+      },
+    },
     transactionRunner: MOCK_TX_RUNNER,
     clock,
     logger,
     notificationsDispatcher,
   });
-  return { repo, service, dispatches, acceptedDispatches, deliverableDispatches, logs };
+  return { repo, service, auditEntries, dispatches, acceptedDispatches, deliverableDispatches, logs };
 }
 
 const ADMIN: AuthActor = { id: ADMIN_ID, isActive: true, isAdmin: true, permissions: [] };
@@ -483,11 +490,11 @@ describe('tasks policy & TasksService', () => {
     expect(
       buildTaskUpdateChanges(
         { title: 'Old', description: null, dueAt: due, priority: 2 },
-        { title: 'New', dueAt: null, priority: 4, version: 1 },
+        { title: 'New', dueAt: new Date('2026-11-28T00:00:00.000Z'), priority: 4, version: 1 },
       ),
     ).toEqual({
       title: { from: 'Old', to: 'New' },
-      due_at: { from: '2026-11-25T00:00:00.000Z', to: null },
+      due_at: { from: '2026-11-25T00:00:00.000Z', to: '2026-11-28T00:00:00.000Z' },
       priority: { from: 2, to: 4 },
     });
   });
@@ -505,18 +512,21 @@ describe('tasks policy & TasksService', () => {
     await expect(
       service.createTask(CREATE_NO_ASSIGN, {
         boardId: BOARD_ID, columnId: COL_TODO, title: 'Fail Assign',
+        startAt: new Date('2026-11-24T00:00:00.000Z'), dueAt: new Date('2026-11-25T00:00:00.000Z'),
         priority: 2, assigneeIds: [ASSIGNEE_ID], departmentIds: [], notifyDepartmentMembers: true, isHidden: false,
       }),
     ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
     await expect(
       service.createTask(CREATE_NO_ASSIGN, {
         boardId: BOARD_ID, columnId: COL_TODO, title: 'Fail Dept Assign',
+        startAt: new Date('2026-11-24T00:00:00.000Z'), dueAt: new Date('2026-11-25T00:00:00.000Z'),
         priority: 2, assigneeIds: [], departmentIds: [DEPT_1], notifyDepartmentMembers: true, isHidden: false,
       }),
     ).rejects.toMatchObject({ httpStatus: 403, code: 'FORBIDDEN' });
 
     const createdNoDept = await service.createTask(CREATE_NO_ASSIGN, {
       boardId: BOARD_ID, columnId: COL_TODO, title: 'Unassigned Ok',
+      startAt: new Date('2026-11-24T00:00:00.000Z'), dueAt: new Date('2026-11-25T00:00:00.000Z'),
       priority: 2, assigneeIds: [], departmentIds: [], notifyDepartmentMembers: true, isHidden: false,
     });
     expect(createdNoDept.eventId).toBeTruthy();
@@ -525,6 +535,7 @@ describe('tasks policy & TasksService', () => {
     // Create with departmentIds + notifyDepartmentMembers=false skips dispatcher
     await service.createTask(ADMIN, {
       boardId: BOARD_ID, columnId: COL_TODO, title: 'Silent Dept Task',
+      startAt: new Date('2026-11-24T00:00:00.000Z'), dueAt: new Date('2026-11-25T00:00:00.000Z'),
       priority: 2, assigneeIds: [], departmentIds: [DEPT_1], notifyDepartmentMembers: false, isHidden: false,
     });
     expect(dispatches).toHaveLength(0);
@@ -532,6 +543,7 @@ describe('tasks policy & TasksService', () => {
     // Create with departmentIds + notifyDepartmentMembers=true dispatches
     const createdDept = await service.createTask(ADMIN, {
       boardId: BOARD_ID, columnId: COL_TODO, title: 'Loud Dept Task',
+      startAt: new Date('2026-11-24T00:00:00.000Z'), dueAt: new Date('2026-11-25T00:00:00.000Z'),
       priority: 2, assigneeIds: [], departmentIds: [DEPT_1], notifyDepartmentMembers: true, isHidden: true,
     });
     expect(createdDept.task.assignedDepartments).toHaveLength(1);
@@ -580,6 +592,8 @@ describe('tasks policy & TasksService', () => {
       boardId: BOARD_ID,
       columnId: COL_TODO,
       title: 'Direct InApp Only',
+      startAt: new Date('2026-11-24T00:00:00.000Z'),
+      dueAt: new Date('2026-11-25T00:00:00.000Z'),
       priority: 2,
       assigneeIds: [ASSIGNEE_ID, OTHER_USER_ID],
       departmentIds: [],
@@ -603,6 +617,8 @@ describe('tasks policy & TasksService', () => {
       boardId: BOARD_ID,
       columnId: COL_TODO,
       title: 'Both Off',
+      startAt: new Date('2026-11-24T00:00:00.000Z'),
+      dueAt: new Date('2026-11-25T00:00:00.000Z'),
       priority: 2,
       assigneeIds: [ASSIGNEE_ID],
       departmentIds: [DEPT_1],
@@ -677,6 +693,8 @@ describe('tasks policy & TasksService', () => {
       boardId: BOARD_ID,
       columnId: COL_TODO,
       title: 'Resilient Task',
+      startAt: new Date('2026-11-24T00:00:00.000Z'),
+      dueAt: new Date('2026-11-25T00:00:00.000Z'),
       priority: 2,
       assigneeIds: [],
       departmentIds: [DEPT_1],
@@ -838,5 +856,43 @@ describe('tasks policy & TasksService', () => {
       failHarness.service.addDeliverable(ASSIGNED_ONLY, TASK_1, { title: 'Safe', url: 'https://example.com/ok' }),
     ).resolves.toMatchObject({ deliverable: { title: 'Safe' } });
     expect(failHarness.logs.some((l) => l.includes('Failed to dispatch task lead notifications'))).toBe(true);
+  });
+
+  it('records all task and deliverable lifecycle audit logs with WQ-27 hidden redaction', async () => {
+    const { service, auditEntries } = createHarness();
+    const created = await service.createTask(ADMIN, {
+      boardId: BOARD_ID,
+      columnId: COL_TODO,
+      title: 'Public Work',
+      startAt: new Date('2026-11-24T00:00:00.000Z'),
+      dueAt: new Date('2026-11-25T00:00:00.000Z'),
+      priority: 2,
+      assigneeIds: [ASSIGNEE_ID],
+      departmentIds: [DEPT_1],
+      notifyDepartmentMembers: false,
+      isHidden: false,
+    });
+    await service.updateTask(ADMIN, created.task.id, { isCompleted: true, version: 1 });
+    await service.updateTask(ADMIN, created.task.id, { isCompleted: false, version: 2 });
+    await service.updateTask(ADMIN, created.task.id, { title: 'Renamed', isCompleted: true, version: 3 });
+    await service.replaceAssignees(ADMIN, created.task.id, { assigneeIds: [], notifyDepartmentMembers: false, version: 4 });
+    await service.updateTaskHidden(ADMIN, created.task.id, { isHidden: true, version: 5 });
+    await service.addDeliverable(ADMIN, created.task.id, { title: 'Hidden Deliverable', url: 'https://example.com/h' });
+    await service.deleteTask(ADMIN, created.task.id);
+
+    expect(auditEntries.map((e) => e.action)).toEqual([
+      'task.created',
+      'task.completed',
+      'task.reopened',
+      'task.updated',
+      'task.assignees_changed',
+      'task.hidden_changed',
+      'task.deliverable_added',
+      'task.deleted',
+    ]);
+    expect(auditEntries[0]?.detail).toMatchObject({ taskTitle: 'Public Work', assigneeCount: 1, isHidden: false });
+    expect(auditEntries[5]?.detail).toMatchObject({ isHidden: true, taskTitle: null });
+    expect(auditEntries[6]?.detail).toMatchObject({ isHidden: true, taskTitle: null, deliverableTitle: null });
+    expect(auditEntries[7]?.detail).toMatchObject({ isHidden: true, taskTitle: null });
   });
 });

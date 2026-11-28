@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, inArray, lt, or, type SQL } from 'drizzle-orm';
-import { comments, departments, memberDepartments, profiles, taskEvents } from '@db/schema';
+import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
+import { comments, taskEvents } from '@db/schema';
 import { notFound } from '@/lib/errors';
-import { buildUserSummariesMap, type TaskMemberSummaryRecord } from '@/server/modules/tasks';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 import type {
   CommentMutationResult,
   CommentRecord,
@@ -144,41 +144,11 @@ export class DrizzleCommentsRepository implements CommentsRepository {
   ): Promise<CommentRecord[]> {
     if (commentRows.length === 0) return [];
     const userIds = Array.from(new Set(commentRows.map((row) => row.userId)));
-    const userMap = await this.loadUserSummaries(executor, userIds);
+    const userMap = await loadUserSummariesMap(executor, userIds);
     return commentRows.map((row) => {
       const author = userMap.get(row.userId);
       if (!author) throw new Error('Missing comment author profile');
       return { ...row, author };
     });
-  }
-
-  private async loadUserSummaries(
-    executor: DbExecutor,
-    userIds: readonly string[],
-  ): Promise<Map<string, TaskMemberSummaryRecord>> {
-    if (userIds.length === 0) return new Map();
-    const [profileRows, deptRows] = await Promise.all([
-      executor
-        .select({
-          id: profiles.id,
-          fullName: profiles.fullName,
-          avatarUpdatedAt: profiles.avatarUpdatedAt,
-          isActive: profiles.isActive,
-          leftAt: profiles.leftAt,
-        })
-        .from(profiles)
-        .where(inArray(profiles.id, [...userIds])),
-      executor
-        .select({
-          userId: memberDepartments.userId,
-          id: departments.id,
-          name: departments.name,
-        })
-        .from(memberDepartments)
-        .innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
-        .where(inArray(memberDepartments.userId, [...userIds]))
-        .orderBy(asc(departments.name), asc(departments.id)),
-    ]);
-    return buildUserSummariesMap(profileRows, deptRows);
   }
 }

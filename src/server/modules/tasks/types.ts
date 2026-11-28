@@ -42,8 +42,8 @@ export interface TaskRecord {
   readonly columnId: string | null;
   readonly title: string;
   readonly description: string | null;
-  readonly startAt: Date | null;
-  readonly dueAt: Date | null;
+  readonly startAt: Date;
+  readonly dueAt: Date;
   readonly isCompleted: boolean;
   readonly completedAt: Date | null;
   readonly priority: TaskPriority;
@@ -95,8 +95,8 @@ export interface CreateTaskRepoParams {
   readonly columnId?: string;
   readonly title: string;
   readonly description?: string | null;
-  readonly startAt?: Date | null;
-  readonly dueAt?: Date | null;
+  readonly startAt: Date;
+  readonly dueAt: Date;
   readonly priority: TaskPriority;
   readonly assigneeIds: readonly string[];
   readonly departmentIds: readonly string[];
@@ -112,8 +112,8 @@ export interface UpdateTaskRepoParams {
   readonly version: number;
   readonly title?: string;
   readonly description?: string | null;
-  readonly startAt?: Date | null;
-  readonly dueAt?: Date | null;
+  readonly startAt?: Date;
+  readonly dueAt?: Date;
   readonly isCompleted?: boolean;
   readonly priority?: TaskPriority;
   readonly changes: TaskUpdateChanges;

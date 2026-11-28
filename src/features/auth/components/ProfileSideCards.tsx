@@ -124,7 +124,6 @@ export function ProfilePermissionsCard({
                   <path d="M4 12l5 5L20 6" />
                 </svg>
                 <div>
-                  <b>{code}</b>
                   <span>{subKey ? tCatalog(subKey) : code}</span>
                 </div>
               </div>

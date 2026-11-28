@@ -140,13 +140,10 @@ describe('CR-09 Calendar, Workspace Board, Acceptance, Deliverables & Archive in
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `cr09-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: `cr09-cron-secret-${suffix}`,
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -226,10 +223,22 @@ describe('CR-09 Calendar, Workspace Board, Acceptance, Deliverables & Archive in
       const otherMemberCookie = await loginAs(otherMemberSid, 5);
 
       // 1. Boardless POST /tasks auto-provisions ONE 'BEAM Workspace' board with 2 columns ('Đang thực hiện', 'Done')
+      const missingDatesCreate = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: creatorCookie },
+        body: JSON.stringify({ title: 'Missing Dates' }),
+      }));
+      expect(missingDatesCreate.status).toBe(400);
+
       const badPairCreate = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: creatorCookie },
-        body: JSON.stringify({ title: 'Bad Pair', boardId: randomUUID() }),
+        body: JSON.stringify({
+          title: 'Bad Pair',
+          boardId: randomUUID(),
+          startAt: '2026-11-25T00:00:00.000Z',
+          dueAt: '2026-11-26T00:00:00.000Z',
+        }),
       }));
       expect(badPairCreate.status).toBe(400);
 
@@ -279,6 +288,7 @@ describe('CR-09 Calendar, Workspace Board, Acceptance, Deliverables & Archive in
         headers: { 'content-type': 'application/json', cookie: creatorCookie },
         body: JSON.stringify({
           title: `CR09 Urgent ${suffix}`,
+          startAt: '2026-11-25T17:00:00.000Z',
           dueAt: '2026-11-25T17:00:00.000Z',
           priority: 3,
         }),
@@ -309,14 +319,7 @@ describe('CR-09 Calendar, Workspace Board, Acceptance, Deliverables & Archive in
       expect(t3Res.status).toBe(201);
       const hiddenTaskId = ((await t3Res.json()) as { task: { id: string } }).task.id;
 
-      // Task 4: Undated + Safe out-of-window tasks for [from, to] & deadlineStatus tests
-      const tUndatedRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', cookie: creatorCookie },
-        body: JSON.stringify({ title: `Undated ${suffix}`, priority: 1 }),
-      }));
-      const tUndatedId = ((await tUndatedRes.json()) as { task: { id: string } }).task.id;
-
+      // Task 4: Safe out-of-window task for [from, to] & deadlineStatus tests
       const tSafeRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: creatorCookie },
@@ -328,7 +331,7 @@ describe('CR-09 Calendar, Workspace Board, Acceptance, Deliverables & Archive in
       }));
       const tSafeId = ((await tSafeRes.json()) as { task: { id: string } }).task.id;
 
-      // 2. Verify deadlineStatus buckets + [from, to] overlap + undated + limit=200
+      // 2. Verify deadlineStatus buckets + [from, to] overlap + limit=200
       const urgentList = await (await tasksGet(new Request(`http://localhost:3000/api/v1/tasks?boardId=${workspaceBoardId}&deadlineStatus=urgent&limit=200`, { headers: { cookie: creatorCookie } }))).json() as { items: Array<{ id: string }> };
       expect(urgentList.items.map((i) => i.id)).toEqual([t2Body.task.id]);
 
@@ -338,9 +341,9 @@ describe('CR-09 Calendar, Workspace Board, Acceptance, Deliverables & Archive in
       const safeList = await (await tasksGet(new Request(`http://localhost:3000/api/v1/tasks?boardId=${workspaceBoardId}&deadlineStatus=safe`, { headers: { cookie: creatorCookie } }))).json() as { items: Array<{ id: string }> };
       expect(safeList.items.map((i) => i.id)).toEqual([tSafeId]);
 
-      // Window [2026-11-25..2026-11-27] matches t1 (24..25), t2 (25T17), t3 (20..28 spanning!), tUndated, excludes tSafe (Dec 5..10)
+      // Window [2026-11-25..2026-11-27] matches t1 (24..25), t2 (25T17), t3 (20..28 spanning!), excludes tSafe (Dec 5..10)
       const windowList = await (await tasksGet(new Request(`http://localhost:3000/api/v1/tasks?boardId=${workspaceBoardId}&from=2026-11-25T00:00:00.000Z&to=2026-11-27T23:59:59.000Z&limit=200`, { headers: { cookie: creatorCookie } }))).json() as { items: Array<{ id: string }> };
-      expect(windowList.items.map((i) => i.id).sort()).toEqual([t1Body.task.id, t2Body.task.id, hiddenTaskId, tUndatedId].sort());
+      expect(windowList.items.map((i) => i.id).sort()).toEqual([t1Body.task.id, t2Body.task.id, hiddenTaskId].sort());
 
       const badLimit = await tasksGet(new Request('http://localhost:3000/api/v1/tasks?limit=201', { headers: { cookie: creatorCookie } }));
       expect(badLimit.status).toBe(400);
@@ -353,6 +356,13 @@ describe('CR-09 Calendar, Workspace Board, Acceptance, Deliverables & Archive in
       }), { params: Promise.resolve({ id: t1Body.task.id }) });
       expect(badPartialPatch.status).toBe(400);
       expect(((await badPartialPatch.json()) as { error: { code: string } }).error.code).toBe('INVALID_DATE_RANGE');
+
+      const nullDatePatch = await taskPatch(new Request(`http://localhost:3000/api/v1/tasks/${t1Body.task.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', cookie: creatorCookie },
+        body: JSON.stringify({ dueAt: null, version: 1 }),
+      }), { params: Promise.resolve({ id: t1Body.task.id }) });
+      expect(nullDatePatch.status).toBe(400);
 
       const boardBefore = await (await boardDetailGet(new Request(`http://localhost:3000/api/v1/boards/${workspaceBoardId}`, { headers: { cookie: creatorCookie } }), { params: Promise.resolve({ id: workspaceBoardId }) })).json() as { board: { overdueTaskCount: number } };
       expect(boardBefore.board.overdueTaskCount).toBe(2);

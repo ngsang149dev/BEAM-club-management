@@ -1,6 +1,6 @@
 import { badRequest, tooManyRequests, unauthorized } from '@/lib/errors';
 import type { PermissionCode } from '@/lib/permissions';
-import type { AuditLogWriter } from '@/server/modules/audit';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { Logger } from '@/server/shared/logger';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '@/server/shared/password';
@@ -14,6 +14,7 @@ import {
   isRateLimited,
   RATE_LIMIT_WINDOW_MINUTES,
   type SessionTtlConfig,
+  shouldThrottleSessionTouch,
 } from './policy';
 import type {
   AuthRepository,
@@ -36,6 +37,32 @@ function throwRateLimited(): never {
   );
 }
 
+async function readLoginRateLimitCounts(params: {
+  readonly authRepo: AuthRepository;
+  readonly ip: string;
+  readonly attemptKey: string;
+  readonly since: Date;
+}): Promise<{ readonly pairFailedCount: number; readonly ipFailedCount: number }> {
+  if (params.authRepo.countLoginRateLimitFailures) {
+    return params.authRepo.countLoginRateLimitFailures({
+      ip: params.ip,
+      attemptKey: params.attemptKey,
+      since: params.since,
+    });
+  }
+  const pairFailedCount =
+    await params.authRepo.countRecentFailedLoginAttemptsForPair(
+      params.ip,
+      params.attemptKey,
+      params.since,
+    );
+  const ipFailedCount = await params.authRepo.countRecentFailedLoginAttempts(
+    params.ip,
+    params.since,
+  );
+  return { pairFailedCount, ipFailedCount };
+}
+
 export async function assertLoginWithinRateLimit(params: {
   readonly authRepo: AuthRepository;
   readonly logger: Logger;
@@ -43,14 +70,12 @@ export async function assertLoginWithinRateLimit(params: {
   readonly studentId: string;
   readonly now: Date;
 }): Promise<void> {
-  const since = computeRateLimitSince(params.now);
-  const loginAttemptKey = buildLoginAttemptKey(params.studentId);
-  const pairFailedCount =
-    await params.authRepo.countRecentFailedLoginAttemptsForPair(
-      params.ip,
-      loginAttemptKey,
-      since,
-    );
+  const { pairFailedCount, ipFailedCount } = await readLoginRateLimitCounts({
+    authRepo: params.authRepo,
+    ip: params.ip,
+    attemptKey: buildLoginAttemptKey(params.studentId),
+    since: computeRateLimitSince(params.now),
+  });
   if (isPairRateLimited(pairFailedCount)) {
     params.logger.warn('Login rate limit exceeded', {
       scope: 'pair',
@@ -58,11 +83,6 @@ export async function assertLoginWithinRateLimit(params: {
     });
     throwRateLimited();
   }
-
-  const ipFailedCount = await params.authRepo.countRecentFailedLoginAttempts(
-    params.ip,
-    since,
-  );
   if (isRateLimited(ipFailedCount)) {
     params.logger.warn('Login rate limit exceeded', {
       scope: 'ip',
@@ -259,7 +279,10 @@ export async function applySlidingSessionTouch(params: {
   readonly config: SessionTtlConfig;
   readonly shouldTouch: boolean;
 }): Promise<SessionRecord> {
-  if (!params.shouldTouch) {
+  if (
+    !params.shouldTouch ||
+    shouldThrottleSessionTouch(params.session, params.now)
+  ) {
     return params.session;
   }
   const nextExpiresAt = computeSlidingExpiry(params.now, params.config);

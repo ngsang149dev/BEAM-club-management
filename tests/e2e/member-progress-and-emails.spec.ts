@@ -478,7 +478,7 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
     await pool?.end();
   });
 
-  test('verifies sidebar /my-tasks & /progress, direct-only task scope, Master-Detail actions, Deliverables card, Comments modal, no /members calls without member.view, and 375x812 responsive layout', async ({
+  test('verifies /my-tasks consolidation into /progress (redirect + sidebar), Của tôi vs Thành viên CLB scopes, Master-Detail actions, Deliverables card, Comments modal, no /members calls without member.view, and 375x812 responsive layout', async ({
     page,
   }) => {
     const tracker = await attachRuntimeTracker(page);
@@ -493,24 +493,17 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
 
     await signInAs(page, member1Sid, '/tasks');
 
-    // 1. Sidebar displays both /my-tasks and /progress; /my-tasks remains intact & functional
-    const sideMyTasks = page.locator('.app-side a.app-nav-item[href="/my-tasks"]');
+    // 1. Sidebar omits /my-tasks and displays /progress; visiting /my-tasks redirects to /progress
+    await expect(page.locator('.app-side a[href="/my-tasks"]')).toHaveCount(0);
+    await expect(page.locator('.app-mtabs a[href="/my-tasks"]')).toHaveCount(0);
     const sideProgress = page.locator('.app-side a.app-nav-item[href="/progress"]');
-    await expect(sideMyTasks).toHaveText(viMessages.nav.myTasks);
     await expect(sideProgress).toHaveText(viMessages.nav.progress);
 
-    await sideMyTasks.click();
-    await page.waitForURL(`${BASE_ORIGIN}/my-tasks`);
-    await expect(page.locator('.my-task-row', { hasText: directOverdueTitle })).toBeVisible();
-    await expect(page.locator('.my-task-row', { hasText: deptOnlyTitle })).toBeVisible();
-
-    // 2. Navigate to /progress: NO Thành viên CLB tab, ZERO /api/v1/members requests, direct-only scope
-    await sideProgress.click();
+    await page.goto('/my-tasks');
     await page.waitForURL(`${BASE_ORIGIN}/progress`);
-    await expect(page.getByRole('button', { name: viMessages.progress.modeMine, exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+
+    // 2. /progress defaults to Của tôi -> Đang làm (excludes completed, includes direct & dept tasks); NO mode switcher (since basic member lacks member.view/lead), ZERO /api/v1/members requests
+    await expect(page.getByRole('button', { name: viMessages.progress.modeMine, exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: viMessages.progress.modeTeam, exact: true })).toHaveCount(0);
     expect(memberApiRequests).toEqual([]);
 
@@ -520,12 +513,20 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
     await expect(banner).toContainText(member1Sid);
     await expect(banner).toContainText(member1Email);
 
-    // Direct tasks appear; Dept-only Task B does NOT appear
+    // Của tôi (Đang làm) shows direct open tasks AND department-assigned task with "Giao cho Ban" pill, excluding Done
     await expect(page.locator('.prog-row', { hasText: directOverdueTitle })).toBeVisible();
     await expect(page.locator('.prog-row', { hasText: directSoonTitle })).toBeVisible();
-    await expect(page.locator('.prog-row', { hasText: deptOnlyTitle })).toHaveCount(0);
+    const deptOnlyRow = page.locator('.prog-row', { hasText: deptOnlyTitle });
+    await expect(deptOnlyRow).toBeVisible();
+    await expect(deptOnlyRow.locator('.prog-dept-pill')).toHaveText(viMessages.progress.deptAssignedPill);
+    await expect(page.locator('.prog-row', { hasText: directDoneTitle })).toHaveCount(0);
 
-    // 3. Filter tabs & search
+    // 3. Filter tabs ("Việc của Ban", "Quá hạn", "Chưa nhận", "Đã xong", "Tất cả") & search
+    await selectFilterTab(page, viMessages.progress.filterDepartment);
+    await expect(page.locator('.prog-row', { hasText: deptOnlyTitle })).toBeVisible();
+    await expect(page.locator('.prog-row', { hasText: directOverdueTitle })).toBeVisible();
+    await expect(page.locator('.prog-row', { hasText: directSoonTitle })).toHaveCount(0);
+
     await selectFilterTab(page, viMessages.progress.filterOverdue);
     await expect(page.locator('.prog-row', { hasText: directOverdueTitle })).toBeVisible();
     await expect(page.locator('.prog-row', { hasText: directSoonTitle })).toHaveCount(0);
@@ -541,7 +542,7 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
     await selectFilterTab(page, viMessages.progress.filterAll);
     await expect(page.locator('.prog-row', { hasText: directOverdueTitle })).toBeVisible();
     await expect(page.locator('.prog-row', { hasText: directDoneTitle })).toBeVisible();
-    await expect(page.locator('.prog-row', { hasText: deptOnlyTitle })).toHaveCount(0);
+    await expect(page.locator('.prog-row', { hasText: deptOnlyTitle })).toBeVisible();
 
     const searchInput = page.getByLabel(viMessages.progress.taskSearchLabel, { exact: true });
     await searchInput.fill(directSoonTitle);
@@ -777,7 +778,7 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
     }
   });
 
-  test('verifies CR-12-02 /admin/reminders preview sync (Pink->Coral header, zero Priority pills, zero .rem-email-foot in VI & EN)', async ({
+  test('verifies CR-12/CR-14 /admin/reminders live sample preview sync (Pink->Coral header, zero Priority pills, zero .rem-email-foot, /progress CTA, app locale sync)', async ({
     page,
   }) => {
     const tracker = await attachRuntimeTracker(page);
@@ -788,12 +789,12 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
     const emailCard = previewAside.locator('article.rem-email[data-component="ReminderEmail"]');
     await expect(emailCard).toBeVisible();
 
-    // Toggle Sample preview on so email rows are guaranteed populated
-    await previewAside
-      .locator('.rem-preview-controls')
-      .getByRole('button', { name: viMessages.reminders.previewSampleToggleOn, exact: true })
-      .click();
-    await expect(previewAside.getByTestId('reminders-sample-chip')).toBeVisible();
+    // Simplified CR-14 preview: no preview controls, language switcher, .rem-email-lang, or sample toggle/chip
+    await expect(previewAside.locator('.rem-preview-controls')).toHaveCount(0);
+    await expect(previewAside.locator('[role="group"]')).toHaveCount(0);
+    await expect(previewAside.locator('.rem-email-lang')).toHaveCount(0);
+    await expect(previewAside.locator('.rem-sample-chip')).toHaveCount(0);
+    await expect(previewAside.getByTestId('reminders-sample-chip')).toHaveCount(0);
 
     // Header gradient check & absence of old Priority pills and footer explanation
     const headerBg = await emailCard
@@ -802,25 +803,34 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
     expect(headerBg).toContain('linear-gradient');
     await expect(emailCard.locator('.ui-prio, .rem-email-task-prio')).toHaveCount(0);
     await expect(emailCard.locator('.rem-email-foot')).toHaveCount(0);
-    await expect(emailCard.locator('a.rem-email-cta')).toHaveAttribute('href', '/my-tasks');
+    await expect(emailCard.locator('a.rem-email-cta')).toHaveAttribute('href', '/progress');
 
     const viText = await emailCard.innerText();
+    expect(viText).toContain(viMessages.reminders.emailContent.vi.sampleTaskSoon);
     expect(viText).not.toContain('Mỗi người một email, mỗi ngày.');
     assertNoRawTranslationKeys(viText);
 
-    // Switch preview language to EN and assert zero Priority labels or footer explanation
-    const previewLangGroup = previewAside.locator(
-      `[role="group"][aria-label="${viMessages.reminders.previewLangAria}"]`,
+    // Switch app language via .app-side .app-side-lang to EN and assert zero Priority labels or footer explanation
+    const enSwitchPromise = page.waitForResponse(
+      (res) => res.url().endsWith('/api/v1/me') && res.request().method() === 'PATCH',
     );
-    await previewLangGroup.getByRole('button', { name: 'EN', exact: true }).click();
-    await expect(emailCard.locator('.rem-email-lang')).toHaveText(
-      enMessages.reminders.emailContent.en.langCode,
-    );
+    await page.locator('.app-side .app-side-lang').getByRole('button', { name: 'EN', exact: true }).click();
+    expect((await enSwitchPromise).status()).toBe(200);
+    await expect(emailCard).toContainText(enMessages.reminders.emailContent.en.subject);
+    await expect(emailCard).toContainText(enMessages.reminders.emailContent.en.sampleTaskSoon);
     await expect(emailCard.locator('.ui-prio, .rem-email-task-prio')).toHaveCount(0);
     await expect(emailCard.locator('.rem-email-foot')).toHaveCount(0);
+    await expect(emailCard.locator('a.rem-email-cta')).toHaveAttribute('href', '/progress');
     const enText = await emailCard.innerText();
     expect(enText).not.toContain('One email per person, per day.');
     assertNoRawTranslationKeys(enText);
+
+    // Switch back to VI
+    const viSwitchPromise = page.waitForResponse(
+      (res) => res.url().endsWith('/api/v1/me') && res.request().method() === 'PATCH',
+    );
+    await page.locator('.app-side .app-side-lang').getByRole('button', { name: 'VI', exact: true }).click();
+    expect((await viSwitchPromise).status()).toBe(200);
 
     await tracker.assertClean();
   });

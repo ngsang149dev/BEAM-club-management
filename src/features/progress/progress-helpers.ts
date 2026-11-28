@@ -7,11 +7,10 @@ export type ProgressDeadlineTier =
   | 'overdue'
   | 'urgent'
   | 'soon'
-  | 'safe'
-  | 'unscheduled';
+  | 'safe';
 
 export type ProgressMode = 'mine' | 'team';
-export type ProgressTaskFilter = 'open' | 'overdue' | 'unaccepted' | 'done' | 'all';
+export type ProgressTaskFilter = 'open' | 'overdue' | 'unaccepted' | 'department' | 'done' | 'all';
 export type ProgressPopoverFilter = 'all' | 'overdue';
 
 export interface DeadlineBarMetrics {
@@ -39,7 +38,6 @@ const TIER_FILL_HEX: Record<ProgressDeadlineTier, string> = {
   urgent: '#ea580c',
   soon: '#f59e0b',
   safe: '#10b981',
-  unscheduled: '#a1a1aa',
 };
 
 function computeActiveBarPct(params: {
@@ -77,9 +75,6 @@ export function computeDeadlineBarMetrics(
   );
   if (info.tier === 'done') {
     return { tier: 'done', daysDiff: null, barPct: 100, fillHex: TIER_FILL_HEX.done };
-  }
-  if (info.tier === 'unscheduled') {
-    return { tier: 'unscheduled', daysDiff: null, barPct: 0, fillHex: TIER_FILL_HEX.unscheduled };
   }
   if (info.tier === 'overdue') {
     return {
@@ -135,6 +130,7 @@ function matchesTaskFilter(
 ): boolean {
   if (filter === 'open') return !task.isCompleted;
   if (filter === 'done') return task.isCompleted;
+  if (filter === 'department') return task.assignedDepartments.length > 0;
   if (filter === 'overdue') {
     return !task.isCompleted && computeDeadlineBarMetrics(task, nowMs).tier === 'overdue';
   }
@@ -151,6 +147,7 @@ export function filterProgressTasks(
     readonly filter: ProgressTaskFilter;
     readonly q: string;
     readonly selectedMemberId: string;
+    readonly allowDepartmentTasks?: boolean;
     readonly nowMs?: number;
   }
 ): TaskDto[] {
@@ -158,7 +155,9 @@ export function filterProgressTasks(
   const needle = options.q.trim().toLowerCase();
   return tasks.filter((task) => {
     if (task.deletedAt !== null) return false;
-    if (!task.assignees.some((a) => a.id === options.selectedMemberId)) return false;
+    if (!options.allowDepartmentTasks && !task.assignees.some((a) => a.id === options.selectedMemberId)) {
+      return false;
+    }
     if (!matchesTaskFilter(task, options.selectedMemberId, options.filter, options.nowMs)) {
       return false;
     }

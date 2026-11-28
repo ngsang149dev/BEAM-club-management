@@ -1,9 +1,10 @@
 import { and, asc, count, desc, eq, exists, inArray, isNull, lt, ne, or, type SQL, sql } from 'drizzle-orm';
 import { boards, departments, memberDepartments, notifications, profiles, taskAssignees, taskDeliverables, taskDepartments, tasks } from '@db/schema';
-import { buildUserSummariesMap, type TaskMemberSummaryRecord, visibleTaskSqlCondition } from '@/server/modules/tasks';
+import { visibleTaskSqlCondition } from '@/server/modules/tasks';
 import type { AuthActor } from '@/server/shared/authorize';
-import type { DbExecutor } from '@/server/shared/db';
+import { type DbExecutor, runExecutorQueries } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 import { assembleTaskActivityContext, mapSelectedNotificationRows, type SelectedNotificationRow } from './repository-helpers';
 import type { CreateNotificationRowInput, DepartmentAssignmentContextRecord, DepartmentRecipientRecord, DirectAssigneeRecipientRecord, ListNotificationsRepoParams, NotificationDepartmentSummaryRecord, NotificationRecord, NotificationsRepository, TaskActivityNotificationContextRecord } from './types';
 
@@ -30,13 +31,13 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
   }): Promise<DepartmentAssignmentContextRecord | null> {
     const assigneeIds = input.assigneeIds ?? [];
     if (input.departmentIds.length === 0 && assigneeIds.length === 0) return null;
-    const [[taskRow], [boardRow], [actorRow], deptRows, memberRows, directRows] = await Promise.all([
-      this.db.select({ id: tasks.id, title: tasks.title, description: tasks.description, startAt: tasks.startAt, dueAt: tasks.dueAt, isCompleted: tasks.isCompleted, isHidden: tasks.isHidden }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
-      this.db.select({ id: boards.id, name: boards.name }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).limit(1),
-      this.db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(eq(profiles.id, input.actorId)).limit(1),
-      this.loadAssignedDepartments(input.departmentIds),
-      this.loadDepartmentMembers(input.departmentIds, input.actorId),
-      this.loadDirectAssignees(assigneeIds, input.actorId),
+    const [[taskRow], [boardRow], [actorRow], deptRows, memberRows, directRows] = await runExecutorQueries(this.db, [
+      () => this.db.select({ id: tasks.id, title: tasks.title, description: tasks.description, startAt: tasks.startAt, dueAt: tasks.dueAt, isCompleted: tasks.isCompleted, isHidden: tasks.isHidden }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
+      () => this.db.select({ id: boards.id, name: boards.name }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).limit(1),
+      () => this.db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(eq(profiles.id, input.actorId)).limit(1),
+      () => this.loadAssignedDepartments(input.departmentIds),
+      () => this.loadDepartmentMembers(input.departmentIds, input.actorId),
+      () => this.loadDirectAssignees(assigneeIds, input.actorId),
     ]);
     if (!taskRow || !boardRow || !actorRow) return null;
     return { task: taskRow, board: boardRow, actor: actorRow, departments: deptRows, members: memberRows, directAssignees: directRows };
@@ -45,13 +46,13 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
   async loadTaskActivityContext(input: {
     readonly taskId: string; readonly boardId: string; readonly actorId: string; readonly deliverableId?: string;
   }): Promise<TaskActivityNotificationContextRecord | null> {
-    const [[taskRow], [boardRow], [actorRow], taskDepts, assigneeRows, deliverableRows] = await Promise.all([
-      this.db.select({ id: tasks.id, title: tasks.title, description: tasks.description, startAt: tasks.startAt, dueAt: tasks.dueAt, isCompleted: tasks.isCompleted, isHidden: tasks.isHidden, createdBy: tasks.createdBy }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
-      this.db.select({ id: boards.id, name: boards.name }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).limit(1),
-      this.db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(eq(profiles.id, input.actorId)).limit(1),
-      this.db.select({ id: departments.id, name: departments.name, leadUserId: departments.leadUserId }).from(taskDepartments).innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(eq(taskDepartments.taskId, input.taskId)),
-      this.db.select({ userId: taskAssignees.userId }).from(taskAssignees).where(eq(taskAssignees.taskId, input.taskId)),
-      input.deliverableId ? this.db.select({ id: taskDeliverables.id, title: taskDeliverables.title, url: taskDeliverables.url }).from(taskDeliverables).where(and(eq(taskDeliverables.id, input.deliverableId), eq(taskDeliverables.taskId, input.taskId))).limit(1) : Promise.resolve([]),
+    const [[taskRow], [boardRow], [actorRow], taskDepts, assigneeRows, deliverableRows] = await runExecutorQueries(this.db, [
+      () => this.db.select({ id: tasks.id, title: tasks.title, description: tasks.description, startAt: tasks.startAt, dueAt: tasks.dueAt, isCompleted: tasks.isCompleted, isHidden: tasks.isHidden, createdBy: tasks.createdBy }).from(tasks).where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt), isNull(tasks.purgedAt))).limit(1),
+      () => this.db.select({ id: boards.id, name: boards.name }).from(boards).where(and(eq(boards.id, input.boardId), isNull(boards.purgedAt))).limit(1),
+      () => this.db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).where(eq(profiles.id, input.actorId)).limit(1),
+      () => this.db.select({ id: departments.id, name: departments.name, leadUserId: departments.leadUserId }).from(taskDepartments).innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(eq(taskDepartments.taskId, input.taskId)),
+      () => this.db.select({ userId: taskAssignees.userId }).from(taskAssignees).where(eq(taskAssignees.taskId, input.taskId)),
+      () => input.deliverableId ? this.db.select({ id: taskDeliverables.id, title: taskDeliverables.title, url: taskDeliverables.url }).from(taskDeliverables).where(and(eq(taskDeliverables.id, input.deliverableId), eq(taskDeliverables.taskId, input.taskId))).limit(1) : Promise.resolve([]),
     ]);
     if (!taskRow || !boardRow || !actorRow) return null;
     const candidateIds = Array.from(new Set([taskRow.createdBy, ...taskDepts.map((d) => d.leadUserId).filter((id): id is string => id !== null)])).filter((id) => id !== input.actorId);
@@ -99,9 +100,9 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
   }
 
   async listVisibleForUser(actor: AuthActor, params: ListNotificationsRepoParams): Promise<{ readonly rows: NotificationRecord[]; readonly unreadCount: number; readonly hasMore: boolean }> {
-    const [fetched, unreadCount] = await Promise.all([
-      this.selectNotificationRows(this.db).where(buildListWhere(this.db, actor, params)).orderBy(desc(notifications.createdAt), desc(notifications.id)).limit(params.limit + 1),
-      this.countUnread(actor, this.db),
+    const [fetched, unreadCount] = await runExecutorQueries(this.db, [
+      () => this.selectNotificationRows(this.db).where(buildListWhere(this.db, actor, params)).orderBy(desc(notifications.createdAt), desc(notifications.id)).limit(params.limit + 1),
+      () => this.countUnread(actor, this.db),
     ]);
     const hasMore = fetched.length > params.limit;
     const pageRows = hasMore ? fetched.slice(0, params.limit) : fetched;
@@ -114,7 +115,10 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
     const [visibleCheck] = await tx.select({ id: notifications.id }).from(notifications).innerJoin(tasks, eq(notifications.taskId, tasks.id)).innerJoin(boards, eq(notifications.boardId, boards.id)).where(and(eq(notifications.id, notificationId), visibleNotificationWhere(tx, actor))).limit(1);
     if (!visibleCheck) return null;
     if (locked.readAt === null) await tx.update(notifications).set({ readAt: now }).where(eq(notifications.id, notificationId));
-    const [rows, unreadCount] = await Promise.all([this.selectNotificationRows(tx).where(eq(notifications.id, notificationId)).limit(1), this.countUnread(actor, tx)]);
+    const [rows, unreadCount] = await runExecutorQueries(tx, [
+      () => this.selectNotificationRows(tx).where(eq(notifications.id, notificationId)).limit(1),
+      () => this.countUnread(actor, tx),
+    ]);
     const hydrated = await this.hydrateRows(tx, rows);
     return hydrated[0] ? { notification: hydrated[0], unreadCount } : null;
   }
@@ -144,15 +148,7 @@ export class DrizzleNotificationsRepository implements NotificationsRepository {
   private async hydrateRows(executor: DbExecutor, rows: readonly SelectedNotificationRow[]): Promise<NotificationRecord[]> {
     if (rows.length === 0) return [];
     const actorIds = Array.from(new Set(rows.map((r) => r.actorId)));
-    const actorMap = await this.loadActors(executor, actorIds);
+    const actorMap = await loadUserSummariesMap(executor, actorIds);
     return mapSelectedNotificationRows(rows, actorMap);
-  }
-
-  private async loadActors(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, TaskMemberSummaryRecord>> {
-    const [profileRows, deptRows] = await Promise.all([
-      executor.select({ id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt, isActive: profiles.isActive, leftAt: profiles.leftAt }).from(profiles).where(inArray(profiles.id, [...userIds])),
-      executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name }).from(memberDepartments).innerJoin(departments, eq(memberDepartments.departmentId, departments.id)).where(inArray(memberDepartments.userId, [...userIds])).orderBy(asc(departments.name), asc(departments.id)),
-    ]);
-    return buildUserSummariesMap(profileRows, deptRows);
   }
 }

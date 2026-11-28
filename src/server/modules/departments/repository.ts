@@ -1,8 +1,9 @@
-import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { boards, departments, memberDepartments, profiles } from '@db/schema';
 import { conflict } from '@/lib/errors';
 import type { DbExecutor } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 
 export interface DepartmentLeadSummaryRecord {
   readonly id: string;
@@ -194,7 +195,7 @@ export class DrizzleDepartmentsRepository implements DepartmentsRepository {
 
   private async hydrateLeads(executor: DbExecutor, rows: readonly RawDepartmentCountRow[]): Promise<DepartmentRecord[]> {
     const leadIds = Array.from(new Set(rows.map((r) => r.leadUserId).filter((id): id is string => id !== null)));
-    const leadMap = await this.loadLeadSummaries(executor, leadIds);
+    const leadMap = await loadUserSummariesMap(executor, leadIds);
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -204,23 +205,5 @@ export class DrizzleDepartmentsRepository implements DepartmentsRepository {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));
-  }
-
-  private async loadLeadSummaries(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, DepartmentLeadSummaryRecord>> {
-    const map = new Map<string, DepartmentLeadSummaryRecord>();
-    if (userIds.length === 0) return map;
-    const [profileRows, deptRows] = await Promise.all([
-      executor.select({ id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt, isActive: profiles.isActive, leftAt: profiles.leftAt }).from(profiles).where(inArray(profiles.id, [...userIds])),
-      executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name }).from(memberDepartments).innerJoin(departments, eq(memberDepartments.departmentId, departments.id)).where(inArray(memberDepartments.userId, [...userIds])).orderBy(asc(departments.name), asc(departments.id)),
-    ]);
-    const deptMap = new Map<string, Array<{ readonly id: string; readonly name: string }>>();
-    for (const row of deptRows) {
-      const list = deptMap.get(row.userId);
-      const dept = { id: row.id, name: row.name };
-      if (list) list.push(dept);
-      else deptMap.set(row.userId, [dept]);
-    }
-    for (const row of profileRows) map.set(row.id, { ...row, departments: deptMap.get(row.id) ?? [] });
-    return map;
   }
 }

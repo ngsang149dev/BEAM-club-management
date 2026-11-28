@@ -1,5 +1,5 @@
 import { unauthorized } from '@/lib/errors';
-import type { AuditLogWriter } from '@/server/modules/audit';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
@@ -136,14 +136,11 @@ export class AuthService {
     if (!session || isSessionExpired(session, now)) {
       throw unauthorized('errors.sessionExpired', {}, 'SESSION_EXPIRED');
     }
-    const profile = await this.deps.authRepo.findProfileWithDepartmentsById(
-      session.userId,
-    );
-    if (!profile || !profile.isActive) {
+    const context = await this.loadSessionContext(session.userId);
+    if (!context || !context.profile.isActive) {
       await this.deps.authRepo.revokeSession({ sessionId: session.id, revokedAt: now });
       throw unauthorized('errors.unauthorized', {}, 'ACCOUNT_INACTIVE');
     }
-    const permissions = await this.deps.authRepo.findUserPermissions(profile.id);
     const activeSession = await applySlidingSessionTouch({
       authRepo: this.deps.authRepo,
       session,
@@ -153,9 +150,19 @@ export class AuthService {
     });
     return {
       session: activeSession,
-      profile,
-      actor: buildAuthActor(profile, permissions),
+      profile: context.profile,
+      actor: buildAuthActor(context.profile, context.permissions),
     };
+  }
+
+  private async loadSessionContext(userId: string) {
+    if (this.deps.authRepo.findSessionAuthContext) {
+      return this.deps.authRepo.findSessionAuthContext(userId);
+    }
+    const profile = await this.deps.authRepo.findProfileWithDepartmentsById(userId);
+    if (!profile) return null;
+    const permissions = await this.deps.authRepo.findUserPermissions(profile.id);
+    return { profile, permissions };
   }
 
   async getSessionInfo(
@@ -166,7 +173,7 @@ export class AuthService {
   }
 
   async logout(rawToken: string | null | undefined): Promise<{ readonly ok: boolean }> {
-    const { session } = await this.authenticateSession(rawToken);
+    const { session } = await this.authenticateSession(rawToken, { touch: false });
     await this.deps.authRepo.revokeSession({
       sessionId: session.id,
       revokedAt: this.deps.clock.now(),

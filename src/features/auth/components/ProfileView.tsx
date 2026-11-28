@@ -28,7 +28,7 @@ type MemberDetail = components['schemas']['MemberDetail'];
 export interface ProfileContentProps {
   profile: MemberDetail;
   permissions: readonly PermissionCode[];
-  session?: Pick<SessionInfoResponse, 'rememberMe' | 'expiresAt'> | null;
+  session?: Pick<SessionInfoResponse, 'expiresAt'> | null;
   isSigningOut?: boolean;
   forceChangePasswordPrompt?: boolean;
   passwordChanged?: boolean;
@@ -106,12 +106,8 @@ export function ProfileContent({
   onClearPasswordChanged,
   onSignOut,
 }: ProfileContentProps) {
-  const tProfile = useTranslations('profile');
   return (
     <div className="profile-page">
-      <header className="profile-pagehead">
-        <h1>{tProfile('title')}</h1>
-      </header>
       <div className="profile-grid">
         <ProfileMainColumn
           profile={profile}

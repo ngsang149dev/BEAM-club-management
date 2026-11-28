@@ -10,16 +10,20 @@ import type { ResolvedMemberBannerIdentity } from '../member-helpers';
 import {
   computeDeadlineBarMetrics,
   findMemberAssignee,
+  type ProgressMode,
   type ProgressTaskFilter,
 } from '../progress-helpers';
 
-const FILTER_TABS: readonly { readonly key: ProgressTaskFilter; readonly labelKey: string }[] = [
+const MINE_FILTER_TABS: readonly { readonly key: ProgressTaskFilter; readonly labelKey: string }[] = [
   { key: 'open', labelKey: 'filterOpen' },
   { key: 'overdue', labelKey: 'filterOverdue' },
   { key: 'unaccepted', labelKey: 'filterUnaccepted' },
+  { key: 'department', labelKey: 'filterDepartment' },
   { key: 'done', labelKey: 'filterDone' },
   { key: 'all', labelKey: 'filterAll' },
 ];
+
+const TEAM_FILTER_TABS = MINE_FILTER_TABS.filter((tab) => tab.key !== 'department');
 
 function MemberIdentityBanner({ identity }: { readonly identity: ResolvedMemberBannerIdentity }) {
   const t = useTranslations('progress');
@@ -51,21 +55,24 @@ function MemberIdentityBanner({ identity }: { readonly identity: ResolvedMemberB
 }
 
 function TaskListFiltersBar({
+  mode,
   filter,
   searchQuery,
   onFilterChange,
   onSearchChange,
 }: {
+  readonly mode: ProgressMode;
   readonly filter: ProgressTaskFilter;
   readonly searchQuery: string;
   readonly onFilterChange: (next: ProgressTaskFilter) => void;
   readonly onSearchChange: (q: string) => void;
 }) {
   const t = useTranslations('progress');
+  const tabs = mode === 'mine' ? MINE_FILTER_TABS : TEAM_FILTER_TABS;
   return (
     <div className="prog-list-toolbar">
       <div className="prog-filter-tabs" role="tablist" aria-label={t('filterTabsAria')}>
-        {FILTER_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
@@ -90,6 +97,28 @@ function TaskListFiltersBar({
   );
 }
 
+function ProgressTaskRowBadges({
+  task,
+  metrics,
+  isDeptPendingAccept,
+}: {
+  readonly task: TaskDto;
+  readonly metrics: ReturnType<typeof computeDeadlineBarMetrics>;
+  readonly isDeptPendingAccept: boolean;
+}) {
+  const t = useTranslations('progress');
+  const tTasks = useTranslations('tasks');
+
+  return (
+    <>
+      <span className={`prog-dot is-${metrics.tier}`} aria-hidden="true" />
+      <span className={`prog-row-title${task.isCompleted ? ' is-done' : ''}`}>{task.title}</span>
+      {task.isHidden ? <span className="ui-chip task-hidden-chip prog-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
+      {isDeptPendingAccept ? <span className="ui-chip prog-dept-pill">{t('deptAssignedPill')}</span> : null}
+    </>
+  );
+}
+
 function ProgressTaskRow({
   task,
   targetMemberId,
@@ -106,19 +135,18 @@ function ProgressTaskRow({
   readonly onOpenComments: () => void;
 }) {
   const t = useTranslations('progress');
-  const tTasks = useTranslations('tasks');
   const tCalendar = useTranslations('calendar');
   const metrics = computeDeadlineBarMetrics(task);
-  const accepted = Boolean(findMemberAssignee(task, targetMemberId)?.acceptedAt);
+  const directAssignee = findMemberAssignee(task, targetMemberId);
+  const accepted = Boolean(directAssignee?.acceptedAt);
+  const isDeptPendingAccept = !directAssignee && task.assignedDepartments.length > 0;
   const deptLabel = task.assignedDepartments.map((d) => d.name).join(' · ') || tCalendar('clubWideDept');
 
   return (
     <li className={`prog-row${selected ? ' is-selected' : ''}`}>
       <div className="prog-row-task">
         <button type="button" className="prog-row-btn" aria-pressed={selected} onClick={onSelect}>
-          <span className={`prog-dot is-${metrics.tier}`} aria-hidden="true" />
-          <span className={`prog-row-title${task.isCompleted ? ' is-done' : ''}`}>{task.title}</span>
-          {task.isHidden ? <span className="ui-chip task-hidden-chip prog-hidden-chip">{tTasks('hiddenBadge')}</span> : null}
+          <ProgressTaskRowBadges task={task} metrics={metrics} isDeptPendingAccept={isDeptPendingAccept} />
         </button>
         <div className="prog-row-dept">{deptLabel}</div>
       </div>
@@ -131,7 +159,7 @@ function ProgressTaskRow({
         </button>
       </div>
       <div className="prog-row-due">
-        <span className={`prog-due-text mono is-${metrics.tier}`}>{task.dueAt ? formatVnMonthDayTime(task.dueAt, locale) : '—'}</span>
+        <span className={`prog-due-text mono is-${metrics.tier}`}>{formatVnMonthDayTime(task.dueAt, locale)}</span>
         <div className="prog-mini-track" aria-hidden="true">
           <div className="prog-mini-fill" style={{ width: `${metrics.barPct}%`, backgroundColor: metrics.fillHex }} />
         </div>
@@ -196,6 +224,7 @@ function ProgressTaskListBody(props: {
 }
 
 export function ProgressTaskListPane(props: {
+  readonly mode?: ProgressMode;
   readonly identity: ResolvedMemberBannerIdentity | null;
   readonly tasks: readonly TaskDto[];
   readonly targetMemberId: string;
@@ -216,7 +245,7 @@ export function ProgressTaskListPane(props: {
     <section className="prog-card prog-list-pane" aria-label={t('colTask')}>
       <div className="prog-list-pane-top">
         {props.identity ? <MemberIdentityBanner identity={props.identity} /> : null}
-        <TaskListFiltersBar filter={props.filter} searchQuery={props.searchQuery} onFilterChange={props.onFilterChange} onSearchChange={props.onSearchChange} />
+        <TaskListFiltersBar mode={props.mode ?? 'mine'} filter={props.filter} searchQuery={props.searchQuery} onFilterChange={props.onFilterChange} onSearchChange={props.onSearchChange} />
       </div>
       <div className="prog-list-cols" aria-hidden="true">
         <span>{t('colTask')}</span>

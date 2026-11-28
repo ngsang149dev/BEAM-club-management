@@ -8,8 +8,8 @@ import type { AuditLogWriter } from '@/server/modules/audit';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
-import { type Logger, scrubPiiText } from '@/server/shared/logger';
-import type { Mailer } from '@/server/shared/mailer';
+import type { Logger } from '@/server/shared/logger';
+import { extractSafeMailErrorMessage, type Mailer } from '@/server/shared/mailer';
 import type { TransactionRunner } from '@/server/shared/transaction';
 import { buildReminderDigestEmail } from './email-template';
 import {
@@ -33,23 +33,6 @@ export interface RemindersServiceDeps {
   readonly clock: Clock;
   readonly config: Pick<Config, 'cronSecret' | 'appUrl'>;
   readonly logger: Logger;
-}
-
-function formatSubError(item: unknown): string {
-  return item instanceof Error ? item.message : String(item);
-}
-
-function extractSafeMailErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return 'Mail delivery error';
-  if (error.message.trim().length > 0) return scrubPiiText(error.message);
-  if ('errors' in error && Array.isArray(error.errors)) {
-    const joined = error.errors
-      .map(formatSubError)
-      .filter((msg) => msg.trim().length > 0)
-      .join('; ');
-    if (joined.length > 0) return scrubPiiText(joined);
-  }
-  return scrubPiiText(error.name || 'Mail delivery error');
 }
 
 export class RemindersService {

@@ -36,7 +36,6 @@ function DepartmentRow({
         <div className="dept-row-badges">
           <DepartmentLeadBadge lead={department.lead} />
           <span className="ui-chip">{t('memberCountBadge', { count: department.memberCount })}</span>
-          <span className="ui-chip">{t('boardCountBadge', { count: department.boardCount })}</span>
         </div>
       </div>
       <div className="dept-row-actions">

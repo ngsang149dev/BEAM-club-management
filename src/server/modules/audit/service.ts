@@ -29,6 +29,7 @@ export class AuditService {
     const cursor = query.cursor ? decodeAuditCursor(query.cursor) : undefined;
 
     const { rows, hasMore } = await this.deps.auditRepo.listAuditLogs({
+      actor,
       actorId: query.actorId,
       targetUserId: query.targetUserId,
       action: query.action,

@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  defaultQueryLimitSchema,
+  emptyToUndefined,
+  optionalCursorQuerySchema,
+} from './query-params';
 
 export const ARCHIVE_TABS = ['tasks', 'members', 'boards'] as const;
 export type ArchiveTab = (typeof ARCHIVE_TABS)[number];
@@ -38,38 +43,11 @@ export type UpdateArchiveRetentionRequestInput = z.infer<
   typeof updateArchiveRetentionRequestSchema
 >;
 
-function emptyToUndefined(value: unknown): unknown {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value === 'string' && value.trim() === '') {
-    return undefined;
-  }
-  return value;
-}
-
-function parseLimitInput(raw: unknown): unknown {
-  const value = emptyToUndefined(raw);
-  if (value === undefined || typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return Number(value.trim());
-  }
-  return Number.NaN;
-}
-
 export const listArchiveQuerySchema = z.object({
   tab: z.preprocess(emptyToUndefined, archiveTabSchema.default('tasks')),
   q: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(200).optional()),
-  cursor: z.preprocess(
-    emptyToUndefined,
-    z.string().trim().min(1).max(512).optional(),
-  ),
-  limit: z.preprocess(
-    parseLimitInput,
-    z.number().int().min(1).max(100).default(20),
-  ),
+  cursor: optionalCursorQuerySchema,
+  limit: defaultQueryLimitSchema,
 });
 
 export type ListArchiveQueryInput = z.infer<typeof listArchiveQuerySchema>;

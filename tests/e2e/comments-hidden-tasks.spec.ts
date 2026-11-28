@@ -24,6 +24,19 @@ import viMessages from '../../messages/vi.json';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
+const VN_OFFSET_MS = 7 * 3_600_000;
+
+function vnDateIsoOffset(daysOffset: number): string {
+  const vnNow = new Date(Date.now() + VN_OFFSET_MS);
+  const shifted = new Date(
+    Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate() + daysOffset),
+  );
+  return shifted.toISOString().slice(0, 10);
+}
+
+function vnMidnightUtc(daysOffset: number): Date {
+  return new Date(`${vnDateIsoOffset(daysOffset)}T00:00:00+07:00`);
+}
 
 async function attachRuntimeErrorTracker(page: Page): Promise<{
   assertClean: () => Promise<void>;
@@ -84,18 +97,13 @@ async function openSignedInContext(
   return { context, page, tracker };
 }
 
-async function ensureUnscheduledTrayOpen(page: Page): Promise<void> {
-  const toggle = page.locator('.hcal-unscheduled-toggle');
-  await expect(toggle).toBeVisible();
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-    await toggle.click();
-  }
-  await expect(page.locator('.hcal-unscheduled-list')).toBeVisible();
+function getTaskBar(page: Page, taskId: string): Locator {
+  return page.locator(`.hcal-task-bar[data-task-id="${taskId}"]`);
 }
 
-function getTaskCard(page: Page, title: string): Locator {
-  return page.locator('.hcal-unscheduled-chip', {
-    has: page.locator('.hcal-unscheduled-title', {
+function getTaskBarByTitle(page: Page, title: string): Locator {
+  return page.locator('.hcal-task-bar', {
+    has: page.locator('.hcal-task-title', {
       hasText: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
     }),
   });
@@ -370,6 +378,8 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       { id: commentsDoneColId, boardId: commentsBoardId, name: 'Done', orderIndex: 1 },
     ]);
 
+    const taskStartAt = vnMidnightUtc(0);
+    const taskDueAt = vnMidnightUtc(2);
     await db.insert(tasks).values([
       {
         id: publicTaskOnHiddenBoardId,
@@ -379,6 +389,8 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
         description: 'Public baseline task for hidden RBAC checks',
         priority: 2,
         position: '1000',
+        startAt: taskStartAt,
+        dueAt: taskDueAt,
         isHidden: false,
         createdBy: adminUserId,
       },
@@ -390,6 +402,8 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
         description: 'Target task for comments lifecycle & RBAC checks',
         priority: 3,
         position: '1000',
+        startAt: taskStartAt,
+        dueAt: taskDueAt,
         isHidden: false,
         createdBy: creatorUserId,
       },
@@ -547,6 +561,7 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       await expect(createDialog).toBeVisible();
 
       await createDialog.getByLabel(viMessages.tasks.titleLabel).fill(createdTaskTitle);
+      await createDialog.getByLabel(viMessages.tasks.dueAtLabel).fill(vnDateIsoOffset(2));
       const hiddenSwitch = createDialog.getByRole('switch', {
         name: viMessages.tasks.isHiddenShortLabel,
       });
@@ -571,9 +586,9 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       const createdBoardId = createdJson.task.boardId;
       trackedTaskIds.push(createdTaskId);
 
-      // Creator opens TaskDetailDrawer from unscheduled tray, sees .task-hidden-section role="switch", toggles Hidden ON -> WQ-27 warning appears
-      await ensureUnscheduledTrayOpen(creatorPage);
-      await getTaskCard(creatorPage, createdTaskTitle).click();
+      // Creator opens TaskDetailDrawer from /tasks timeline, sees .task-hidden-section role="switch", toggles Hidden ON -> WQ-27 warning appears
+      await expect(creatorPage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      await getTaskBar(creatorPage, createdTaskId).click();
       const creatorDrawer = getTaskDrawer(creatorPage);
       await expect(creatorDrawer).toBeVisible();
 
@@ -627,15 +642,15 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       hiddenCommentId = hiddenCommentJson.comment.id;
       await expect(creatorDrawer.getByText(hiddenCommentBody)).toBeVisible();
 
-      // 2. Assignee (Member A) sees hidden task + badge + banner, does NOT see .task-hidden-section switch, receives 403 on PUT /hidden
+      // 2. Assignee (Member A) sees hidden task bar + lock icon + drawer banner, does NOT see .task-hidden-section switch, receives 403 on PUT /hidden
       const assigneePage = assigneeSession.page;
       await assigneePage.reload();
-      await ensureUnscheduledTrayOpen(assigneePage);
-      const assigneeCard = getTaskCard(assigneePage, createdTaskTitle);
-      await expect(assigneeCard).toBeVisible();
-      await expect(assigneeCard.getByText(viMessages.tasks.hiddenBadge)).toBeVisible();
+      await expect(assigneePage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      const assigneeBar = getTaskBar(assigneePage, createdTaskId);
+      await expect(assigneeBar).toBeVisible();
+      await expect(assigneeBar.locator('.hcal-task-lock')).toBeVisible();
 
-      await assigneeCard.click();
+      await assigneeBar.click();
       const assigneeDrawer = getTaskDrawer(assigneePage);
       await expect(assigneeDrawer).toBeVisible();
       await expect(assigneeDrawer.getByText(viMessages.tasks.hiddenBannerTitle)).toBeVisible();
@@ -684,9 +699,10 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
 
       await outsiderPage.goto(`/boards/${hiddenBoardId}`);
       await outsiderPage.waitForURL(`${BASE_ORIGIN}/tasks`);
-      await ensureUnscheduledTrayOpen(outsiderPage);
-      await expect(getTaskCard(outsiderPage, publicTaskOnHiddenBoardTitle)).toBeVisible();
-      await expect(getTaskCard(outsiderPage, createdTaskTitle)).toHaveCount(0);
+      await expect(outsiderPage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      await expect(getTaskBar(outsiderPage, publicTaskOnHiddenBoardId)).toBeVisible();
+      await expect(getTaskBar(outsiderPage, createdTaskId)).toHaveCount(0);
+      await expect(getTaskBarByTitle(outsiderPage, createdTaskTitle)).toHaveCount(0);
 
       const outsiderSearchRes = await outsiderPage.request.get(
         `/api/v1/tasks?boardId=${hiddenBoardId}&q=${encodeURIComponent(createdTaskTitle)}`,
@@ -751,8 +767,7 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       await expect(outsiderNotFoundDrawer).toHaveCount(0);
 
       // 4. On a public task, Member C (with task.update_any, not creator, not admin) STILL sees no hidden switch and gets 403
-      await ensureUnscheduledTrayOpen(outsiderPage);
-      await getTaskCard(outsiderPage, publicTaskOnHiddenBoardTitle).click();
+      await getTaskBar(outsiderPage, publicTaskOnHiddenBoardId).click();
       const outsiderPublicDrawer = getTaskDrawer(outsiderPage);
       await expect(outsiderPublicDrawer).toBeVisible();
       await expect(outsiderPublicDrawer.locator('.task-hidden-section').getByRole('switch')).toHaveCount(0);
@@ -808,10 +823,10 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
 
       await outsiderPage.goto(`/boards/${hiddenBoardId}`);
       await outsiderPage.waitForURL(`${BASE_ORIGIN}/tasks`);
-      await ensureUnscheduledTrayOpen(outsiderPage);
-      const revealedCard = getTaskCard(outsiderPage, createdTaskTitle);
-      await expect(revealedCard).toBeVisible();
-      await revealedCard.click();
+      await expect(outsiderPage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      const revealedBar = getTaskBar(outsiderPage, createdTaskId);
+      await expect(revealedBar).toBeVisible();
+      await revealedBar.click();
       const outsiderRevealedDrawer = getTaskDrawer(outsiderPage);
       await expect(outsiderRevealedDrawer).toBeVisible();
       await expect(outsiderRevealedDrawer.locator('.task-comments-section')).toBeVisible();
@@ -893,8 +908,8 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
 
       // 1. Member A (with comment.create) sees inactive author "(đã rời)", posts comment, verifies count sync & reload persistence
       const assigneePage = assigneeSession.page;
-      await ensureUnscheduledTrayOpen(assigneePage);
-      const cardOnBoard = getTaskCard(assigneePage, commentsTaskTitle);
+      await expect(assigneePage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      const cardOnBoard = getTaskBar(assigneePage, commentsTaskId);
       await expect(cardOnBoard).toBeVisible();
 
       await cardOnBoard.click();
@@ -1121,6 +1136,8 @@ test.describe('E7 Comments & Hidden Task Flag E2E (FR-07, FR-24, FR-26, AC-04, A
       description: 'Pagination and collapse verification task',
       priority: 2,
       position: '2000',
+      startAt: vnMidnightUtc(0),
+      dueAt: vnMidnightUtc(2),
       isHidden: false,
       createdBy: creatorUserId,
     });

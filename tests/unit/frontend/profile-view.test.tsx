@@ -95,13 +95,13 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     });
   });
 
-  it('renders own MSSV, email, department chips, permission labels, ChangePasswordCard, and no language card', () => {
+  it('renders own MSSV, email, department chips, permission labels without raw codes, ChangePasswordCard, and no language card', () => {
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
         <ProfileContent
           profile={BASE_PROFILE}
           permissions={['member.view', 'task.update_assigned', 'comment.create']}
-          session={{ rememberMe: false, expiresAt: '2026-11-24T08:30:00.000Z' }}
+          session={{ expiresAt: '2026-11-24T08:30:00.000Z' }}
           onSignOut={vi.fn()}
         />
       </NextIntlClientProvider>
@@ -116,10 +116,10 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     expect(html).not.toContain('lang-switch');
     expect(html).toContain('Truyền thông');
     expect(html).toContain('Sự kiện');
-    expect(html).toContain('member.view');
+    expect(html).not.toContain('member.view');
     expect(html).toContain('Xem danh sách thành viên, họ tên và ban');
-    expect(html).toContain('task.update_assigned');
-    expect(html).toContain('comment.create');
+    expect(html).not.toContain('task.update_assigned');
+    expect(html).not.toContain('comment.create');
     expect(html).toContain('Chế độ phiên');
     expect(html).toContain('1 thiết bị · 30 phút');
     expect(html).not.toContain('Ghi nhớ đăng nhập');
@@ -136,7 +136,7 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
         <ProfileContent
           profile={{ ...BASE_PROFILE, isAdmin: true, locale: 'en' }}
           permissions={[]}
-          session={{ rememberMe: false, expiresAt: '2026-12-24T01:15:00.000Z' }}
+          session={{ expiresAt: '2026-12-24T01:15:00.000Z' }}
           onSignOut={vi.fn()}
         />
       </NextIntlClientProvider>
@@ -208,7 +208,7 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     expect(queryHtml).toContain('Password change required');
   });
 
-  it('keeps ChangePasswordCard in one stable JSX slot and preserves .ui-banner.is-success when mustChangePassword flips true -> false', () => {
+  it('keeps ChangePasswordCard in one stable JSX slot without persistent success banner when mustChangePassword flips true -> false', () => {
     const forcedBeforeSubmitHtml = renderToStaticMarkup(
       <NextIntlClientProvider locale="vi" messages={viMessages} timeZone="Asia/Ho_Chi_Minh">
         <ProfileContent
@@ -241,16 +241,12 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
     );
     expect(postSubmitHtml).toContain('profile-main is-password-priority');
     expect(postSubmitHtml).not.toContain('ui-banner is-warn');
-    expect(postSubmitHtml).toContain('ui-banner is-success');
-    expect(postSubmitHtml).toContain('Đã đổi mật khẩu. Các thiết bị khác đã được đăng xuất.');
+    expect(postSubmitHtml).not.toContain('ui-banner is-success');
 
     const contactIdxAfter = postSubmitHtml.indexOf('Thông tin liên hệ');
     const changePwIdxAfter = postSubmitHtml.indexOf('id="change-password"');
     expect(contactIdxAfter).toBeGreaterThan(-1);
     expect(changePwIdxAfter).toBeGreaterThan(contactIdxAfter);
-
-    const changeCardSlice = postSubmitHtml.slice(changePwIdxAfter);
-    expect(changeCardSlice).toContain('ui-banner is-success');
 
     const enPostSubmitHtml = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
@@ -263,8 +259,7 @@ describe('ProfileContent, ProfileView & ChangePasswordCard (S08)', () => {
         />
       </NextIntlClientProvider>
     );
-    expect(enPostSubmitHtml).toContain('ui-banner is-success');
-    expect(enPostSubmitHtml).toContain('Password updated. Other active sessions were signed out.');
+    expect(enPostSubmitHtml).not.toContain('ui-banner is-success');
     expect(enPostSubmitHtml).not.toContain('ui-banner is-warn');
   });
 

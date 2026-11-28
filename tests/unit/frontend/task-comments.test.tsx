@@ -14,7 +14,7 @@ const commentsHooksMock = vi.hoisted(() => ({
 }));
 
 const authHooksMock = vi.hoisted(() => ({
-  useMeQuery: vi.fn(),
+  useSessionQuery: vi.fn(),
 }));
 
 vi.mock('@/features/comments/hooks/useComments', async () => {
@@ -90,7 +90,7 @@ function renderWithIntl(
 describe('TaskCommentsSection (E7-02)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    authHooksMock.useMeQuery.mockReturnValue({ data: { profile: { id: 'u-viewer', departments: [] } } });
+    authHooksMock.useSessionQuery.mockReturnValue({ data: { userId: 'u-viewer' } });
     commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValue({
       isPending: false,
       isError: false,
@@ -108,16 +108,16 @@ describe('TaskCommentsSection (E7-02)', () => {
 
   it('gates composer by comment.create or admin and renders comment counter', () => {
     const withoutPermHtml = renderWithIntl(
-      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />,
+      <TaskCommentsSection taskId="t-1" commentCount={2} />,
       { permissions: ['member.view'] }
     );
-    expect(withoutPermHtml).toContain('Bình luận');
+    expect(withoutPermHtml).toContain('Mới nhất trước');
     expect(withoutPermHtml).toContain('2');
     expect(withoutPermHtml).not.toContain('task-comment-composer');
     expect(withoutPermHtml).not.toContain('Viết bình luận...');
 
     const withPermHtml = renderWithIntl(
-      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />,
+      <TaskCommentsSection taskId="t-1" commentCount={2} />,
       { permissions: ['comment.create'] }
     );
     expect(withPermHtml).toContain('task-comment-composer');
@@ -131,11 +131,11 @@ describe('TaskCommentsSection (E7-02)', () => {
     expect(withPermHtml).toContain('Gửi');
 
     const adminEnHtml = renderWithIntl(
-      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />,
+      <TaskCommentsSection taskId="t-1" commentCount={2} />,
       { isAdmin: true, locale: 'en' }
     );
-    expect(adminEnHtml).toContain('Comments');
     expect(adminEnHtml).toContain('Newest first');
+    expect(adminEnHtml).toContain('Write a comment...');
     expect(adminEnHtml).toContain('task-comment-composer');
     expect(adminEnHtml).toContain('Send');
     expect(COMMENTS_PAGE_SIZE).toBe(10);
@@ -148,27 +148,27 @@ describe('TaskCommentsSection (E7-02)', () => {
     expect(canDeleteComment({ isAdmin: false, canDeleteAny: false, authorId: 'u-1', currentUserId: 'u-2' })).toBe(false);
 
     const otherViewerHtml = renderWithIntl(
-      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />,
+      <TaskCommentsSection taskId="t-1" commentCount={2} />,
       { permissions: ['comment.create'] }
     );
     expect(otherViewerHtml).not.toContain('>Xóa<');
 
-    authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-author', departments: [] } } });
+    authHooksMock.useSessionQuery.mockReturnValueOnce({ data: { userId: 'u-author' } });
     const authorHtml = renderWithIntl(
-      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />,
+      <TaskCommentsSection taskId="t-1" commentCount={2} />,
       { permissions: ['comment.create'] }
     );
     expect(authorHtml.match(/>Xóa</g) ?? []).toHaveLength(1);
 
     const deleteAnyHtml = renderWithIntl(
-      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />,
+      <TaskCommentsSection taskId="t-1" commentCount={2} />,
       { permissions: ['comment.delete_any'] }
     );
     expect(deleteAnyHtml.match(/>Xóa</g) ?? []).toHaveLength(2);
   });
 
   it('shows (đã rời) / (left) for inactive authors, formats Asia/Ho_Chi_Minh time, and exposes zero PII', () => {
-    const viHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />);
+    const viHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" commentCount={2} />);
     expect(viHtml).toContain('Nguyễn Văn A');
     expect(viHtml).toContain('Vũ Quốc F');
     expect(viHtml).toContain('(đã rời)');
@@ -178,7 +178,7 @@ describe('TaskCommentsSection (E7-02)', () => {
     expect(viHtml).not.toContain('@eiu.edu.vn');
     expect(viHtml).not.toContain('studentId');
 
-    const enHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />, { locale: 'en' });
+    const enHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" commentCount={2} />, { locale: 'en' });
     expect(enHtml).toContain('(left)');
     expect(COMMENTS_QUERY_KEYS.byTask('t-1')).toEqual(['comments', 'task', 't-1']);
   });
@@ -194,7 +194,7 @@ describe('TaskCommentsSection (E7-02)', () => {
       refetch: vi.fn(),
       data: { pages: [{ items: [], meta: { nextCursor: null, limit: 20 } }], pageParams: [undefined] },
     });
-    const emptyHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={0} />);
+    const emptyHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" commentCount={0} />);
     expect(emptyHtml).toContain('Chưa có bình luận nào.');
 
     const loadMorePage = {
@@ -211,13 +211,13 @@ describe('TaskCommentsSection (E7-02)', () => {
       },
     };
     commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValueOnce(loadMorePage);
-    const loadMoreHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={5} />);
+    const loadMoreHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" commentCount={5} />);
     expect(loadMoreHtml).toContain('Xem thêm bình luận cũ hơn');
     expect(loadMoreHtml).toContain('Đang hiện 1 / 5');
 
     commentsHooksMock.useTaskCommentsInfiniteQuery.mockReturnValueOnce(loadMorePage);
     const loadMoreEnHtml = renderWithIntl(
-      <TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={5} />,
+      <TaskCommentsSection taskId="t-1" commentCount={5} />,
       { locale: 'en' }
     );
     expect(loadMoreEnHtml).toContain('Load older comments');
@@ -233,7 +233,7 @@ describe('TaskCommentsSection (E7-02)', () => {
       refetch: vi.fn(),
       data: undefined,
     });
-    const errorHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={0} />);
+    const errorHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" commentCount={0} />);
     expect(errorHtml).toContain('req-cm-403');
     expect(errorHtml).toContain('Thử lại');
   });
@@ -263,12 +263,12 @@ describe('TaskCommentsSection (E7-02)', () => {
         pageParams: [undefined],
       },
     });
-    const longHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={1} />);
+    const longHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" commentCount={1} />);
     expect(longHtml).toContain('task-comment-body is-clamped');
     expect(longHtml).toContain('task-comment-expand-btn');
     expect(longHtml).toContain('Xem thêm');
 
-    const shortHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" boardId="b-1" commentCount={2} />);
+    const shortHtml = renderWithIntl(<TaskCommentsSection taskId="t-1" commentCount={2} />);
     expect(shortHtml).not.toContain('task-comment-body is-clamped');
     expect(shortHtml).not.toContain('task-comment-expand-btn');
   });

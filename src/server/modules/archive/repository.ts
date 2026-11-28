@@ -4,9 +4,10 @@ import type { ArchiveRetentionDays } from '@/lib/archive';
 import { conflict } from '@/lib/errors';
 import type { BoardSummaryRecord } from '@/server/modules/boards';
 import type { MemberProfileRecord } from '@/server/modules/members';
-import { assembleTaskRecords, type RawTaskRow, taskAccessSqlCondition, type TaskRecord } from '@/server/modules/tasks';
-import type { DbExecutor } from '@/server/shared/db';
+import { hydrateTaskRecords, taskAccessSqlCondition } from '@/server/modules/tasks';
+import { type DbExecutor, runExecutorQueries } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 import { type ArchiveBoardsCursor, type ArchiveMembersCursor, type ArchiveTasksCursor, escapeLikePattern, parseStoredRetentionDays } from './policy';
 import * as Purge from './repository-purge';
 import type * as Types from './types';
@@ -136,7 +137,7 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
       .where(buildTaskArchiveWhere(this.db, params)).orderBy(desc(tasks.deletedAt), desc(tasks.id)).limit(params.limit + 1);
     const hasMore = fetched.length > params.limit;
     const pageRows = hasMore ? fetched.slice(0, params.limit) : fetched;
-    const hydratedTasks = await this.hydrateTasks(this.db, pageRows);
+    const hydratedTasks = await hydrateTaskRecords(this.db, pageRows);
     return { rows: Purge.assembleArchiveTaskItems(pageRows, hydratedTasks), hasMore };
   }
 
@@ -160,9 +161,9 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
     const hasMore = fetched.length > params.limit;
     const pageRows = hasMore ? fetched.slice(0, params.limit) : fetched;
     if (pageRows.length === 0) return { rows: [], hasMore };
-    const [userMap, countRows] = await Promise.all([
-      this.loadUserSummaries(this.db, Array.from(new Set(pageRows.map((r) => r.createdBy)))),
-      this.db.select({ boardId: tasks.boardId, total: count() }).from(tasks)
+    const [userMap, countRows] = await runExecutorQueries(this.db, [
+      () => loadUserSummariesMap(this.db, Array.from(new Set(pageRows.map((r) => r.createdBy)))),
+      () => this.db.select({ boardId: tasks.boardId, total: count() }).from(tasks)
         .where(and(inArray(tasks.boardId, pageRows.map((r) => r.id)), isNull(tasks.deletedAt), isNull(tasks.purgedAt), taskAccessSqlCondition(this.db, params.actor)))
         .groupBy(tasks.boardId),
     ]);
@@ -173,10 +174,10 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
     const rows = await tx.select().from(tasks).where(and(eq(tasks.id, taskId), isNull(tasks.purgedAt))).for('update').limit(1);
     const row = rows[0];
     if (!row) return null;
-    const [[boardRow], boardCols, hydrated] = await Promise.all([
-      tx.select({ archivedAt: boards.archivedAt, purgedAt: boards.purgedAt }).from(boards).where(eq(boards.id, row.boardId)).limit(1),
-      tx.select({ id: columns.id }).from(columns).where(eq(columns.boardId, row.boardId)).orderBy(asc(columns.orderIndex), asc(columns.id)),
-      this.hydrateTasks(tx, [row]),
+    const [[boardRow], boardCols, hydrated] = await runExecutorQueries(tx, [
+      () => tx.select({ archivedAt: boards.archivedAt, purgedAt: boards.purgedAt }).from(boards).where(eq(boards.id, row.boardId)).limit(1),
+      () => tx.select({ id: columns.id }).from(columns).where(eq(columns.boardId, row.boardId)).orderBy(asc(columns.orderIndex), asc(columns.id)),
+      () => hydrateTaskRecords(tx, [row]),
     ]);
     return {
       task: hydrated[0]!, boardArchivedAt: boardRow?.archivedAt ?? null, boardPurgedAt: boardRow?.purgedAt ?? null,
@@ -200,7 +201,7 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
       createdAt: input.now,
     }).returning({ id: taskEvents.id });
     if (!evt) throw new Error('Failed to record task restore event');
-    return { task: (await this.hydrateTasks(tx, [updated]))[0]!, eventId: evt.id };
+    return { task: (await hydrateTaskRecords(tx, [updated]))[0]!, eventId: evt.id };
   }
 
   async lockAndRestoreMember(memberId: string, now: Date, tx: TransactionContext): Promise<MemberProfileRecord | null> {
@@ -220,9 +221,9 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
     if (existing.archivedAt === null) throw conflict('errors.boardNotArchived', {}, 'BOARD_NOT_ARCHIVED');
     const [updated] = await tx.update(boards).set({ archivedAt: null, updatedAt: now }).where(and(eq(boards.id, boardId), isNull(boards.purgedAt))).returning();
     if (!updated) return null;
-    const [userMap, deptRows] = await Promise.all([
-      this.loadUserSummaries(tx, [updated.createdBy]),
-      updated.departmentId ? tx.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.id, updated.departmentId)).limit(1) : Promise.resolve([]),
+    const [userMap, deptRows] = await runExecutorQueries(tx, [
+      () => loadUserSummariesMap(tx, [updated.createdBy]),
+      () => updated.departmentId ? tx.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.id, updated.departmentId)).limit(1) : Promise.resolve([]),
     ]);
     return { id: updated.id, name: updated.name, department: deptRows[0] ?? null, archivedAt: updated.archivedAt, createdBy: userMap.get(updated.createdBy)!, visibleTaskCount: 0, overdueTaskCount: 0, createdAt: updated.createdAt, updatedAt: updated.updatedAt };
   }
@@ -236,7 +237,7 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
     const executor = tx ?? this.db;
     const [row] = await executor.select({ value: appSettings.value, updatedAt: appSettings.updatedAt, updatedBy: appSettings.updatedBy }).from(appSettings).where(eq(appSettings.key, ARCHIVE_RETENTION_KEY)).limit(1);
     if (!row) return { retentionDays: null, updatedAt: null, updatedBy: null };
-    const userMap = row.updatedBy ? await this.loadUserSummaries(executor, [row.updatedBy]) : new Map<string, Types.ArchiveUserSummaryRecord>();
+    const userMap = row.updatedBy ? await loadUserSummariesMap(executor, [row.updatedBy]) : new Map<string, Types.ArchiveUserSummaryRecord>();
     return { retentionDays: parseStoredRetentionDays(row.value), updatedAt: row.updatedAt, updatedBy: row.updatedBy ? (userMap.get(row.updatedBy) ?? null) : null };
   }
 
@@ -245,30 +246,6 @@ export class DrizzleArchiveRepository implements Types.ArchiveRepository {
     await tx.insert(appSettings).values({ key: ARCHIVE_RETENTION_KEY, value: { retentionDays: input.retentionDays }, updatedBy: input.actorId, createdAt: input.now, updatedAt: input.now })
       .onConflictDoUpdate({ target: appSettings.key, set: { value: { retentionDays: input.retentionDays }, updatedBy: input.actorId, updatedAt: input.now } });
     return { previousRetentionDays: previous.retentionDays, current: await this.getRetentionSetting(tx) };
-  }
-
-  private async hydrateTasks(executor: DbExecutor, taskRows: readonly RawTaskRow[]): Promise<TaskRecord[]> {
-    if (taskRows.length === 0) return [];
-    const taskIds = taskRows.map((r) => r.id);
-    const [assigneeRows, departmentRows, deliverableRows, commentCountRows] = await Promise.all([
-      executor.select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId, acceptedAt: taskAssignees.acceptedAt }).from(taskAssignees).where(inArray(taskAssignees.taskId, taskIds)),
-      executor.select({ taskId: taskDepartments.taskId, id: departments.id, name: departments.name }).from(taskDepartments).innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(inArray(taskDepartments.taskId, taskIds)).orderBy(asc(departments.name), asc(departments.id)),
-      executor.select({ id: taskDeliverables.id, taskId: taskDeliverables.taskId, title: taskDeliverables.title, url: taskDeliverables.url, submittedBy: taskDeliverables.submittedBy, createdAt: taskDeliverables.createdAt })
-        .from(taskDeliverables).where(inArray(taskDeliverables.taskId, taskIds)).orderBy(desc(taskDeliverables.createdAt), desc(taskDeliverables.id)),
-      executor.select({ taskId: comments.taskId, total: count() }).from(comments).where(inArray(comments.taskId, taskIds)).groupBy(comments.taskId),
-    ]);
-    const userIds = Array.from(new Set([...taskRows.map((r) => r.createdBy), ...assigneeRows.map((a) => a.userId), ...deliverableRows.map((d) => d.submittedBy)]));
-    const userMap = await this.loadUserSummaries(executor, userIds);
-    return assembleTaskRecords({ taskRows, assigneeRows, departmentRows, deliverableRows, commentCountRows, userMap });
-  }
-
-  private async loadUserSummaries(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, Types.ArchiveUserSummaryRecord>> {
-    if (userIds.length === 0) return new Map();
-    const [profileRows, deptRows] = await Promise.all([
-      executor.select({ id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt, isActive: profiles.isActive, leftAt: profiles.leftAt }).from(profiles).where(inArray(profiles.id, [...userIds])),
-      this.loadDeptRows(executor, userIds),
-    ]);
-    return Purge.buildArchiveUserSummaryMap(profileRows, deptRows);
   }
 
   private loadDeptRows(executor: DbExecutor, userIds: readonly string[]) {

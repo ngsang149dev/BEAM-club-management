@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import { ErrorState } from '@/components/ErrorState';
 import { isApiClientError } from '@/features/shared/api/client';
 import { usePermissions } from '@/features/shared/permissions/can';
@@ -29,7 +30,6 @@ function useDepartmentsAdminState(canManage: boolean, canViewMembers: boolean) {
   const t = useTranslations('departmentsAdmin');
   const [searchQuery, setSearchQuery] = useState('');
   const [modalState, setModalState] = useState<ModalState>({ kind: 'closed' });
-  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   const departmentsQuery = useDepartmentsQuery(canManage);
   const leadCandidatesQuery = useDepartmentLeadCandidatesQuery(canManage && canViewMembers);
@@ -48,7 +48,7 @@ function useDepartmentsAdminState(canManage: boolean, canViewMembers: boolean) {
     if (modalState.kind === 'create') {
       createMutation.mutate(values, {
         onSuccess: (result) => {
-          setFeedbackMessage(t('createdToast', { name: result.department.name }));
+          toast.success(t('createdToast', { name: result.department.name }));
           closeModal();
         },
       });
@@ -59,7 +59,7 @@ function useDepartmentsAdminState(canManage: boolean, canViewMembers: boolean) {
         { id: modalState.department.id, payload: values },
         {
           onSuccess: (result) => {
-            setFeedbackMessage(t('renamedToast', { name: result.department.name }));
+            toast.success(t('renamedToast', { name: result.department.name }));
             closeModal();
           },
         }
@@ -71,7 +71,7 @@ function useDepartmentsAdminState(canManage: boolean, canViewMembers: boolean) {
     if (modalState.kind !== 'delete') return;
     deleteMutation.mutate(modalState.department.id, {
       onSuccess: () => {
-        setFeedbackMessage(t('deletedToast'));
+        toast.success(t('deletedToast'));
         closeModal();
       },
     });
@@ -79,7 +79,7 @@ function useDepartmentsAdminState(canManage: boolean, canViewMembers: boolean) {
 
   return {
     canViewMembers,
-    searchQuery, setSearchQuery, modalState, setModalState, feedbackMessage,
+    searchQuery, setSearchQuery, modalState, setModalState,
     departmentsQuery, leadCandidatesQuery, createMutation, updateMutation, deleteMutation,
     closeModal, handleUpsertSubmit, handleDeleteConfirm,
   };
@@ -215,7 +215,6 @@ export function DepartmentsAdminView() {
 
   return (
     <div className="admin-page-stack">
-      {state.feedbackMessage ? <div className="ui-banner" role="status"><div className="ui-banner-body"><span className="ui-banner-text">{state.feedbackMessage}</span></div></div> : null}
       <DepartmentsBody state={state} />
     </div>
   );

@@ -116,13 +116,10 @@ describe('Boards search q & viewer-scoped visibleTaskCount/overdueTaskCount inte
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `boards-search-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'boards-search-cron',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -182,19 +179,19 @@ describe('Boards search q & viewer-scoped visibleTaskCount/overdueTaskCount inte
       const hiddenTaskId = randomUUID();
       await tx.insert(tasks).values([
         // 1. Public overdue in Todo -> counted in both visible & overdue for all
-        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Public Overdue', dueAt: pastDue, priority: 2, position: '1000', isHidden: false, createdBy: adminId },
+        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Public Overdue', startAt: pastDue, dueAt: pastDue, priority: 2, position: '1000', isHidden: false, createdBy: adminId },
         // 2. Public upcoming in Todo -> visible only
-        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Public Upcoming', dueAt: futureDue, priority: 2, position: '2000', isHidden: false, createdBy: adminId },
+        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Public Upcoming', startAt: pastDue, dueAt: futureDue, priority: 2, position: '2000', isHidden: false, createdBy: adminId },
         // 3. Public overdue in Done -> visible only (NOT overdue)
-        { id: randomUUID(), boardId: boardMatchId, columnId: colDone, title: 'Done Overdue', dueAt: pastDue, priority: 2, position: '1000', isHidden: false, createdBy: adminId },
+        { id: randomUUID(), boardId: boardMatchId, columnId: colDone, title: 'Done Overdue', startAt: pastDue, dueAt: pastDue, priority: 2, position: '1000', isHidden: false, createdBy: adminId },
         // 4. Hidden overdue in Doing -> visible & overdue for admin/creator/assignee/deptMember, excluded for outsider
-        { id: hiddenTaskId, boardId: boardMatchId, columnId: colDoing, title: 'Hidden Overdue', dueAt: pastDue, priority: 4, position: '1000', isHidden: true, createdBy: creatorId },
+        { id: hiddenTaskId, boardId: boardMatchId, columnId: colDoing, title: 'Hidden Overdue', startAt: pastDue, dueAt: pastDue, priority: 4, position: '1000', isHidden: true, createdBy: creatorId },
         // 5. Soft-deleted overdue -> excluded for everyone
-        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Deleted Overdue', dueAt: pastDue, priority: 2, position: '3000', isHidden: false, deletedAt, createdBy: adminId },
+        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Deleted Overdue', startAt: pastDue, dueAt: pastDue, priority: 2, position: '3000', isHidden: false, deletedAt, createdBy: adminId },
         // 6. Purged overdue -> excluded for everyone
-        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Purged Overdue', dueAt: pastDue, priority: 2, position: '4000', isHidden: false, deletedAt, purgedAt: deletedAt, createdBy: adminId },
+        { id: randomUUID(), boardId: boardMatchId, columnId: colTodo, title: 'Purged Overdue', startAt: pastDue, dueAt: pastDue, priority: 2, position: '4000', isHidden: false, deletedAt, purgedAt: deletedAt, createdBy: adminId },
         // 7. Board 2: overdue in final column 'Completed' -> visible=1, overdue=0
-        { id: randomUUID(), boardId: boardCustomDoneId, columnId: colCustomFinal, title: 'Custom Final Overdue', dueAt: pastDue, priority: 2, position: '1000', isHidden: false, createdBy: adminId },
+        { id: randomUUID(), boardId: boardCustomDoneId, columnId: colCustomFinal, title: 'Custom Final Overdue', startAt: pastDue, dueAt: pastDue, priority: 2, position: '1000', isHidden: false, createdBy: adminId },
       ]);
       await tx.insert(taskAssignees).values({ taskId: hiddenTaskId, userId: assigneeId });
       await tx.insert(taskDepartments).values({ taskId: hiddenTaskId, departmentId: deptId });

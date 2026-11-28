@@ -126,11 +126,11 @@ describe('DepartmentsAdminView & DepartmentModals (S11)', () => {
     );
     expect(departmentsHookMock.useDepartmentLeadCandidatesQuery).toHaveBeenCalledWith(false);
     expect(html).toContain('Đang sử dụng');
-    expect(html).toContain('Chưa có thành viên / board');
+    expect(html).toContain('Chưa có thành viên');
     expect(html).toContain('Trưởng ban: Nguyễn Văn A');
     expect(html).toContain('Chưa có trưởng ban');
     expect(html).toContain('7 thành viên');
-    expect(html).toContain('2 board');
+    expect(html).not.toContain('2 board');
     expect(html).toContain('0 thành viên');
 
     departmentsHookMock.useDepartmentsQuery.mockReturnValueOnce({
@@ -231,7 +231,7 @@ describe('DepartmentsAdminView & DepartmentModals (S11)', () => {
     expect(html).toContain('A department with this name already exists.');
   });
 
-  it('renders DepartmentDeleteModal citing exact memberCount and boardCount on 409 DEPARTMENT_IN_USE', () => {
+  it('renders DepartmentDeleteModal citing memberCount on 409 DEPARTMENT_IN_USE', () => {
     const html = renderWithIntl(
       <DepartmentDeleteModal
         department={IN_USE_DEPT}
@@ -246,7 +246,7 @@ describe('DepartmentsAdminView & DepartmentModals (S11)', () => {
         onConfirm={vi.fn()}
       />
     );
-    expect(html).toContain('Ban này đang có 7 thành viên và 2 board nên chưa thể xóa.');
+    expect(html).toContain('Ban này đang có 7 thành viên nên chưa thể xóa.');
     expect(html).toContain('Không thể xóa ban vì vẫn còn 7 thành viên và 2 board liên quan.');
   });
 

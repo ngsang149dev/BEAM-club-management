@@ -19,8 +19,6 @@ function resolveTierLabel(metrics: DeadlineBarMetrics, t: ProgressTranslator): s
   switch (metrics.tier) {
     case 'done':
       return t('tierDone');
-    case 'unscheduled':
-      return t('tierUnscheduled');
     case 'overdue':
       return t('tierOverdue', { days: Math.max(1, Math.abs(metrics.daysDiff ?? 1)) });
     case 'urgent':

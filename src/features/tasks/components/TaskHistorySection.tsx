@@ -1,10 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
-import { useBoardDetailQuery } from '@/features/boards/hooks/useBoards';
+import { apiFetch } from '@/features/shared/api/client';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { canActorRevertEvent, type TaskHistoryLookup } from '../event-formatters';
 import {
@@ -21,26 +22,39 @@ import {
   type RevertConflictState,
 } from './TaskRevertConflictModal';
 
+function addLookupLabels<T extends { readonly id: string }>(
+  map: Map<string, string>,
+  items: readonly T[] | undefined,
+  getLabel: (item: T) => string
+): void {
+  for (const item of items ?? []) map.set(item.id, getLabel(item));
+}
+
 function useTaskHistoryLookup(task: TaskDto, canViewMembers: boolean): TaskHistoryLookup {
-  const boardDetailQuery = useBoardDetailQuery(task.boardId, Boolean(task.boardId));
+  const boardQuery = useQuery({
+    queryKey: ['boardColumns', task.boardId],
+    queryFn: ({ signal }) => apiFetch('/boards/{id}', { params: { id: task.boardId }, signal }),
+    enabled: Boolean(task.boardId),
+    staleTime: 5 * 60_000,
+  });
   const departmentsQuery = useTaskDepartmentsQuery(true);
   const membersQuery = useTaskAssigneeMembersQuery(canViewMembers);
-  const columns = boardDetailQuery.data?.board.columns;
+  const boardColumns = boardQuery.data?.board.columns;
   const deptItems = departmentsQuery.data?.items;
   const memberItems = membersQuery.data?.items;
 
   return useMemo(() => {
     const columnsById = new Map<string, string>();
-    for (const col of columns ?? []) columnsById.set(col.id, col.name);
+    for (const col of boardColumns ?? []) columnsById.set(col.id, col.name);
     const departmentsById = new Map<string, string>();
-    for (const dept of task.assignedDepartments) departmentsById.set(dept.id, dept.name);
-    for (const dept of deptItems ?? []) departmentsById.set(dept.id, dept.name);
+    addLookupLabels(departmentsById, task.assignedDepartments, (dept) => dept.name);
+    addLookupLabels(departmentsById, deptItems, (dept) => dept.name);
     const membersById = new Map<string, string>();
     membersById.set(task.creator.id, task.creator.fullName);
-    for (const assignee of task.assignees) membersById.set(assignee.id, assignee.fullName);
-    for (const member of memberItems ?? []) membersById.set(member.id, member.fullName);
+    addLookupLabels(membersById, task.assignees, (assignee) => assignee.fullName);
+    addLookupLabels(membersById, memberItems, (member) => member.fullName);
     return { columnsById, departmentsById, membersById };
-  }, [columns, deptItems, memberItems, task.assignedDepartments, task.assignees, task.creator]);
+  }, [boardColumns, deptItems, memberItems, task.assignedDepartments, task.assignees, task.creator]);
 }
 
 function resolveProfileContext(profile: { id: string; departments?: Array<{ id: string }> } | undefined) {
@@ -65,7 +79,7 @@ function useTaskHistoryController(task: TaskDto, onTaskDeleted: () => void) {
   const meQuery = useMeQuery(true);
   const lookup = useTaskHistoryLookup(task, isAdmin || can('member.view'));
   const eventsQuery = useTaskEventsInfiniteQuery(task.id, true);
-  const revertMutation = useRevertTaskEventMutation(task.boardId);
+  const revertMutation = useRevertTaskEventMutation();
   const [conflictState, setConflictState] = useState<RevertConflictState | null>(null);
   const { currentUserId, currentDepartmentIds } = resolveProfileContext(meQuery.data?.profile);
 
@@ -185,14 +199,12 @@ export function TaskHistorySection({
   return (
     <section className="task-history-section">
       <div className="task-history-header">
-        <h3 className="task-section-title">{tHistory('title')}</h3>
         <span className="task-history-meta">{tHistory('sortNewestFirst')}</span>
       </div>
       <TaskEventErrorBanner error={ctrl.inlineError} />
       <div className="task-history-scroll">
         <HistoryListBody ctrl={ctrl} />
       </div>
-      <p className="task-history-foot">{tHistory('appendOnlyNotice')}</p>
       <TaskRevertConflictModal
         conflict={ctrl.conflictState}
         isPending={ctrl.isReverting}

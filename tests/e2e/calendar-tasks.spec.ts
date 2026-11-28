@@ -148,14 +148,12 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
   const soonTaskId = randomUUID();
   const safeTaskId = randomUUID();
   const doneTaskId = randomUUID();
-  const unscheduledTaskId = randomUUID();
 
   const overdueTitle = `CR10 Overdue ${suffix}`;
   const urgentTitle = `CR10 Urgent ${suffix}`;
   const soonTitle = `CR10 Soon ${suffix}`;
   const safeTitle = `CR10 Safe ${suffix}`;
   const doneTitle = `CR10 Done ${suffix}`;
-  const unscheduledTitle = `CR10 Unscheduled ${suffix}`;
 
   const trackedUserIds = [adminUserId, leadUserId, memberUserId, outsiderUserId];
   const trackedStudentIds = [adminStudentId, leadStudentId, memberStudentId, outsiderStudentId];
@@ -167,7 +165,6 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     soonTaskId,
     safeTaskId,
     doneTaskId,
-    unscheduledTaskId,
   ];
   let workspaceBoardPreexisted = false;
 
@@ -309,7 +306,7 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
       { id: seedDoneColId, boardId: seedBoardId, name: 'Done', orderIndex: 1 },
     ]);
 
-    // Seed 6 tasks spanning all 5 deadline tiers + unscheduled inside current VN year
+    // Seed 5 tasks spanning all 5 deadline tiers inside current VN year (A1: startAt & dueAt required)
     const jan1Start = new Date(`${currentVnYear}-01-02T00:00:00.000+07:00`);
     const dec30End = new Date(`${currentVnYear}-12-30T00:00:00.000+07:00`);
     const clampCurrentYear = (offset: number): Date => {
@@ -388,20 +385,6 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
         completedAt: new Date(),
         priority: 4,
         position: '5000',
-        isHidden: false,
-        createdBy: adminUserId,
-      },
-      {
-        id: unscheduledTaskId,
-        boardId: seedBoardId,
-        columnId: seedTodoColId,
-        title: unscheduledTitle,
-        description: `needle-unscheduled-${suffix}`,
-        startAt: null,
-        dueAt: null,
-        isCompleted: false,
-        priority: 2,
-        position: '6000',
         isHidden: false,
         createdBy: adminUserId,
       },
@@ -518,7 +501,7 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     await pool?.end();
   });
 
-  test('redirects default & legacy /boards routes to /tasks, initializes centered horizontal timeline, supports zoom/period controls, unscheduled tray, deadline filters & zero Priority UI', async ({
+  test('redirects default & legacy /boards routes to /tasks, initializes centered horizontal timeline, supports zoom/period controls, omits unscheduled tray, deadline filters & zero Priority UI', async ({
     page,
   }) => {
     const tracker = await attachRuntimeErrorTracker(page);
@@ -580,7 +563,7 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     await expect(page.locator(`.hcal-task-bar.deadline-safe[data-task-id="${safeTaskId}"]`)).toBeVisible();
     await expect(page.locator(`.hcal-task-bar.deadline-done[data-task-id="${doneTaskId}"]`)).toBeVisible();
     await expect(page.locator('.ui-prio, .prio-p1, .prio-p2, .prio-p3, .prio-p4')).toHaveCount(0);
-    await expect(page.getByLabel(viMessages.tasks.priorityLabel)).toHaveCount(0);
+    await expect(page.getByLabel(/priority|độ ưu tiên/i)).toHaveCount(0);
 
     // 3. Apple range zoom slider + Year/Month/Week presets + Ctrl+Wheel
     const zoomSlider = page.getByLabel(viMessages.calendar.zoomAriaLabel, { exact: true });
@@ -657,22 +640,10 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     await expect(page).not.toHaveURL(/year=/);
     await expect(page.locator('.hcal-year-label')).toHaveText(String(currentVnYear));
 
-    // 5. Unscheduled tray shows unscheduled task & opens modal on click
-    const unschedToggle = page.locator('.hcal-unscheduled-toggle');
-    await expect(unschedToggle).toBeVisible();
-    await expect(unschedToggle).toContainText(
-      viMessages.calendar.unscheduledTrayTitle.replace(/\s*\(\{count\}\)/, ''),
-    );
-    await unschedToggle.click();
-    const unschedChip = page.locator('.hcal-unscheduled-chip', { hasText: unscheduledTitle });
-    await expect(unschedChip).toBeVisible();
-    await unschedChip.click();
-
-    const unschedModal = getTaskModal(page);
-    await expect(unschedModal).toBeVisible();
-    await expect(unschedModal.getByLabel(viMessages.tasks.titleLabel)).toHaveValue(unscheduledTitle);
-    await unschedModal.getByRole('button', { name: viMessages.common.close }).click();
-    await expect(unschedModal).toHaveCount(0);
+    // 5. Unscheduled tray is permanently removed under CR-14 (A1)
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    await expect(page.locator('.hcal-unscheduled-toggle')).toHaveCount(0);
+    await expect(page.locator('.hcal-unscheduled-chip')).toHaveCount(0);
 
     // 6. Deadline filter pills with counts, Department filter & Search q
     const filterGroup = page.getByRole('group', { name: viMessages.calendar.deadlineFilterGroup });
@@ -744,13 +715,25 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     const concurrentTitle = `CR10 Concurrent Edit ${suffix}`;
     const liveCommentBody = `CR10 inline comment ${suffix}`;
 
-    // 1. Open CreateTaskModal (+ Tạo công việc) -> verify NO priority field, 3 role="switch" toggles, startAt > dueAt error
+    // 1. Open CreateTaskModal (+ Tạo công việc) -> verify NO priority field, 3 role="switch" toggles,
+    //    Bug #1 (A1): startAt defaults to Today (VN), no clear-date buttons, empty dueAt rejected, startAt > dueAt rejected, API 400 on omitted dates
+    const missingStartRes = await page.request.post('/api/v1/tasks', {
+      data: { title: `Missing startAt ${suffix}`, dueAt: vnMidnightUtc(1).toISOString() },
+    });
+    expect(missingStartRes.status()).toBe(400);
+    const missingDueRes = await page.request.post('/api/v1/tasks', {
+      data: { title: `Missing dueAt ${suffix}`, startAt: vnMidnightUtc(0).toISOString() },
+    });
+    expect(missingDueRes.status()).toBe(400);
+
     await page
       .getByRole('button', { name: `+ ${viMessages.calendar.createTask}`, exact: true })
       .click();
     const createDialog = page.locator('.ui-modal[role="dialog"]');
     await expect(createDialog).toBeVisible();
-    await expect(createDialog.getByLabel(viMessages.tasks.priorityLabel)).toHaveCount(0);
+    await expect(createDialog.getByLabel(/priority|độ ưu tiên/i)).toHaveCount(0);
+    await expect(createDialog.getByTestId('task-due-clear-btn')).toHaveCount(0);
+    await expect(createDialog.locator('.task-date-clear-btn')).toHaveCount(0);
 
     const switches = createDialog.getByRole('switch');
     await expect(switches).toHaveCount(3);
@@ -770,6 +753,13 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     await createDialog.getByLabel(viMessages.tasks.titleLabel, { exact: true }).fill(createdTitle);
     const startInput = createDialog.getByLabel(viMessages.tasks.startAtLabel, { exact: true });
     const dueInput = createDialog.getByLabel(viMessages.tasks.dueAtLabel, { exact: true });
+    await expect(startInput).toHaveValue(vnDateIsoOffset(0));
+    await expect(dueInput).toHaveValue('');
+
+    // Reject empty dueAt
+    await createDialog.getByRole('button', { name: viMessages.tasks.createSubmit, exact: true }).click();
+    await expect(createDialog.getByRole('alert')).toContainText(viMessages.tasks.validationDueAt);
+
     const startIso = vnDateIsoOffset(1);
     const invalidEarlyDueIso = vnDateIsoOffset(0);
     const validDueIso = vnDateIsoOffset(3); // soon tier (2-3 days)
@@ -795,7 +785,7 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     const sentPayload = createRes.request().postDataJSON() as Record<string, unknown>;
     expect(sentPayload.boardId).toBeUndefined();
     expect(sentPayload.columnId).toBeUndefined();
-    expect(sentPayload.priority).toBeUndefined();
+    expect(sentPayload.priority).toBe(2);
     expect(sentPayload).toMatchObject({
       departmentIds: [deptAId],
       notifyInApp: false,
@@ -826,7 +816,7 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     expect(mainColBox).not.toBeNull();
     expect(sideColBox).not.toBeNull();
     expect(sideColBox!.x).toBeGreaterThanOrEqual(mainColBox!.x + mainColBox!.width);
-    await expect(modal.getByLabel(viMessages.tasks.priorityLabel)).toHaveCount(0);
+    await expect(modal.getByLabel(/priority|độ ưu tiên/i)).toHaveCount(0);
     await expect(modal.locator('.ui-prio')).toHaveCount(0);
 
     // 3. Edit title & verify 10s Undo toast (Major-1 mount stability across version 1->2)
@@ -928,7 +918,7 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     await tracker.assertClean();
   });
 
-  test('completes Lead acceptance & deliverables loop via /tasks modal & Bell, updates /my-tasks badges/filters, and enforces hidden 404 & WQ-27', async ({
+  test('completes Lead acceptance & deliverables loop via /tasks modal & Bell, updates /progress badges/filters (consolidated from /my-tasks), and enforces hidden 404 & WQ-27', async ({
     browser,
     page,
   }) => {
@@ -989,22 +979,25 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
       await adminCtx.close();
     }
 
-    // 1. Dept A member sees pending badge on /my-tasks (no Priority UI), opens task modal on /tasks, ticks "Đã nhận công việc", submits 2 deliverables & deletes 1
-    await signInAs(page, memberStudentId, '/my-tasks', '/my-tasks');
-    const myRowBefore = page.locator('.my-task-row.deadline-urgent', { hasText: flowTitle });
+    // 1. Dept A member visits /my-tasks -> redirects to /progress, sees pending badge & Giao cho Ban pill (no Priority UI),
+    //    opens task modal on /tasks, ticks "Đã nhận công việc", submits 2 deliverables & deletes 1
+    await signInAs(page, memberStudentId, '/progress', '/my-tasks');
+    await expect(page.locator('.app-side a[href="/my-tasks"]')).toHaveCount(0);
+    const myRowBefore = page.locator('.prog-row', { hasText: flowTitle });
     await expect(myRowBefore).toBeVisible();
-    await expect(myRowBefore).toContainText(viMessages.myTasks.pendingAcceptBadge);
-    await expect(myRowBefore).toContainText(viMessages.myTasks.deliverableCount.replace('{count}', '0'));
+    await expect(myRowBefore.locator('.prog-dot.is-urgent')).toBeVisible();
+    await expect(myRowBefore).toContainText(viMessages.progress.unacceptedShort);
+    await expect(myRowBefore).toContainText(viMessages.progress.deptAssignedPill);
     await expect(page.locator('.ui-prio, .prio-p1, .prio-p2, .prio-p3, .prio-p4')).toHaveCount(0);
 
-    // Filter /my-tasks by deadlineFilter=urgent and then verify empty-state /tasks link on done filter
-    const deadlineFilter = page.getByLabel(viMessages.myTasks.deadlineFilterLabel, { exact: true });
-    await deadlineFilter.selectOption('urgent');
+    // Filter /progress by Việc của Ban and Đã xong
+    const progressTabs = page.locator('.prog-filter-tabs');
+    await progressTabs.getByRole('tab', { name: viMessages.progress.filterDepartment, exact: true }).click();
     await expect(myRowBefore).toBeVisible();
-    await deadlineFilter.selectOption('done');
-    await expect(page.locator('.my-task-row', { hasText: flowTitle })).toHaveCount(0);
-    await expect(page.locator('a[href="/tasks"]', { hasText: viMessages.myTasks.openCalendar })).toBeVisible();
-    await deadlineFilter.selectOption('');
+    await progressTabs.getByRole('tab', { name: viMessages.progress.filterDone, exact: true }).click();
+    await expect(page.locator('.prog-row', { hasText: flowTitle })).toHaveCount(0);
+    await progressTabs.getByRole('tab', { name: viMessages.progress.filterOpen, exact: true }).click();
+    await expect(myRowBefore).toBeVisible();
 
     // Open /tasks and click urgent task bar
     await page.locator('.app-side a.app-nav-item[href="/tasks"]').click();
@@ -1026,7 +1019,11 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
     await acceptSwitch.click();
     expect((await acceptPromise).status()).toBe(200);
     await expect(acceptSwitch).toHaveAttribute('aria-checked', 'true');
-    await expect(modal).toContainText(viMessages.tasks.notifiedLeadsBanner.replace('{leads}', leadFullName));
+    await expect(
+      page.locator('[data-sonner-toast]', {
+        hasText: viMessages.tasks.notifiedLeadsBanner.replace('{leads}', leadFullName),
+      }),
+    ).toBeVisible();
 
     // Reject javascript: URL client-side, then submit 2 deliverable links & delete 1
     const delivTitleInput = modal.getByLabel(viMessages.tasks.deliverableTitlePlaceholder, { exact: true });
@@ -1071,12 +1068,16 @@ test.describe('CR-10 Calendar Task Workspace, Deadline Alerts & Near-Fullscreen 
 
     await modal.getByRole('button', { name: viMessages.common.close }).click();
 
-    // Verify /my-tasks now shows ✓ Đã nhận and 1 SP
-    await page.locator('.app-side a[href="/my-tasks"]').click();
-    await page.waitForURL(`${BASE_ORIGIN}/my-tasks`);
-    const myRowAfter = page.locator('.my-task-row.deadline-urgent', { hasText: flowTitle });
-    await expect(myRowAfter).toContainText(viMessages.myTasks.acceptedBadge);
-    await expect(myRowAfter).toContainText(viMessages.myTasks.deliverableCount.replace('{count}', '1'));
+    // Verify /progress now shows Đã nhận and 1 deliverable link in Inspector
+    await page.locator('.app-side a[href="/progress"]').click();
+    await page.waitForURL(`${BASE_ORIGIN}/progress`);
+    const myRowAfter = page.locator('.prog-row', { hasText: flowTitle });
+    await expect(myRowAfter).toContainText(viMessages.progress.acceptedShort);
+    await myRowAfter.locator('.prog-row-btn').click();
+    await expect(page.locator('.prog-summary-card .prog-accept-btn.is-accepted')).toBeVisible();
+    await expect(page.locator('.prog-deliv-card')).toContainText(
+      viMessages.progress.deliverablesTitle.replace('{count}', '1'),
+    );
 
     // Also accept and submit deliverable on hidden task as Dept A member -> Lead Bell gets redacted WQ-27 notifications
     expect(

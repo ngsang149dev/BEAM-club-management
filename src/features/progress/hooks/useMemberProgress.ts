@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useMeQuery } from '@/features/auth/hooks/useAuth';
+import { useMeQuery, useSessionQuery } from '@/features/auth/hooks/useAuth';
 import { useMembersInfiniteQuery, type MemberListItem } from '@/features/members/hooks/useMembers';
 import { apiFetch } from '@/features/shared/api/client';
 import { usePermissions } from '@/features/shared/permissions/can';
@@ -54,7 +54,9 @@ function useProgressViewState(canInspectClubMembers: boolean) {
 
   const mode: ProgressMode = canInspectClubMembers ? requestedMode : 'mine';
   const setMode = (nextMode: ProgressMode) => {
-    setRequestedMode(canInspectClubMembers ? nextMode : 'mine');
+    const resolved: ProgressMode = canInspectClubMembers ? nextMode : 'mine';
+    setRequestedMode(resolved);
+    if (resolved === 'team' && filter === 'department') setFilter('open');
   };
 
   return {
@@ -104,41 +106,46 @@ function useTeamRosterState(params: {
     [clubTasksQuery.data]
   );
 
-  return { membersQuery, departmentsQuery, deptMembers, selectedTeamMember, workloadMap };
+  return { membersQuery, departmentsQuery, clubTasksQuery, deptMembers, selectedTeamMember, workloadMap };
 }
 
-function useDirectMemberTasks(targetMemberId: string, state: ReturnType<typeof useProgressViewState>) {
-  const memberTasksQuery = useQuery({
-    queryKey: [...TASKS_QUERY_KEYS.progressRoot, 'member', targetMemberId],
-    queryFn: ({ signal }) =>
-      apiFetch('/tasks', {
-        query: { assigneeId: targetMemberId, sortBy: 'dueAt', sortOrder: 'asc', limit: 200 },
-        signal,
-      }),
-    enabled: Boolean(targetMemberId),
+function useProgressTasksState(params: {
+  readonly mode: ProgressMode;
+  readonly targetMemberId: string;
+  readonly clubTasksQuery: ReturnType<typeof useTeamRosterState>['clubTasksQuery'];
+  readonly state: ReturnType<typeof useProgressViewState>;
+}) {
+  const mineTasksQuery = useQuery({
+    queryKey: [...TASKS_QUERY_KEYS.progressRoot, 'mine'],
+    queryFn: ({ signal }) => apiFetch('/me/tasks', { query: { includeDone: true, limit: 100 }, signal }),
+    enabled: params.mode === 'mine' && Boolean(params.targetMemberId),
   });
 
-  const directTasks: readonly TaskDto[] = useMemo(
-    () =>
-      (memberTasksQuery.data?.items ?? []).filter(
-        (task) => task.deletedAt === null && task.assignees.some((a) => a.id === targetMemberId)
-      ),
-    [memberTasksQuery.data, targetMemberId]
-  );
+  const memberTasksQuery = params.mode === 'mine' ? mineTasksQuery : params.clubTasksQuery;
+  const scopedTasks: readonly TaskDto[] = useMemo(() => {
+    const items = memberTasksQuery.data?.items ?? [];
+    if (params.mode === 'mine') return items.filter((task) => task.deletedAt === null);
+    if (!params.targetMemberId) return [];
+    return items.filter(
+      (task) => task.deletedAt === null && task.assignees.some((a) => a.id === params.targetMemberId)
+    );
+  }, [memberTasksQuery.data, params.mode, params.targetMemberId]);
+
   const filteredTasks = useMemo(
     () =>
-      filterProgressTasks(directTasks, {
-        filter: state.filter,
-        q: state.searchQuery,
-        selectedMemberId: targetMemberId,
+      filterProgressTasks(scopedTasks, {
+        filter: params.state.filter,
+        q: params.state.searchQuery,
+        selectedMemberId: params.targetMemberId,
+        allowDepartmentTasks: params.mode === 'mine',
       }),
-    [directTasks, state.filter, state.searchQuery, targetMemberId]
+    [scopedTasks, params.state.filter, params.state.searchQuery, params.targetMemberId, params.mode]
   );
   const selectedTask =
-    filteredTasks.find((task) => task.id === state.selectedTaskId) ?? filteredTasks[0] ?? null;
-  const stats = useMemo(() => computeMemberProgressStats(directTasks), [directTasks]);
+    filteredTasks.find((task) => task.id === params.state.selectedTaskId) ?? filteredTasks[0] ?? null;
+  const stats = useMemo(() => computeMemberProgressStats(scopedTasks), [scopedTasks]);
 
-  return { memberTasksQuery, directTasks, filteredTasks, selectedTask, stats };
+  return { memberTasksQuery, directTasks: scopedTasks, filteredTasks, selectedTask, stats };
 }
 
 function resolveProgressSelection(params: {
@@ -155,10 +162,11 @@ function resolveProgressSelection(params: {
 }
 
 export function useMemberProgress() {
+  const sessionQuery = useSessionQuery(true);
   const meQuery = useMeQuery(true);
   const { isAdmin, can } = usePermissions();
   const canInspectClubMembers = isAdmin || can('member.view');
-  const currentUserId = meQuery.data?.profile.id ?? '';
+  const currentUserId = meQuery.data?.profile.id ?? sessionQuery.data?.userId ?? '';
   const state = useProgressViewState(canInspectClubMembers);
   const roster = useTeamRosterState({
     teamEnabled: canInspectClubMembers && state.mode === 'team',
@@ -173,7 +181,12 @@ export function useMemberProgress() {
     meProfile: meQuery.data,
     selectedTeamMember: roster.selectedTeamMember,
   });
-  const taskState = useDirectMemberTasks(sel.targetMemberId, state);
+  const taskState = useProgressTasksState({
+    mode: state.mode,
+    targetMemberId: sel.targetMemberId,
+    clubTasksQuery: roster.clubTasksQuery,
+    state,
+  });
   const memberIdentity = resolveMemberBannerIdentity({
     isSelf: sel.isSelf,
     canViewDetail: isAdmin || can('member.view_detail'),

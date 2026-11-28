@@ -31,8 +31,12 @@ export const tasks = pgTable(
     }),
     title: text('title').notNull(),
     description: text('description'),
-    startAt: timestamp('start_at', { withTimezone: true, mode: 'date' }),
-    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }),
+    startAt: timestamp('start_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
     isCompleted: boolean('is_completed').notNull().default(false),
     completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
     priority: smallint('priority').notNull().default(2),
@@ -53,10 +57,7 @@ export const tasks = pgTable(
   },
   (table) => [
     check('tasks_priority_chk', sql`${table.priority} BETWEEN 1 AND 4`),
-    check(
-      'tasks_start_before_due_chk',
-      sql`${table.startAt} IS NULL OR ${table.dueAt} IS NULL OR ${table.startAt} <= ${table.dueAt}`,
-    ),
+    check('tasks_start_before_due_chk', sql`${table.startAt} <= ${table.dueAt}`),
     check('tasks_version_chk', sql`${table.version} >= 1`),
     check(
       'tasks_active_column_not_null_chk',
@@ -74,7 +75,7 @@ export const tasks = pgTable(
       .where(sql`${table.deletedAt} IS NULL AND ${table.purgedAt} IS NULL`),
     index('tasks_due_at_active_idx')
       .on(table.dueAt)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.dueAt} IS NOT NULL`),
+      .where(sql`${table.deletedAt} IS NULL`),
     index('tasks_board_deleted_at_idx')
       .on(table.boardId, table.deletedAt.desc())
       .where(isNotNull(table.deletedAt)),

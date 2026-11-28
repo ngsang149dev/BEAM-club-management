@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocale, useTranslations } from 'next-intl';
@@ -140,7 +140,6 @@ function DeliverableSubmitForm({
 function useDeliverablesController(task: TaskDto, departments: readonly DepartmentDto[]) {
   const tTasks = useTranslations('tasks');
   const tMember = useTranslations('member');
-  const [notice, setNotice] = useState<string | null>(null);
   const createMutation = useCreateTaskDeliverableMutation();
   const deleteMutation = useDeleteTaskDeliverableMutation();
   const leadNames = resolveAssignedDepartmentLeads(
@@ -150,24 +149,18 @@ function useDeliverablesController(task: TaskDto, departments: readonly Departme
   );
 
   const handleCreate = (values: DeliverableFormValues, resetForm: () => void) => {
-    setNotice(null);
     createMutation.mutate(
       { id: task.id, payload: { title: values.title.trim(), url: values.url.trim() } },
       {
         onSuccess: () => {
           resetForm();
-          const banner =
-            leadNames.length > 0
-              ? tTasks('notifiedLeadsBanner', { leads: leadNames.join(', ') })
-              : tTasks('notifiedCreatorBanner');
-          setNotice(banner);
           toast.success(tTasks('deliverableSubmittedToast'));
         },
       }
     );
   };
 
-  return { notice, leadNames, createMutation, deleteMutation, handleCreate };
+  return { leadNames, createMutation, deleteMutation, handleCreate };
 }
 
 function DeliverablesList({
@@ -244,11 +237,6 @@ export function TaskDeliverablesSection({
         ) : null}
       </div>
       <TaskErrorBanner error={ctrl.createMutation.error ?? ctrl.deleteMutation.error} />
-      {ctrl.notice ? (
-        <div className="ui-banner is-success" role="status">
-          <div className="ui-banner-body"><span className="ui-banner-text">{ctrl.notice}</span></div>
-        </div>
-      ) : null}
       <DeliverablesList
         task={task}
         locale={locale}

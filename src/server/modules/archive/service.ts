@@ -4,10 +4,10 @@ import type {
   UpdateArchiveRetentionRequestInput,
 } from '@/lib/archive';
 import { notFound } from '@/lib/errors';
-import type { AuditLogWriter } from '@/server/modules/audit';
 import { type BoardSummaryResponseDto, toBoardSummaryDto } from '@/server/modules/boards';
 import { canViewMemberDetail, type MemberItemResponseDto, toMemberItemResponseDto } from '@/server/modules/members';
 import { assertActorActive, type TaskMutationResponseDto, toTaskMutationResponseDto } from '@/server/modules/tasks';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
@@ -61,7 +61,14 @@ export class ArchiveService {
     assertActorActive(actor);
     const now = this.deps.clock.now();
     const result = await this.deps.transactionRunner.runInTransaction((tx) =>
-      executeTaskRestoreTx({ archiveRepo: this.deps.archiveRepo, actor, taskId, now, tx }),
+      executeTaskRestoreTx({
+        archiveRepo: this.deps.archiveRepo,
+        auditWriter: this.deps.auditWriter,
+        actor,
+        taskId,
+        now,
+        tx,
+      }),
     );
     this.deps.logger.info('Archived task restored', {
       actorId: actor.id,

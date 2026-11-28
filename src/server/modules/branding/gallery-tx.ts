@@ -33,11 +33,12 @@ export async function loadFullBrandingDto(
   brandingRepo: BrandingRepository,
   tx?: TransactionContext,
 ): Promise<BrandingDto> {
-  const [logoAsset, wordmarkAsset, galleryItems] = await Promise.all([
-    brandingRepo.findMetadataByKey(CLUB_LOGO_ASSET_KEY, tx),
-    brandingRepo.findMetadataByKey(CLUB_WORDMARK_ASSET_KEY, tx),
-    brandingRepo.listGalleryItemsMetadata(tx),
-  ]);
+  if (brandingRepo.findBrandingAssetsMetadata) {
+    return toBrandingDto(await brandingRepo.findBrandingAssetsMetadata(tx));
+  }
+  const logoAsset = await brandingRepo.findMetadataByKey(CLUB_LOGO_ASSET_KEY, tx);
+  const wordmarkAsset = await brandingRepo.findMetadataByKey(CLUB_WORDMARK_ASSET_KEY, tx);
+  const galleryItems = await brandingRepo.listGalleryItemsMetadata(tx);
   return toBrandingDto({ logoAsset, wordmarkAsset, galleryItems });
 }
 

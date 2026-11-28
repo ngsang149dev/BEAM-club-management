@@ -64,9 +64,7 @@ export interface CalendarPackedTask<T extends CalendarDateTaskLike> {
   readonly span: number;
 }
 
-export type CalendarTierCounts = Record<CalendarDeadlineFilter, number> & {
-  readonly unscheduled: number;
-};
+export type CalendarTierCounts = Record<CalendarDeadlineFilter, number>;
 
 const DAY_MS = 86_400_000;
 const WD_SHORT_VI = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'] as const;
@@ -165,7 +163,7 @@ export function computeCalendarTierCounts<T extends { readonly isCompleted: bool
   tasks: readonly T[],
   todayIso = getTodayVnIso()
 ): CalendarTierCounts {
-  const counts = { all: 0, overdue: 0, urgent: 0, soon: 0, safe: 0, done: 0, unscheduled: 0 };
+  const counts: CalendarTierCounts = { all: 0, overdue: 0, urgent: 0, soon: 0, safe: 0, done: 0 };
   for (const task of tasks) {
     counts.all += 1;
     const tier = getCalendarDeadlineTier(task, todayIso);
@@ -187,10 +185,10 @@ function resolveTaskDaySpan<T extends CalendarDateTaskLike>(
   task: T,
   yearStartIso: string,
   totalDays: number
-): CalendarPackedTask<T> | 'unscheduled' | null {
+): CalendarPackedTask<T> | null {
   const startIso = utcIsoToHoChiMinhInput(task.startAt);
   const dueIso = utcIsoToHoChiMinhInput(task.dueAt);
-  if (!startIso && !dueIso) return 'unscheduled';
+  if (!startIso && !dueIso) return null;
   const rawStart = diffIsoDays(yearStartIso, startIso || dueIso);
   const rawEnd = startIso && dueIso ? Math.max(rawStart, diffIsoDays(yearStartIso, dueIso)) : rawStart;
   if (rawEnd < 0 || rawStart >= totalDays) return null;
@@ -203,15 +201,12 @@ export function packCalendarLanes<T extends CalendarDateTaskLike>(
   tasks: readonly T[],
   yearStartIso: string,
   totalDays: number
-): { readonly lanes: CalendarPackedTask<T>[][]; readonly unscheduled: T[] } {
+): { readonly lanes: CalendarPackedTask<T>[][] } {
   const scheduled: CalendarPackedTask<T>[] = [];
-  const unscheduled: T[] = [];
 
   for (const task of tasks) {
     const resolved = resolveTaskDaySpan(task, yearStartIso, totalDays);
-    if (resolved === 'unscheduled') {
-      unscheduled.push(task);
-    } else if (resolved !== null) {
+    if (resolved !== null) {
       scheduled.push(resolved);
     }
   }
@@ -231,5 +226,5 @@ export function packCalendarLanes<T extends CalendarDateTaskLike>(
     }
   }
 
-  return { lanes, unscheduled };
+  return { lanes };
 }

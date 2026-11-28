@@ -1,5 +1,4 @@
 import type { components } from '@/features/shared/api/client';
-import { normalizeTaskPriority } from '@/features/tasks/formatters';
 import {
   DEFAULT_REMINDER_DAYS_BEFORE,
   DEFAULT_REMIND_OVERDUE,
@@ -11,7 +10,6 @@ import {
   normalizeDaysBefore,
   updateReminderSettingsSchema,
 } from '@/lib/reminders';
-import type { TaskPriority } from '@/lib/tasks';
 
 export {
   DEFAULT_REMINDER_DAYS_BEFORE,
@@ -38,7 +36,6 @@ export interface ReminderPreviewTaskItem {
   readonly isHidden: boolean;
   /** Strictly null when `isHidden === true` to prevent WQ-27 title leakage. */
   readonly title: string | null;
-  readonly priority: TaskPriority;
   readonly dueAt: string;
   readonly dayDiff: number;
   /** Redacted to `[]` when `isHidden === true`. */
@@ -81,12 +78,8 @@ export function toggleMilestoneDay(daysBefore: readonly number[], day: number): 
 
 export function addMilestoneDay(daysBefore: readonly number[], day: number): number[] {
   const normalized = normalizeDaysBefore(daysBefore);
-  if (!milestoneDaySchema.safeParse(day).success) {
-    return normalized;
-  }
-  if (!normalized.includes(day) && normalized.length >= MAX_MILESTONE_COUNT) {
-    return normalized;
-  }
+  if (!milestoneDaySchema.safeParse(day).success) return normalized;
+  if (!normalized.includes(day) && normalized.length >= MAX_MILESTONE_COUNT) return normalized;
   return normalizeDaysBefore([...normalized, day]);
 }
 
@@ -165,7 +158,6 @@ function toPreviewTaskItem(task: TaskDto, dayDiff: number): ReminderPreviewTaskI
     id: task.id,
     isHidden: task.isHidden,
     title: task.isHidden ? null : task.title,
-    priority: normalizeTaskPriority(task.priority),
     dueAt: task.dueAt ?? '',
     dayDiff,
     departmentNames: task.isHidden ? [] : task.assignedDepartments.map((dept) => dept.name),
@@ -173,7 +165,6 @@ function toPreviewTaskItem(task: TaskDto, dayDiff: number): ReminderPreviewTaskI
 }
 
 function comparePreviewItems(a: ReminderPreviewTaskItem, b: ReminderPreviewTaskItem): number {
-  if (b.priority !== a.priority) return b.priority - a.priority;
   const dueDiff = Date.parse(a.dueAt) - Date.parse(b.dueAt);
   if (Number.isFinite(dueDiff) && dueDiff !== 0) return dueDiff;
   return (a.title ?? '').localeCompare(b.title ?? '');
@@ -201,31 +192,68 @@ export interface SampleReminderLabels {
   readonly laterDept: string;
 }
 
-export function buildSampleReminderGroups(
-  labels: SampleReminderLabels,
-  nowMs: number
-): readonly ReminderPreviewGroup[] {
-  const iso = (days: number) => new Date(nowMs + days * DAY_MS).toISOString();
-  const item = (spec: { id: string; title: string; priority: TaskPriority; dayDiff: number; dept: string }): ReminderPreviewTaskItem => ({
+function buildSampleTaskDto(spec: {
+  readonly id: string;
+  readonly title: string;
+  readonly deptName: string;
+  readonly dueAt: string;
+}): TaskDto {
+  return {
     id: spec.id,
-    isHidden: false,
+    boardId: 'sample-board',
+    columnId: 'sample-col',
     title: spec.title,
-    priority: spec.priority,
-    dueAt: iso(spec.dayDiff),
-    dayDiff: spec.dayDiff,
-    departmentNames: [spec.dept],
-  });
-  return [
-    { key: 'overdue', items: [item({ id: 'sample-overdue-1', title: labels.overdueTitle, priority: 4, dayDiff: -1, dept: labels.overdueDept })] },
-    { key: 'today', items: [item({ id: 'sample-today-1', title: labels.todayTitle, priority: 4, dayDiff: 0, dept: labels.todayDept })] },
-    {
-      key: 'upcoming',
-      items: [
-        item({ id: 'sample-upcoming-1', title: labels.soonTitle, priority: 3, dayDiff: 1, dept: labels.soonDept }),
-        item({ id: 'sample-upcoming-2', title: labels.laterTitle, priority: 1, dayDiff: 2, dept: labels.laterDept }),
-      ],
+    description: null,
+    startAt: spec.dueAt,
+    dueAt: spec.dueAt,
+    isCompleted: false,
+    completedAt: null,
+    priority: 2,
+    position: 1,
+    isHidden: false,
+    version: 1,
+    deletedAt: null,
+    assignees: [],
+    assignedDepartments: [{ id: `dept-${spec.id}`, name: spec.deptName }],
+    deliverables: [],
+    deliverableCount: 0,
+    creator: {
+      id: 'sample-creator',
+      fullName: 'BEAM',
+      isActive: true,
+      leftAt: null,
+      departments: [],
     },
-  ];
+    commentCount: 0,
+    createdAt: spec.dueAt,
+    updatedAt: spec.dueAt,
+  };
+}
+
+function buildVnDayNoonIso(nowMs: number, dayOffset: number): string {
+  const vnNoonMs = (toVnDayNumber(nowMs) + dayOffset) * DAY_MS + 12 * 3_600_000 - VN_OFFSET_MS;
+  return new Date(vnNoonMs).toISOString();
+}
+
+export function buildSampleReminderTasks(labels: SampleReminderLabels, daysBefore: readonly number[], nowMs: number): TaskDto[] {
+  const tasks: TaskDto[] = [buildSampleTaskDto({ id: 'sample-overdue-1', title: labels.overdueTitle, deptName: labels.overdueDept, dueAt: buildVnDayNoonIso(nowMs, -1) })];
+  for (const day of normalizeDaysBefore(daysBefore)) {
+    const spec =
+      day === 0
+        ? { title: labels.todayTitle, deptName: labels.todayDept }
+        : day === 1
+          ? { title: labels.soonTitle, deptName: labels.soonDept }
+          : { title: labels.laterTitle, deptName: labels.laterDept };
+    tasks.push(
+      buildSampleTaskDto({
+        id: `sample-day-${day}`,
+        title: spec.title,
+        deptName: spec.deptName,
+        dueAt: buildVnDayNoonIso(nowMs, day),
+      })
+    );
+  }
+  return tasks;
 }
 
 export function buildReminderEmailPreviewData(

@@ -161,7 +161,7 @@ VALUES
   ('50000000-0000-4000-8000-000000000004', '40000000-0000-4000-8000-000000000001', 'Done',   3)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO tasks (id, board_id, column_id, title, description, due_at, priority, position, is_hidden, version, deleted_at, created_by)
+INSERT INTO tasks (id, board_id, column_id, title, description, start_at, due_at, priority, position, is_hidden, version, deleted_at, created_by)
 VALUES
   -- Normal upcoming task (00:00 UTC+7, 2 days from current VN date)
   (
@@ -170,6 +170,7 @@ VALUES
     '50000000-0000-4000-8000-000000000001',
     'Prepare semester kickoff checklist',
     'Draft agenda and logistics items for the club kickoff meeting.',
+    date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh',
     (date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') + interval '2 days') AT TIME ZONE 'Asia/Ho_Chi_Minh',
     2,
     1000,
@@ -185,6 +186,7 @@ VALUES
     '50000000-0000-4000-8000-000000000002',
     'Publish club event poster assets',
     'Finalize visual assets for social channels (sample overdue task).',
+    '2026-01-12T17:00:00Z',
     '2026-01-14T17:00:00Z',
     4,
     1000,
@@ -200,6 +202,7 @@ VALUES
     '50000000-0000-4000-8000-000000000003',
     'Internal leadership budget review (Hidden)',
     'Confidential internal planning task for hidden-task visibility testing.',
+    date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh',
     (date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') + interval '1 day') AT TIME ZONE 'Asia/Ho_Chi_Minh',
     3,
     1000,
@@ -215,6 +218,7 @@ VALUES
     '50000000-0000-4000-8000-000000000004',
     'Archive previous semester inventory',
     'Completed handover item used to test Done column and inactive assignee display.',
+    '2026-01-12T17:00:00Z',
     '2026-01-14T17:00:00Z',
     1,
     1000,

@@ -1,10 +1,11 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
-import { boards, columns, departments, memberDepartments, profiles, tasks } from '@db/schema';
+import { boards, columns, departments, tasks } from '@db/schema';
 import { notFound } from '@/lib/errors';
 import { escapeLikePattern, notDoneColumnSqlCondition, visibleTaskSqlCondition } from '@/server/modules/tasks';
 import type { AuthActor } from '@/server/shared/authorize';
-import type { DbExecutor } from '@/server/shared/db';
+import { type DbExecutor, runExecutorQueries } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 import { assertColumnCanBeDeleted, assertColumnOrderMatches, type BoardListCursor } from './policy';
 
 export interface BoardTaskCounts {
@@ -253,10 +254,10 @@ export class DrizzleBoardsRepository implements BoardsRepository {
     if (boardRows.length === 0) return [];
     const deptIds = Array.from(new Set(boardRows.map((b) => b.departmentId).filter((id): id is string => id !== null)));
     const creatorIds = Array.from(new Set(boardRows.map((b) => b.createdBy)));
-    const [deptMap, userMap, statsMap] = await Promise.all([
-      this.loadDepartmentsByIds(executor, deptIds),
-      this.loadUserSummaries(executor, creatorIds),
-      viewer ? this.queryBoardTaskStats(executor, { boardIds: boardRows.map((b) => b.id), actor: viewer.actor, now: viewer.now }) : Promise.resolve(new Map<string, BoardTaskCounts>()),
+    const [deptMap, userMap, statsMap] = await runExecutorQueries(executor, [
+      () => this.loadDepartmentsByIds(executor, deptIds),
+      () => loadUserSummariesMap(executor, creatorIds),
+      () => viewer ? this.queryBoardTaskStats(executor, { boardIds: boardRows.map((b) => b.id), actor: viewer.actor, now: viewer.now }) : Promise.resolve(new Map<string, BoardTaskCounts>()),
     ]);
     return boardRows.map((row) => {
       const stats = statsMap.get(row.id);
@@ -278,23 +279,5 @@ export class DrizzleBoardsRepository implements BoardsRepository {
     if (deptIds.length === 0) return new Map();
     const rows = await executor.select({ id: departments.id, name: departments.name }).from(departments).where(inArray(departments.id, [...deptIds]));
     return new Map(rows.map((r) => [r.id, r]));
-  }
-
-  private async loadUserSummaries(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, BoardMemberSummaryRecord>> {
-    const map = new Map<string, BoardMemberSummaryRecord>();
-    if (userIds.length === 0) return map;
-    const [profileRows, deptRows] = await Promise.all([
-      executor.select({ id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt, isActive: profiles.isActive, leftAt: profiles.leftAt }).from(profiles).where(inArray(profiles.id, [...userIds])),
-      executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name }).from(memberDepartments).innerJoin(departments, eq(memberDepartments.departmentId, departments.id)).where(inArray(memberDepartments.userId, [...userIds])).orderBy(asc(departments.name), asc(departments.id)),
-    ]);
-    const deptMap = new Map<string, BoardDepartmentSummaryRecord[]>();
-    for (const row of deptRows) {
-      const list = deptMap.get(row.userId);
-      const dept = { id: row.id, name: row.name };
-      if (list) list.push(dept);
-      else deptMap.set(row.userId, [dept]);
-    }
-    for (const row of profileRows) map.set(row.id, { ...row, departments: deptMap.get(row.id) ?? [] });
-    return map;
   }
 }

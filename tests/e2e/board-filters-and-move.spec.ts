@@ -318,6 +318,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
         columnId: colTodoId,
         title: taskPublicOverdueTitle,
         description: taskPublicOverdueDesc,
+        startAt: pastDueOne,
         dueAt: pastDueOne,
         priority: 4,
         position: '1000',
@@ -330,6 +331,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
         columnId: colDoneId,
         title: taskDoneOverdueTitle,
         description: 'Done task with past due date',
+        startAt: pastDueOne,
         dueAt: pastDueOne,
         priority: 1,
         position: '1000',
@@ -343,6 +345,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
         columnId: colDoingId,
         title: taskUpcomingMoveTitle,
         description: 'Upcoming task assigned to member without member.view',
+        startAt: futureDue,
         dueAt: futureDue,
         priority: 3,
         position: '1000',
@@ -355,6 +358,7 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
         columnId: colTodoId,
         title: taskHiddenOverdueTitle,
         description: 'Confidential overdue task only for admin and deptA',
+        startAt: pastDueTwo,
         dueAt: pastDueTwo,
         priority: 4,
         position: '2000',
@@ -564,7 +568,10 @@ test.describe('E6 Board Search/Counts, Task Filters/Sort/URL Sync & Card Column 
     await expect(doneBar).toBeVisible();
     await expect(doneBar).toHaveClass(/deadline-done/);
     await expect(doneBar).not.toHaveClass(/deadline-overdue/);
-    await expect(doneBar).not.toContainText(viMessages.tasks.overdueBadge);
+    await expect(doneBar).toContainText(viMessages.tasks.deadlineBadgeDone);
+    await expect(doneBar).not.toContainText(
+      viMessages.calendar.filterOverdue.replace(/\s*\(\{count\}\)/, ''),
+    );
 
     // Verify backend /api/v1/tasks filter & sort parameters still honor priority, dueStatus, assigneeId, sortBy/sortOrder
     const apiPrioRes = await page.request.get(

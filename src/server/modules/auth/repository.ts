@@ -7,14 +7,15 @@ import {
   sessions,
   userPermissions,
 } from '@db/schema';
-import { dedupeCanonicalPermissions, isPermissionCode, type PermissionCode } from '@/lib/permissions';
-import type { DbExecutor } from '@/server/shared/db';
+import type { PermissionCode } from '@/lib/permissions';
+import { type DbExecutor, runExecutorQueries } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { PASSWORD_CHANGE_ATTEMPT_PREFIX } from './policy';
 import {
   buildAvatarUpdateValues,
   buildClearAvatarValues,
   buildCreateSessionValues,
+  mapPermissionRows,
   mapProfileWithDepartmentsRow,
   mapSessionRow,
   requireCreatedSession,
@@ -23,8 +24,10 @@ import {
 import type {
   AuthRepository,
   CreateSessionInput,
+  LoginRateLimitFailures,
   ProfileWithDepartmentsRecord,
   RevokeAllActiveSessionsInput,
+  SessionAuthContextRecord,
   SessionRecord,
 } from './types';
 
@@ -81,6 +84,23 @@ export class DrizzleAuthRepository implements AuthRepository {
     );
   }
 
+  async countLoginRateLimitFailures(params: {
+    readonly ip: string;
+    readonly attemptKey: string;
+    readonly since: Date;
+  }): Promise<LoginRateLimitFailures> {
+    const [pairFailedCount, ipFailedCount] = await runExecutorQueries(this.db, [
+      () =>
+        this.countRecentFailedLoginAttemptsForPair(
+          params.ip,
+          params.attemptKey,
+          params.since,
+        ),
+      () => this.countRecentFailedLoginAttempts(params.ip, params.since),
+    ]);
+    return { pairFailedCount, ipFailedCount };
+  }
+
   private async countAttempts(condition: SQL | undefined): Promise<number> {
     const rows = await this.db
       .select({ value: count() })
@@ -130,9 +150,23 @@ export class DrizzleAuthRepository implements AuthRepository {
       .select({ permissionCode: userPermissions.permissionCode })
       .from(userPermissions)
       .where(eq(userPermissions.userId, userId));
-    return dedupeCanonicalPermissions(
-      rows.map((row) => row.permissionCode).filter((code): code is PermissionCode => isPermissionCode(code)),
-    );
+    return mapPermissionRows(rows);
+  }
+
+  async findSessionAuthContext(
+    userId: string,
+  ): Promise<SessionAuthContextRecord | null> {
+    const [profileRows, deptRows, permRows] = await runExecutorQueries(this.db, [
+      () => this.db.select(AUTH_PROFILE_COLUMNS).from(profiles).where(eq(profiles.id, userId)).limit(1),
+      () => this.selectUserDepartments(userId, this.db),
+      () => this.db.select({ permissionCode: userPermissions.permissionCode }).from(userPermissions).where(eq(userPermissions.userId, userId)),
+    ]);
+    const profileRow = profileRows[0];
+    if (!profileRow) return null;
+    return {
+      profile: mapProfileWithDepartmentsRow(profileRow, deptRows),
+      permissions: mapPermissionRows(permRows),
+    };
   }
 
   async createSession(
@@ -212,53 +246,27 @@ export class DrizzleAuthRepository implements AuthRepository {
   }
 
   async updatePasswordAndRevokeOtherSessions(input: {
-    readonly userId: string;
-    readonly currentSessionId: string;
-    readonly passwordHash: string;
-    readonly mustChangePassword: boolean;
-    readonly now: Date;
+    readonly userId: string; readonly currentSessionId: string;
+    readonly passwordHash: string; readonly mustChangePassword: boolean; readonly now: Date;
   }): Promise<ProfileWithDepartmentsRecord | null> {
     return this.db.transaction(async (tx) => {
-      const rows = await tx
-        .update(profiles)
-        .set({
-          passwordHash: input.passwordHash,
-          mustChangePassword: input.mustChangePassword,
-          updatedAt: input.now,
-        })
-        .where(eq(profiles.id, input.userId))
-        .returning(AUTH_PROFILE_COLUMNS);
+      const rows = await tx.update(profiles)
+        .set({ passwordHash: input.passwordHash, mustChangePassword: input.mustChangePassword, updatedAt: input.now })
+        .where(eq(profiles.id, input.userId)).returning(AUTH_PROFILE_COLUMNS);
       const updated = rows[0];
       if (!updated) return null;
-      await tx
-        .update(sessions)
-        .set({ revokedAt: input.now, updatedAt: input.now })
-        .where(
-          and(
-            eq(sessions.userId, input.userId),
-            isNull(sessions.revokedAt),
-            ne(sessions.id, input.currentSessionId),
-          ),
-        );
+      await tx.update(sessions).set({ revokedAt: input.now, updatedAt: input.now })
+        .where(and(eq(sessions.userId, input.userId), isNull(sessions.revokedAt), ne(sessions.id, input.currentSessionId)));
       return this.hydrateProfile(updated, tx);
     });
   }
 
   async updateUserAvatar(
-    input: {
-      readonly userId: string;
-      readonly avatarData: Buffer;
-      readonly avatarMime: string;
-      readonly now: Date;
-    },
+    input: { readonly userId: string; readonly avatarData: Buffer; readonly avatarMime: string; readonly now: Date },
     tx?: TransactionContext,
   ): Promise<ProfileWithDepartmentsRecord | null> {
     const executor = tx ?? this.db;
-    const rows = await executor
-      .update(profiles)
-      .set(buildAvatarUpdateValues(input))
-      .where(eq(profiles.id, input.userId))
-      .returning(AUTH_PROFILE_COLUMNS);
+    const rows = await executor.update(profiles).set(buildAvatarUpdateValues(input)).where(eq(profiles.id, input.userId)).returning(AUTH_PROFILE_COLUMNS);
     return rows[0] ? this.hydrateProfile(rows[0], executor) : null;
   }
 
@@ -267,24 +275,23 @@ export class DrizzleAuthRepository implements AuthRepository {
     tx?: TransactionContext,
   ): Promise<ProfileWithDepartmentsRecord | null> {
     const executor = tx ?? this.db;
-    const rows = await executor
-      .update(profiles)
-      .set(buildClearAvatarValues(input.now))
-      .where(eq(profiles.id, input.userId))
-      .returning(AUTH_PROFILE_COLUMNS);
+    const rows = await executor.update(profiles).set(buildClearAvatarValues(input.now)).where(eq(profiles.id, input.userId)).returning(AUTH_PROFILE_COLUMNS);
     return rows[0] ? this.hydrateProfile(rows[0], executor) : null;
+  }
+
+  private selectUserDepartments(userId: string, executor: DbExecutor = this.db) {
+    return executor
+      .select({ id: departments.id, name: departments.name })
+      .from(memberDepartments)
+      .innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
+      .where(eq(memberDepartments.userId, userId))
+      .orderBy(asc(departments.name));
   }
 
   private async hydrateProfile(
     row: SelectedAuthProfileRow,
     executor: DbExecutor = this.db,
   ): Promise<ProfileWithDepartmentsRecord> {
-    const deptRows = await executor
-      .select({ id: departments.id, name: departments.name })
-      .from(memberDepartments)
-      .innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
-      .where(eq(memberDepartments.userId, row.id))
-      .orderBy(asc(departments.name));
-    return mapProfileWithDepartmentsRow(row, deptRows);
+    return mapProfileWithDepartmentsRow(row, await this.selectUserDepartments(row.id, executor));
   }
 }

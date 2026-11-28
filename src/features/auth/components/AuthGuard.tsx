@@ -22,8 +22,6 @@ export interface AuthGuardProps {
   activeNav?: AppNavKey;
   title?: string;
   breadcrumb?: string;
-  actions?: ReactNode;
-  userSummary?: AppShellUser;
   fullHeight?: boolean;
   children: ReactNode;
 }
@@ -76,14 +74,10 @@ function AuthGuardErrorView({ error, onRetry }: { error: unknown; onRetry: () =>
 }
 
 function resolveShellUser(
-  userSummary: AppShellUser | undefined,
   meData: ReturnType<typeof useMeQuery>['data'],
   isAdmin: boolean,
   roleLabels: { admin: string; member: string }
 ): AppShellUser | null {
-  if (userSummary) {
-    return userSummary;
-  }
   if (!meData) {
     return null;
   }
@@ -115,14 +109,14 @@ function AuthGuardLocaleAlert() {
   );
 }
 
-export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, fullHeight, children }: AuthGuardProps) {
+export function AuthGuard({ activeNav, title, breadcrumb, fullHeight, children }: AuthGuardProps) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
   const tCommon = useTranslations('common');
   const tProfile = useTranslations('profile');
   const isLoggedOut = useLoggedOutState();
   const sessionQuery = useSessionQuery();
-  const meQuery = useMeQuery(Boolean(sessionQuery.data?.authenticated) && !userSummary);
+  const meQuery = useMeQuery(!isLoggedOut);
   const logoutMutation = useLogoutMutation();
   const updateLocaleMutation = useUpdateLocaleMutation();
   const isUnauthorized = isAuthUnauthorized({
@@ -154,7 +148,7 @@ export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, 
   }
 
   const session = sessionQuery.data;
-  const resolvedUser = resolveShellUser(userSummary, meQuery.data, session.isAdmin, {
+  const resolvedUser = resolveShellUser(meQuery.data, session.isAdmin, {
     admin: tProfile('roleAdmin'),
     member: tProfile('roleMember'),
   });
@@ -165,7 +159,6 @@ export function AuthGuard({ activeNav, title, breadcrumb, actions, userSummary, 
         activeNav={activeNav}
         title={title}
         breadcrumb={breadcrumb}
-        actions={actions}
         notificationsSlot={<NotificationBell />}
         user={resolvedUser}
         fullHeight={fullHeight}

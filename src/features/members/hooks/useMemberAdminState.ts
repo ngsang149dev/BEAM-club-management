@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { useDepartmentsQuery } from '@/features/departments/hooks/useDepartments';
+import { useDebouncedValue } from '@/features/shared/hooks/useDebouncedValue';
 import { isApiClientError } from '@/features/shared/api/client';
 import {
   useActivateMemberMutation,
@@ -132,11 +133,11 @@ export function useMemberAdminState(allowed: boolean, canViewList: boolean) {
   const t = useTranslations('memberAdmin');
   const tErr = useTranslations('errors');
   const [filters, setFilters] = useState<MembersFilterState>(DEFAULT_ADMIN_FILTERS);
+  const debouncedQ = useDebouncedValue(filters.q, 250);
   const [modalState, setModalState] = useState<AdminModalState>({ kind: 'closed' });
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const departmentsQuery = useDepartmentsQuery(allowed);
-  const membersQuery = useMembersInfiniteQuery(filters, canViewList);
+  const membersQuery = useMembersInfiniteQuery({ ...filters, q: debouncedQ }, canViewList);
   const mutations = useMemberAdminMutations();
 
   const closeModal = () => {
@@ -151,7 +152,7 @@ export function useMemberAdminState(allowed: boolean, canViewList: boolean) {
   };
 
   const handleSuccess = (message: string) => {
-    setToastMessage(message);
+    toast.success(message);
     closeModal();
   };
 
@@ -163,7 +164,6 @@ export function useMemberAdminState(allowed: boolean, canViewList: boolean) {
     setFilters,
     modalState,
     setModalState,
-    toastMessage,
     departmentsQuery,
     membersQuery,
     ...mutations,

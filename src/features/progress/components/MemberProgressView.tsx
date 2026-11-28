@@ -52,6 +52,7 @@ function ProgressWorkspaceGrid({
   return (
     <div className="prog-grid">
       <ProgressTaskListPane
+        mode={progress.mode}
         identity={progress.memberIdentity}
         tasks={progress.filteredTasks}
         targetMemberId={progress.targetMemberId}

@@ -142,30 +142,6 @@ const SAMPLE_TASKS: TaskDto[] = [
     createdAt: '2026-11-02T00:00:00Z',
     updatedAt: '2026-11-19T12:00:00Z',
   },
-  {
-    id: 't-unsched',
-    boardId: 'b-1',
-    columnId: 'c-1',
-    title: 'Ý tưởng dự phòng',
-    description: null,
-    startAt: null,
-    dueAt: null,
-    isCompleted: false,
-    completedAt: null,
-    priority: 1,
-    position: 3,
-    isHidden: false,
-    version: 1,
-    deletedAt: null,
-    assignees: [],
-    assignedDepartments: [],
-    deliverables: [],
-    deliverableCount: 0,
-    creator: { id: 'u-c', fullName: 'Le Van C', isActive: true, leftAt: null, departments: [] },
-    commentCount: 0,
-    createdAt: '2026-11-03T00:00:00Z',
-    updatedAt: '2026-11-03T00:00:00Z',
-  },
 ];
 
 function renderWithIntl(node: ReactNode, opts: { permissions?: PermissionCode[]; isAdmin?: boolean; locale?: 'vi' | 'en' } = {}) {
@@ -199,7 +175,7 @@ describe('CalendarWorkspaceView & CR-10 components', () => {
     });
   });
 
-  it('renders horizontal calendar workspace in vi & en, permissions, deadline tiers, hidden lock, and unscheduled tray', () => {
+  it('renders horizontal calendar workspace in vi & en, permissions, deadline tiers, hidden lock, and omits unscheduled tray', () => {
     const htmlVi = renderWithIntl(<CalendarWorkspaceView />, { permissions: ['task.create', 'task.delete'] });
     expect(htmlVi).toContain('hcal-shell');
     expect(htmlVi).toContain('data-zoom-tier="week"');
@@ -211,7 +187,7 @@ describe('CalendarWorkspaceView & CR-10 components', () => {
     expect(htmlVi).toContain('Tuần');
     expect(htmlVi).toContain('Tạo công việc');
     expect(htmlVi).toContain('Thùng rác');
-    expect(htmlVi).toContain('Tất cả (3)');
+    expect(htmlVi).toContain('Tất cả (2)');
     expect(htmlVi).toContain('Quá hạn (1)');
     expect(htmlVi).toContain('Hoàn thành (1)');
     expect(htmlVi).toContain('deadline-overdue');
@@ -219,13 +195,13 @@ describe('CalendarWorkspaceView & CR-10 components', () => {
     expect(htmlVi).toContain('Thiết kế poster');
     expect(htmlVi).toContain('1/1 đã nhận');
     expect(htmlVi).toContain('1 SP');
-    expect(htmlVi).toContain('Chưa đặt hạn (1)');
-    expect(htmlVi).not.toContain('Ý tưởng dự phòng');
+    expect(htmlVi).not.toContain('Chưa đặt hạn');
+    expect(htmlVi).not.toContain('hcal-unscheduled');
     expect(htmlVi).not.toContain('prio-p2');
 
     const htmlNoCreate = renderWithIntl(<CalendarWorkspaceView />, { locale: 'en', permissions: [] });
     expect(htmlNoCreate).toContain('Today');
-    expect(htmlNoCreate).toContain('Unscheduled (1)');
+    expect(htmlNoCreate).not.toContain('Unscheduled');
     expect(htmlNoCreate).not.toContain('Create task');
     expect(htmlNoCreate).not.toContain('Trash');
 

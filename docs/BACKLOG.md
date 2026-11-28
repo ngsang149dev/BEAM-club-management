@@ -994,3 +994,47 @@
 - **Tiêu chí chấp nhận:** Đủ 9 cổng CI (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`, full Playwright E2E) + Audit `6A.8` (`13/13`), `§7` (PII & `WQ-27`), `§8` đạt `VERDICT: PASS`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
 - **Trạng thái:** `Done (qa-reviewer ngữ cảnh sạch VERDICT: PASS — 9/9 cổng CI, 67/67 unit / 375 test, 22/22 integration / 43 test, db:restore:verify 24 bảng, next build 44/44 route, 54/54 Chrome E2E, 13/13 mục 6A.8, 0 Blocker, 0 Major)`
+
+---
+
+## Epic CR-14 — Ràng buộc ngày Task, Nhật ký Task, Gộp `/my-tasks` -> `/progress` & Dọn mã dư thừa (`A1`–`A4`, `[RỦI RO CAO]`) *(Ready for PR — chờ duyệt PR)*
+
+### CR-14-01
+- **ID:** `CR-14-01`
+- **Tiêu đề:** Migration `0009_require_task_dates.sql`, bắt buộc `startAt`/`dueAt` (`A1`), ghi 12 sự kiện `task.*` vào `audit_logs` kèm `WQ-27` (`A2`), dọn trùng lặp backend & tối ưu DB/tx (`pg@8.23`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-backend-db`
+- **Liên quan:** `A1`, `A2`, `A3`, `A4`, `WQ-27`, `docs/DECISIONS.md` (`CR-14`), `docs/openapi.yaml`
+- **Phụ thuộc:** `CR-12` & `CR-13` trên nhánh `feat/CR12-CR13-emails-and-progress`, `docs/openapi.yaml` & `schema.d.ts` `CR-14` đã khóa
+- **Phạm vi file được sửa:** `db/migrations/0009_require_task_dates.sql`, `db/schema/tasks.ts`, `db/seed.sql`, `docs/ERD.md`, `scripts/{db-restore-verify,doctor,db-ensure}.mjs`, `src/lib/*`, `src/server/**`, `src/app/api/v1/**`, `tests/unit/{tasks,task-events,archive,audit,auth,reminders,shared}/**`, `tests/integration/**`
+- **Tiêu chí chấp nhận:**
+  1. `0009_require_task_dates.sql` backfill sạch & chạy lại idempotent trên `beam_dev`/`beam_test`; `tasks.start_at` & `tasks.due_at` là `NOT NULL`, `start_at <= due_at`; `createTaskRequestSchema`/`updateTaskRequestSchema` từ chối `null`; `db:restore:verify -- --test` đạt.
+  2. 12 hành động task/sản phẩm ghi `audit_logs` với che `WQ-27` ở cả lúc ghi & lúc đọc `GET /audit-logs`; email nhắc hạn trỏ CTA `/progress`.
+  3. Loại bỏ toàn bộ `Promise.all` đồng thời trên cùng client `tx`, gộp `hydrateTaskRecords` & `loadUserSummariesMap`, tối ưu `AuthService.authenticateSession` (`Promise.all` + throttle `touchSession`), xóa `auth-http` `refreshSessionCookieIfRemembered` & `auth/schemas.ts`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(đã xong `CR-14-01` — `0009` idempotent dev/test, `22/22` integration / `44` test không cảnh báo `pg`, `db:restore:verify -- --test` `24` bảng)*
+
+### CR-14-02
+- **ID:** `CR-14-02`
+- **Tiêu đề:** Bắt buộc Ngày bắt đầu/Hạn chót trên form & bỏ `Chưa đặt hạn`, tinh giản preview `/admin/reminders`, gộp `/my-tasks` -> `/progress` (thêm tab `Việc của Ban`), xóa Kanban/CSS/i18n thừa & tối ưu Frontend `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-frontend`
+- **Liên quan:** `A1`, `A2`, `A3`, `A4`, `docs/DECISIONS.md` (`CR-14`)
+- **Phụ thuộc:** `docs/openapi.yaml` & `schema.d.ts` `CR-14` đã khóa
+- **Phạm vi file được sửa:** `src/app/{globals.css,not-found.tsx,my-tasks/page.tsx}`, `src/components/*`, `src/features/**` (xóa `src/features/boards/**`, `optimistic-move.ts`, `CalendarUnscheduledTray.tsx`, `MyTasksView.tsx`, `ArchiveBoardsTable.tsx`), `messages/{vi,en}.json`, `tests/unit/frontend/**`
+- **Tiêu chí chấp nhận:**
+  1. `CreateTaskModal` mặc định `Ngày bắt đầu = Hôm nay`, bắt buộc cả 2 ngày, bỏ nút xóa ngày & bỏ `CalendarUnscheduledTray`.
+  2. `/admin/reminders` bỏ 2 nút góc phải + badge `(VI)` + button thừa, preview lọc trực tiếp theo milestone và trỏ CTA `/progress`.
+  3. `/my-tasks` redirect `/progress`; bỏ `myTasks` khỏi `WORKSPACE_NAV`; `/progress` (`Của tôi`) bổ sung tab `Việc của Ban` + dữ liệu `/me/tasks`.
+  4. `/admin/audit` mặc định `all` + format đủ 12 mã `task.*` & `member.*`; `/archive` ẩn tab Board & bỏ Độ ưu tiên/Bảng·Cột; xóa sạch Kanban/CSS/i18n thừa; đủ ngưỡng 6A.6 & `i18n-parity` 100%.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(đã xong `CR-14-02` — xanh `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `373/1805`, `63/63` unit / `356` test)*
+
+### CR-14-03
+- **ID:** `CR-14-03`
+- **Tiêu đề:** Đồng bộ E2E Playwright, kiểm định 9 cổng CI & Audit độc lập ngữ cảnh sạch `CR-14` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `AGENTS.md` (§6A.8, §7, §8), `CR-14-01`, `CR-14-02`
+- **Phụ thuộc:** `CR-14-01`, `CR-14-02`
+- **Phạm vi file được sửa:** `playwright.config.ts`, `tests/e2e/*.spec.ts`
+- **Tiêu chí chấp nhận:** Đủ 9 cổng CI (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`, full Playwright E2E không cảnh báo `pg`), `6A.8` `13/13`, `WQ-27` `audit_logs` an toàn, đạt `VERDICT: PASS`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Done (qa-reviewer ngữ cảnh sạch VERDICT: PASS — 9/9 cổng CI, 63/63 unit / 356 test, npm test 85/400, 22/22 integration / 44 test, db:restore:verify 24 bảng, next build 44/44 route, 55/55 Chrome E2E 3.8m, 13/13 mục 6A.8, 0 Blocker, 0 Major)`

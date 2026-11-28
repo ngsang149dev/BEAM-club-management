@@ -4,6 +4,7 @@ import {
   deliverableUrlSchema,
   type UpdateTaskAcceptanceRequestInput,
 } from '@/lib/tasks';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import { type AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Logger } from '@/server/shared/logger';
@@ -22,7 +23,10 @@ import {
   canSubmitTaskDeliverable,
   isActorAssignedToTask,
 } from './policy';
-import { toTaskVisibilitySubject } from './service-helpers';
+import {
+  recordTaskLifecycleAudit,
+  toTaskVisibilitySubject,
+} from './service-helpers';
 import type {
   AddTaskDeliverableResult,
   RemoveTaskDeliverableResult,
@@ -37,6 +41,7 @@ export interface RunTaskAcceptanceResult extends TaskOptionalEventMutationResult
 
 export async function runTaskAcceptanceInTx(params: {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly actor: AuthActor;
   readonly taskId: string;
   readonly input: UpdateTaskAcceptanceRequestInput;
@@ -56,24 +61,19 @@ export async function runTaskAcceptanceInTx(params: {
     return { task: target, eventId: null, becameAccepted: false };
   }
   const mutated = await params.tasksRepo.setAcceptanceWithEvent(
-    {
-      id: params.taskId,
-      boardId: target.boardId,
-      actorId: params.actor.id,
-      currentAccepted,
-      nextAccepted: params.input.accepted,
-      now: params.now,
-    },
+    { id: params.taskId, boardId: target.boardId, actorId: params.actor.id, currentAccepted, nextAccepted: params.input.accepted, now: params.now },
     params.tx,
   );
-  return {
-    ...mutated,
-    becameAccepted: !currentAccepted && params.input.accepted,
-  };
+  await recordTaskLifecycleAudit({
+    auditWriter: params.auditWriter, actorId: params.actor.id, action: 'task.accepted',
+    task: mutated.task, extra: { accepted: params.input.accepted }, now: params.now, tx: params.tx,
+  });
+  return { ...mutated, becameAccepted: !currentAccepted && params.input.accepted };
 }
 
 export async function runAddDeliverableInTx(params: {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly actor: AuthActor;
   readonly taskId: string;
   readonly input: CreateTaskDeliverableRequestInput;
@@ -89,25 +89,24 @@ export async function runAddDeliverableInTx(params: {
   const subject = toTaskVisibilitySubject(target);
   assertCanViewTask(params.actor, subject);
   if (!canSubmitTaskDeliverable(params.actor, subject)) {
-    throw forbidden('errors.forbidden', {
-      requiredRole: 'task_assignee_or_editor',
-    });
+    throw forbidden('errors.forbidden', { requiredRole: 'task_assignee_or_editor' });
   }
-  return params.tasksRepo.addDeliverableWithEvent(
-    {
-      taskId: params.taskId,
-      boardId: target.boardId,
-      actorId: params.actor.id,
-      title: params.input.title.trim(),
-      url: parsedUrl.data,
-      now: params.now,
-    },
+  const added = await params.tasksRepo.addDeliverableWithEvent(
+    { taskId: params.taskId, boardId: target.boardId, actorId: params.actor.id, title: params.input.title.trim(), url: parsedUrl.data, now: params.now },
     params.tx,
   );
+  await recordTaskLifecycleAudit({
+    auditWriter: params.auditWriter, actorId: params.actor.id, action: 'task.deliverable_added',
+    task: added.task,
+    extra: { deliverableId: added.deliverable.id, deliverableTitle: added.task.isHidden ? null : added.deliverable.title },
+    now: params.now, tx: params.tx,
+  });
+  return added;
 }
 
 export async function runRemoveDeliverableInTx(params: {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly actor: AuthActor;
   readonly taskId: string;
   readonly deliverableId: string;
@@ -120,20 +119,17 @@ export async function runRemoveDeliverableInTx(params: {
   const deliverable = target.deliverables.find((d) => d.id === params.deliverableId);
   if (!deliverable) throw notFound('errors.notFound', {}, 'NOT_FOUND');
   if (!canRemoveTaskDeliverable(params.actor, deliverable.submittedBy.id)) {
-    throw forbidden('errors.forbidden', {
-      requiredRole: 'deliverable_submitter_or_admin',
-    });
+    throw forbidden('errors.forbidden', { requiredRole: 'deliverable_submitter_or_admin' });
   }
-  return params.tasksRepo.removeDeliverableWithEvent(
-    {
-      taskId: params.taskId,
-      boardId: target.boardId,
-      actorId: params.actor.id,
-      deliverableId: params.deliverableId,
-      now: params.now,
-    },
+  const removed = await params.tasksRepo.removeDeliverableWithEvent(
+    { taskId: params.taskId, boardId: target.boardId, actorId: params.actor.id, deliverableId: params.deliverableId, now: params.now },
     params.tx,
   );
+  await recordTaskLifecycleAudit({
+    auditWriter: params.auditWriter, actorId: params.actor.id, action: 'task.deliverable_removed',
+    task: removed.task, extra: { deliverableId: params.deliverableId }, now: params.now, tx: params.tx,
+  });
+  return removed;
 }
 
 export async function dispatchLeadNotificationSafe(
@@ -152,6 +148,7 @@ export async function dispatchLeadNotificationSafe(
 
 export interface AcceptanceServiceContext {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly transactionRunner: TransactionRunner;
   readonly clock: Clock;
   readonly logger: Logger;
@@ -166,7 +163,7 @@ export async function executeSetTaskAcceptance(
 ): Promise<TaskMutationResponseDto> {
   const now = deps.clock.now();
   const result = await deps.transactionRunner.runInTransaction((tx) =>
-    runTaskAcceptanceInTx({ tasksRepo: deps.tasksRepo, actor, taskId, input, now, tx }),
+    runTaskAcceptanceInTx({ tasksRepo: deps.tasksRepo, auditWriter: deps.auditWriter, actor, taskId, input, now, tx }),
   );
   if (result.eventId) {
     deps.logger.info('Task acceptance updated', {
@@ -199,7 +196,7 @@ export async function executeAddDeliverable(
 ): Promise<TaskDeliverableMutationResponseDto> {
   const now = deps.clock.now();
   const result = await deps.transactionRunner.runInTransaction((tx) =>
-    runAddDeliverableInTx({ tasksRepo: deps.tasksRepo, actor, taskId, input, now, tx }),
+    runAddDeliverableInTx({ tasksRepo: deps.tasksRepo, auditWriter: deps.auditWriter, actor, taskId, input, now, tx }),
   );
   deps.logger.info('Task deliverable added', {
     actorId: actor.id, taskId, deliverableId: result.deliverable.id, eventId: result.eventId,
@@ -229,7 +226,7 @@ export async function executeRemoveDeliverable(
 ): Promise<DeleteTaskDeliverableResponseDto> {
   const now = deps.clock.now();
   const result = await deps.transactionRunner.runInTransaction((tx) =>
-    runRemoveDeliverableInTx({ tasksRepo: deps.tasksRepo, actor, taskId, deliverableId, now, tx }),
+    runRemoveDeliverableInTx({ tasksRepo: deps.tasksRepo, auditWriter: deps.auditWriter, actor, taskId, deliverableId, now, tx }),
   );
   deps.logger.info('Task deliverable removed', {
     actorId: actor.id, taskId, deliverableId, eventId: result.eventId,

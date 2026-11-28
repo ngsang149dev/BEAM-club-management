@@ -237,7 +237,6 @@ export function MemberAdminView() {
   return (
     <div className="admin-page-stack">
       <MemberAdminTopActions canView={canView} onOpenCreate={openCreate} />
-      {state.toastMessage ? <div className="ui-banner" role="status"><div className="ui-banner-body"><span className="ui-banner-text">{state.toastMessage}</span></div></div> : null}
       {canView ? (
         <MembersToolbar
           filters={state.filters}

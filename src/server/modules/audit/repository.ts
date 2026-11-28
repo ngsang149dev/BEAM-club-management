@@ -1,21 +1,15 @@
-import { and, asc, desc, eq, gte, inArray, lt, lte, or, type SQL } from 'drizzle-orm';
-import { auditLogs, departments, memberDepartments, profiles } from '@db/schema';
+import { and, desc, eq, exists, gte, lt, lte, notExists, or, type SQL, sql } from 'drizzle-orm';
+import { auditLogs, tasks } from '@db/schema';
+import { taskAccessSqlCondition } from '@/server/modules/tasks';
+import type { AuditLogEntry, AuditLogWriter } from '@/server/shared/audit-writer';
+import type { AuthActor } from '@/server/shared/authorize';
 import type { DbExecutor } from '@/server/shared/db';
 import { redactLogMeta } from '@/server/shared/logger';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 import type { AuditLogCursor } from './policy';
 
-export interface AuditLogEntry {
-  readonly actorId: string;
-  readonly action: string;
-  readonly targetUserId?: string | null;
-  readonly detail: Record<string, unknown>;
-  readonly createdAt?: Date;
-}
-
-export interface AuditLogWriter {
-  record(entry: AuditLogEntry, tx?: TransactionContext): Promise<void>;
-}
+export type { AuditLogEntry, AuditLogWriter };
 
 export interface AuditDepartmentSummaryRecord {
   readonly id: string;
@@ -41,6 +35,7 @@ export interface AuditLogRecord {
 }
 
 export interface ListAuditLogsParams {
+  readonly actor?: AuthActor;
   readonly actorId?: string;
   readonly targetUserId?: string;
   readonly action?: string;
@@ -56,21 +51,53 @@ export interface AuditRepository extends AuditLogWriter {
   ): Promise<{ readonly rows: AuditLogRecord[]; readonly hasMore: boolean }>;
 }
 
-function buildAuditListConditions(params: ListAuditLogsParams): SQL | undefined {
-  const filters: SQL[] = [];
-  if (params.actorId) filters.push(eq(auditLogs.actorId, params.actorId));
-  if (params.targetUserId) filters.push(eq(auditLogs.targetUserId, params.targetUserId));
-  if (params.action) filters.push(eq(auditLogs.action, params.action));
-  if (params.from) filters.push(gte(auditLogs.createdAt, params.from));
-  if (params.to) filters.push(lte(auditLogs.createdAt, params.to));
-  if (params.cursor) {
-    const { createdAt, id } = params.cursor;
-    const cursorCond = or(
-      lt(auditLogs.createdAt, createdAt),
-      and(eq(auditLogs.createdAt, createdAt), lt(auditLogs.id, id)),
-    );
-    if (cursorCond) filters.push(cursorCond);
-  }
+function buildHiddenTaskAuditFilter(db: DbExecutor, actor: AuthActor): SQL {
+  const noTaskId = sql`NOT jsonb_exists(${auditLogs.detail}, 'taskId')`;
+  const visibleExistingTask = exists(
+    db
+      .select({ one: sql`1` })
+      .from(tasks)
+      .where(
+        and(
+          sql`${tasks.id}::text = ${auditLogs.detail}->>'taskId'`,
+          taskAccessSqlCondition(db, actor),
+        ),
+      ),
+  );
+  const orphanTaskVisibility = and(
+    notExists(
+      db
+        .select({ one: sql`1` })
+        .from(tasks)
+        .where(sql`${tasks.id}::text = ${auditLogs.detail}->>'taskId'`),
+    ),
+    or(
+      sql`COALESCE((${auditLogs.detail}->>'isHidden')::boolean, (${auditLogs.detail}->>'wasHidden')::boolean, false) = false`,
+      eq(auditLogs.actorId, actor.id),
+    ),
+  );
+  return or(noTaskId, visibleExistingTask, orphanTaskVisibility)!;
+}
+
+function buildAuditCursorCondition(cursor?: AuditLogCursor): SQL | undefined {
+  if (!cursor) return undefined;
+  return or(
+    lt(auditLogs.createdAt, cursor.createdAt),
+    and(eq(auditLogs.createdAt, cursor.createdAt), lt(auditLogs.id, cursor.id)),
+  );
+}
+
+function buildAuditListConditions(db: DbExecutor, params: ListAuditLogsParams): SQL | undefined {
+  const cursorCond = buildAuditCursorCondition(params.cursor);
+  const filters: SQL[] = [
+    ...(params.actor && !params.actor.isAdmin ? [buildHiddenTaskAuditFilter(db, params.actor)] : []),
+    ...(params.actorId ? [eq(auditLogs.actorId, params.actorId)] : []),
+    ...(params.targetUserId ? [eq(auditLogs.targetUserId, params.targetUserId)] : []),
+    ...(params.action ? [eq(auditLogs.action, params.action)] : []),
+    ...(params.from ? [gte(auditLogs.createdAt, params.from)] : []),
+    ...(params.to ? [lte(auditLogs.createdAt, params.to)] : []),
+    ...(cursorCond ? [cursorCond] : []),
+  ];
   return filters.length > 0 ? and(...filters) : undefined;
 }
 
@@ -114,13 +141,13 @@ export class DrizzleAuditRepository implements AuditRepository {
         createdAt: auditLogs.createdAt,
       })
       .from(auditLogs)
-      .where(buildAuditListConditions(params))
+      .where(buildAuditListConditions(this.db, params))
       .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
       .limit(params.limit + 1);
 
     const hasMore = fetched.length > params.limit;
     const pageRows = hasMore ? fetched.slice(0, params.limit) : fetched;
-    const userMap = await this.loadUserSummaries(collectProfileIds(pageRows));
+    const userMap = await loadUserSummariesMap(this.db, collectProfileIds(pageRows));
 
     const rows = pageRows.map((row) => {
       const actor = userMap.get(row.actorId);
@@ -130,43 +157,5 @@ export class DrizzleAuditRepository implements AuditRepository {
     });
 
     return { rows, hasMore };
-  }
-
-  private async loadUserSummaries(
-    userIds: readonly string[],
-  ): Promise<Map<string, AuditUserSummaryRecord>> {
-    const map = new Map<string, AuditUserSummaryRecord>();
-    if (userIds.length === 0) return map;
-
-    const [profileRows, deptRows] = await Promise.all([
-      this.db
-        .select({
-          id: profiles.id,
-          fullName: profiles.fullName,
-          avatarUpdatedAt: profiles.avatarUpdatedAt,
-          isActive: profiles.isActive,
-          leftAt: profiles.leftAt,
-        })
-        .from(profiles)
-        .where(inArray(profiles.id, [...userIds])),
-      this.db
-        .select({ userId: memberDepartments.userId, id: departments.id, name: departments.name })
-        .from(memberDepartments)
-        .innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
-        .where(inArray(memberDepartments.userId, [...userIds]))
-        .orderBy(asc(departments.name), asc(departments.id)),
-    ]);
-
-    const deptMap = new Map<string, AuditDepartmentSummaryRecord[]>();
-    for (const row of deptRows) {
-      const list = deptMap.get(row.userId);
-      const dept = { id: row.id, name: row.name };
-      if (list) list.push(dept);
-      else deptMap.set(row.userId, [dept]);
-    }
-    for (const row of profileRows) {
-      map.set(row.id, { ...row, departments: deptMap.get(row.id) ?? [] });
-    }
-    return map;
   }
 }

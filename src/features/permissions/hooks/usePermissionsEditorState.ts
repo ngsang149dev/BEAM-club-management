@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { useDebouncedValue } from '@/features/shared/hooks/useDebouncedValue';
 import type { PermissionCode } from '@/features/shared/permissions/can';
 import { computePermissionDiff, dedupeCanonicalPermissions } from '@/lib/permissions';
 import type { PresetOption } from '../components/PermissionPresetModal';
@@ -46,9 +47,10 @@ export function usePermissionsEditorState(isAdmin: boolean) {
   const [draft, setDraft] = useState<DraftSelection | null>(null);
   const [pendingPreset, setPendingPreset] = useState<PresetOption | null>(null);
 
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 250);
   const catalogQuery = usePermissionCatalogQuery(isAdmin);
   const presetsQuery = usePermissionPresetsQuery(isAdmin);
-  const membersQuery = usePermissionMembersQuery(searchQuery, isAdmin);
+  const membersQuery = usePermissionMembersQuery(debouncedSearchQuery, isAdmin);
   const members = isAdmin
     ? (membersQuery.data?.pages.flatMap((page) => page.items).filter((member) => member.isActive) ?? [])
     : [];

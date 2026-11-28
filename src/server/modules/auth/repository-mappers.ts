@@ -1,3 +1,4 @@
+import { dedupeCanonicalPermissions, isPermissionCode, type PermissionCode } from '@/lib/permissions';
 import type {
   CreateSessionInput,
   DepartmentRecord,
@@ -100,4 +101,14 @@ export function mapProfileWithDepartmentsRow(
     locale: row.locale === 'en' ? 'en' : 'vi',
     departments,
   };
+}
+
+export function mapPermissionRows(
+  rows: ReadonlyArray<{ readonly permissionCode: string }>,
+): PermissionCode[] {
+  return dedupeCanonicalPermissions(
+    rows
+      .map((row) => row.permissionCode)
+      .filter((code): code is PermissionCode => isPermissionCode(code)),
+  );
 }

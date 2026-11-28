@@ -10,7 +10,6 @@ import {
   getRequestId,
   parseJsonBody,
   readSessionCookie,
-  refreshSessionCookieIfRemembered,
   shouldUseSecureCookie,
 } from '@/server/shared/auth-http';
 
@@ -85,7 +84,7 @@ describe('auth-http helpers', () => {
     expect(shouldUseSecureCookie(proxiedReq, { nodeEnv: 'development' })).toBe(true);
   });
 
-  it('always issues browser session cookies without Max-Age/Expires and keeps refreshSessionCookieIfRemembered a no-op (CR-08)', () => {
+  it('always issues browser session cookies without Max-Age/Expires (CR-08)', () => {
     const req = new Request('http://localhost/api/v1/auth/login');
 
     const resDefault = NextResponse.json({ ok: true });
@@ -115,24 +114,6 @@ describe('auth-http helpers', () => {
     expect(rememberCookie).toMatch(/SameSite=Lax/i);
     expect(rememberCookie).not.toMatch(/Max-Age=/i);
     expect(rememberCookie).not.toMatch(/Expires=/i);
-
-    const resNoRefresh = NextResponse.json({ ok: true });
-    refreshSessionCookieIfRemembered(resNoRefresh, {
-      rawToken: 'tok-default',
-      rememberMe: false,
-      request: req,
-      config: BASE_CONFIG,
-    });
-    expect(resNoRefresh.headers.getSetCookie()).toHaveLength(0);
-
-    const resRefresh = NextResponse.json({ ok: true });
-    refreshSessionCookieIfRemembered(resRefresh, {
-      rawToken: 'tok-remember',
-      rememberMe: true,
-      request: req,
-      config: BASE_CONFIG,
-    });
-    expect(resRefresh.headers.getSetCookie()).toHaveLength(0);
 
     const resCleared = NextResponse.json({ ok: true });
     clearSessionCookie(resCleared, req, BASE_CONFIG);

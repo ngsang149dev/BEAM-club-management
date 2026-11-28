@@ -14,7 +14,6 @@ const archiveHooksMock = vi.hoisted(() => ({
   useUpdateArchiveRetentionMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
   useRestoreArchiveTaskMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown, variables: undefined as string | undefined })),
   useRestoreArchiveMemberMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown, variables: undefined as string | undefined })),
-  useRestoreArchiveBoardMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown, variables: undefined as string | undefined })),
   usePurgeArchiveItemMutation: vi.fn(() => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null as unknown })),
 }));
 
@@ -32,7 +31,6 @@ vi.mock('next/link', () => ({
 }));
 
 import {
-  ArchiveBoardsTable,
   ArchiveMembersTable,
   ArchivePurgeModal,
   ArchiveRetentionBar,
@@ -45,7 +43,6 @@ import {
 } from '@/features/archive';
 
 type ArchiveTaskItem = components['schemas']['ArchiveTaskItem'];
-type ArchiveBoardItem = components['schemas']['ArchiveBoardItem'];
 type MemberDetail = components['schemas']['MemberDetail'];
 type MemberPublicSummary = components['schemas']['MemberPublicSummary'];
 
@@ -56,8 +53,8 @@ const ARCHIVED_TASK_ARCHIVED_BOARD: ArchiveTaskItem = {
     columnId: null,
     title: 'Dọn kho thiết bị âm thanh',
     description: null,
-    startAt: null,
-    dueAt: null,
+    startAt: '2026-11-20T00:00:00Z',
+    dueAt: '2026-11-28T00:00:00Z',
     isCompleted: false,
     completedAt: null,
     priority: 4,
@@ -121,27 +118,6 @@ const DETAIL_ARCHIVED_MEMBER: MemberDetail = {
   mustChangePassword: false,
 };
 
-const ARCHIVED_BOARD_ITEM: ArchiveBoardItem = {
-  board: {
-    id: '40000000-0000-4000-8000-000000000099',
-    name: 'Kế hoạch Gala 2025',
-    department: null,
-    archivedAt: '2026-11-18T03:00:00Z',
-    createdBy: {
-      id: '00000000-0000-4000-8000-000000000002',
-      fullName: 'Nguyen Van A',
-      isActive: true,
-      leftAt: null,
-      departments: [],
-    },
-    visibleTaskCount: 0,
-    overdueTaskCount: 0,
-    createdAt: '2026-09-01T00:00:00Z',
-    updatedAt: '2026-11-18T03:00:00Z',
-  },
-  taskCount: 7,
-};
-
 function renderWithIntl(node: ReactNode, locale: 'vi' | 'en' = 'vi') {
   return renderToStaticMarkup(
     <NextIntlClientProvider
@@ -177,9 +153,6 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
       mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null, variables: undefined,
     });
     archiveHooksMock.useRestoreArchiveMemberMutation.mockReturnValue({
-      mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null, variables: undefined,
-    });
-    archiveHooksMock.useRestoreArchiveBoardMutation.mockReturnValue({
       mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null, variables: undefined,
     });
     archiveHooksMock.usePurgeArchiveItemMutation.mockReturnValue({
@@ -222,9 +195,9 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
   it('computes RBAC tabs and defaults to first permitted tab per role', () => {
     const taskOnlyHtml = renderArchiveView({ permissions: ['task.delete'] });
     expect(taskOnlyHtml).toContain('role="tablist"');
-    expect(taskOnlyHtml).toContain('Task đã xóa');
+    expect(taskOnlyHtml).toContain('Công việc đã xóa');
     expect(taskOnlyHtml).not.toContain('Thành viên đã rời');
-    expect(taskOnlyHtml).not.toContain('Board lưu trữ');
+    expect(taskOnlyHtml).not.toContain('archive-tab-boards');
     expect(archiveHooksMock.useArchiveInfiniteQuery).toHaveBeenCalledWith({ tab: 'tasks', q: '' }, true);
 
     archiveHooksMock.useArchiveInfiniteQuery.mockReturnValueOnce({
@@ -234,34 +207,23 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
     });
     const memberOnlyHtml = renderArchiveView({ permissions: ['member.deactivate'] });
     expect(memberOnlyHtml).toContain('Thành viên đã rời');
-    expect(memberOnlyHtml).not.toContain('Task đã xóa');
-    expect(memberOnlyHtml).not.toContain('Board lưu trữ');
+    expect(memberOnlyHtml).not.toContain('Công việc đã xóa');
     expect(archiveHooksMock.useArchiveInfiniteQuery).toHaveBeenLastCalledWith({ tab: 'members', q: '' }, true);
 
-    archiveHooksMock.useArchiveInfiniteQuery.mockReturnValueOnce({
-      isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false,
-      fetchNextPage: vi.fn(), refetch: vi.fn(),
-      data: { pages: [{ tab: 'boards', tasks: [], members: [], boards: [ARCHIVED_BOARD_ITEM], meta: { nextCursor: null, limit: 20 } }] },
-    });
-    const boardOnlyHtml = renderArchiveView({ permissions: ['board.delete'], locale: 'en' });
-    expect(boardOnlyHtml).toContain('Archived boards');
-    expect(boardOnlyHtml).not.toContain('Deleted tasks');
-    expect(archiveHooksMock.useArchiveInfiniteQuery).toHaveBeenLastCalledWith({ tab: 'boards', q: '' }, true);
-
     expect(
-      getPermittedArchiveTabs(false, (perm) => perm === 'task.delete' || perm === 'board.delete')
-    ).toEqual(['tasks', 'boards']);
-    expect(getPermittedArchiveTabs(true, () => false)).toEqual(['tasks', 'members', 'boards']);
+      getPermittedArchiveTabs(false, (perm) => perm === 'task.delete' || perm === 'member.deactivate')
+    ).toEqual(['tasks', 'members']);
+    expect(getPermittedArchiveTabs(false, (perm) => perm === 'task.delete')).toEqual(['tasks']);
+    expect(getPermittedArchiveTabs(false, (perm) => perm === 'member.deactivate')).toEqual(['members']);
+    expect(getPermittedArchiveTabs(true, () => false)).toEqual(['tasks', 'members']);
   });
 
-  it('renders Tasks tab with priority, hidden badge, archived board badge, deleted column fallback, Asia/Ho_Chi_Minh time, and Admin-only purge button', () => {
+  it('renders Tasks tab without priority/board-column clutter while preserving hidden badge, assignees, Asia/Ho_Chi_Minh time, and Admin-only purge', () => {
     const nonAdminHtml = renderArchiveView({ permissions: ['task.delete'] });
     expect(nonAdminHtml).toContain('Dọn kho thiết bị âm thanh');
-    expect(nonAdminHtml).toContain('Khẩn');
-    expect(nonAdminHtml).toContain('Task ẩn');
-    expect(nonAdminHtml).toContain('Board Sự kiện cũ');
-    expect(nonAdminHtml).toContain('Board đã lưu trữ');
-    expect(nonAdminHtml).toContain('Cột cũ đã xóa (sẽ khôi phục vào cột đầu)');
+    expect(nonAdminHtml).toContain('Công việc ẩn');
+    expect(nonAdminHtml).not.toContain('<th>Độ ưu tiên</th>');
+    expect(nonAdminHtml).not.toContain('Board Sự kiện cũ');
     expect(nonAdminHtml).toContain('Nguyen Van A');
     expect(nonAdminHtml).toContain('Tran Cuu Thanh Vien');
     expect(nonAdminHtml).toContain('(đã rời)');
@@ -271,9 +233,8 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
     expect(nonAdminHtml).not.toContain('Xóa vĩnh viễn');
 
     const adminHtml = renderArchiveView({ isAdmin: true });
-    expect(adminHtml).toContain('Task đã xóa');
+    expect(adminHtml).toContain('Công việc đã xóa');
     expect(adminHtml).toContain('Thành viên đã rời');
-    expect(adminHtml).toContain('Board lưu trữ');
     expect(adminHtml).toContain('Xóa vĩnh viễn');
 
     const restoringHtml = renderWithIntl(
@@ -288,7 +249,7 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
       'en'
     );
     expect(restoringHtml).toContain('Restoring...');
-    expect(restoringHtml).toContain('Original column deleted (restores to first column)');
+    expect(restoringHtml).toContain('Hidden task');
     expect(restoringHtml).not.toContain('Delete permanently');
   });
 
@@ -350,26 +311,6 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
     );
     expect(publicOnlyHtml).toContain('Le Thi Cuu');
     expect(publicOnlyHtml).not.toContain('<th>MSSV</th>');
-  });
-
-  it('renders Boards tab with club-wide badge, task count, archivedAt, and creator avatar', () => {
-    const html = renderWithIntl(
-      <ArchiveBoardsTable
-        items={[ARCHIVED_BOARD_ITEM]}
-        isAdmin
-        restoringId={null}
-        isBusy={false}
-        onRestore={vi.fn()}
-        onPurge={vi.fn()}
-      />
-    );
-    expect(html).toContain('Kế hoạch Gala 2025');
-    expect(html).toContain('Chung CLB');
-    expect(html).toContain('7 task');
-    expect(html).toContain('10:00');
-    expect(html).toContain('Nguyen Van A');
-    expect(html).toContain('Khôi phục');
-    expect(html).toContain('Xóa vĩnh viễn');
   });
 
   it('renders Admin retention selector vs non-admin read-only policy view across retention values', () => {
@@ -440,7 +381,7 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
 
     const purgePendingViHtml = renderWithIntl(
       <ArchivePurgeModal
-        target={{ entityType: 'boards', id: ARCHIVED_BOARD_ITEM.board.id, label: ARCHIVED_BOARD_ITEM.board.name }}
+        target={{ entityType: 'tasks', id: ARCHIVED_TASK_ARCHIVED_BOARD.task.id, label: ARCHIVED_TASK_ARCHIVED_BOARD.task.title }}
         isPurging
         error={null}
         onClose={vi.fn()}
@@ -448,7 +389,7 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
       />
     );
     expect(purgePendingViHtml).toContain('Đang xóa...');
-    expect(purgePendingViHtml).toContain('Kế hoạch Gala 2025');
+    expect(purgePendingViHtml).toContain('Dọn kho thiết bị âm thanh');
 
     archiveHooksMock.useRestoreArchiveTaskMutation.mockReturnValueOnce({
       mutate: vi.fn(),
@@ -533,7 +474,7 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
     expect(errHtml).toContain('req-arch-500');
   });
 
-  it('invalidates archive, boards, boardDetail, myTasks, taskDetail, members, departments, auditLogs, and permissions queries', async () => {
+  it('invalidates archive, tasks, taskDetail, members, departments, auditLogs, permissions, and notifications queries', async () => {
     const queryClient = new QueryClient();
     const spy = vi.spyOn(queryClient, 'invalidateQueries');
     await invalidateAfterArchiveMutation(queryClient);
@@ -541,14 +482,13 @@ describe('ArchiveView & Unified Archive Center (CR-04-02)', () => {
     expect(invalidatedRoots).toEqual(
       expect.arrayContaining([
         'archive',
-        'boards',
-        'boardDetail',
-        'myTasks',
+        'tasks',
         'taskDetail',
         'members',
         'departments',
         'auditLogs',
         'permissions',
+        'notifications',
       ])
     );
   });

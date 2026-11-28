@@ -288,6 +288,4 @@ export function hasTaskChanges(changes: TaskUpdateChanges): boolean {
   return Object.keys(changes).length > 0;
 }
 
-export function escapeLikePattern(input: string): string {
-  return input.replace(/[\\%_]/g, '\\$&');
-}
+export { escapeLikePattern } from '@/lib/query-params';

@@ -11,8 +11,6 @@ import { apiFetch, isApiClientError, type components } from '@/features/shared/a
 export type ReminderSettingsDto = components['schemas']['ReminderSettingsDto'];
 export type ReminderSettingsResponse = components['schemas']['ReminderSettingsResponse'];
 export type UpdateReminderSettingsRequest = components['schemas']['UpdateReminderSettingsRequest'];
-export type ReminderPreviewTaskDto = components['schemas']['TaskDto'];
-export type ReminderPreviewTasksResponse = components['schemas']['TaskPageResponse'];
 
 export type ReminderErrorKey =
   | 'unauthorized'
@@ -54,7 +52,6 @@ export function describeReminderError(error: unknown): ReminderErrorDescriptor |
 
 export const REMINDERS_QUERY_KEYS = {
   settings: ['reminderSettings'] as const,
-  previewTasks: ['myTasks', 'reminderPreview'] as const,
 };
 
 function shouldRetryReminderQuery(failureCount: number, error: unknown): boolean {
@@ -94,14 +91,4 @@ export function buildUpdateReminderSettingsMutationOptions(queryClient: QueryCli
 export function useUpdateReminderSettingsMutation() {
   const queryClient = useQueryClient();
   return useMutation(buildUpdateReminderSettingsMutationOptions(queryClient));
-}
-
-export function useReminderPreviewTasksQuery(enabled: boolean) {
-  return useQuery({
-    queryKey: REMINDERS_QUERY_KEYS.previewTasks,
-    queryFn: ({ signal }) =>
-      apiFetch('/me/tasks', { query: { includeDone: false, limit: 100 }, signal }),
-    enabled,
-    retry: shouldRetryReminderQuery,
-  });
 }

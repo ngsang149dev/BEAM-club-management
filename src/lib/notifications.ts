@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import {
+  createQueryLimitSchema,
   optionalCursorQuerySchema,
-  parseIntegerInput,
   parseStrictBooleanInput,
-} from './tasks';
+} from './query-params';
 
 export const NOTIFICATION_TYPES = [
   'task.department_assigned',
@@ -19,10 +19,7 @@ export const notificationTypeSchema = z.enum(NOTIFICATION_TYPES);
 export const listNotificationsQuerySchema = z.object({
   unreadOnly: z.preprocess(parseStrictBooleanInput, z.boolean().optional()),
   cursor: optionalCursorQuerySchema,
-  limit: z.preprocess(
-    parseIntegerInput,
-    z.number().int().min(1).max(50).default(20),
-  ),
+  limit: createQueryLimitSchema(50, 20),
 });
 
 export type ListNotificationsQueryInput = z.infer<

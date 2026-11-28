@@ -4,7 +4,7 @@ import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useMeQuery } from '@/features/auth/hooks/useAuth';
 import { TaskCommentsSection } from '@/features/comments/components/TaskCommentsSection';
-import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import { usePermissions } from '@/features/shared/permissions/can';
 import {
   useTaskDepartmentsQuery,
@@ -15,7 +15,6 @@ import {
 import { TaskAcceptanceSection } from './TaskAcceptanceSection';
 import { TaskDeliverablesSection } from './TaskDeliverablesSection';
 import {
-  type DrawerTab,
   type ModalSubTab,
   TaskDrawerErrorBody,
   TaskDrawerHiddenBanner,
@@ -98,7 +97,7 @@ function TaskModalLeftColumn({
       <div className="task-modal-activity-card">
         <TaskModalSubTabs subTab={subTab} commentCount={task.commentCount} onSelect={setSubTab} />
         {subTab === 'comments' ? (
-          <TaskCommentsSection taskId={task.id} boardId={task.boardId} commentCount={task.commentCount} />
+          <TaskCommentsSection taskId={task.id} commentCount={task.commentCount} />
         ) : (
           <TaskHistorySection task={task} onTaskDeleted={onClose} />
         )}
@@ -140,13 +139,15 @@ function TaskModalRightColumn({
         departments={departments}
       />
       {canAssign ? <TaskAssigneesSection task={task} onReload={onReload} /> : null}
-      {canToggleHidden ? <TaskHiddenSection task={task} onReload={onReload} /> : null}
+      {canToggleHidden ? (
+        <TaskHiddenSection task={task} currentUserId={currentUserId} onReload={onReload} />
+      ) : null}
       {canDelete ? <TaskDeleteSection task={task} onDeleted={onClose} /> : null}
     </div>
   );
 }
 
-function TaskDrawerLoaded({
+export function TaskDrawerLoaded({
   task,
   onReload,
   onClose,
@@ -190,43 +191,6 @@ function TaskDrawerLoaded({
         onReload={onReload}
         onClose={onClose}
       />
-    </div>
-  );
-}
-
-export function TaskDrawerActiveTabPanel({
-  activeTab,
-  task,
-  tabIds,
-  panelIds,
-  onReload,
-  onClose,
-}: {
-  readonly activeTab: DrawerTab;
-  readonly task: TaskDto;
-  readonly tabIds: { details: string; comments: string; history: string };
-  readonly panelIds: { details: string; comments: string; history: string };
-  readonly onReload: () => void;
-  readonly onClose: () => void;
-  readonly onOpenComments?: () => void;
-}) {
-  if (activeTab === 'details') {
-    return (
-      <div id={panelIds.details} role="tabpanel" aria-labelledby={tabIds.details} className="task-modal-body">
-        <TaskDrawerLoaded key={task.id} task={task} onReload={onReload} onClose={onClose} />
-      </div>
-    );
-  }
-  if (activeTab === 'comments') {
-    return (
-      <div id={panelIds.comments} role="tabpanel" aria-labelledby={tabIds.comments} className="task-drawer-comments-panel">
-        <TaskCommentsSection taskId={task.id} boardId={task.boardId} commentCount={task.commentCount} />
-      </div>
-    );
-  }
-  return (
-    <div id={panelIds.history} role="tabpanel" aria-labelledby={tabIds.history} className="task-drawer-history-panel">
-      <TaskHistorySection task={task} onTaskDeleted={onClose} />
     </div>
   );
 }

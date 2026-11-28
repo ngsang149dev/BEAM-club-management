@@ -11,11 +11,9 @@ import type {
 import { MemberComboboxPopover } from './MemberComboboxPopover';
 
 function ModeSwitch({
-  canInspectClubMembers,
   mode,
   onModeChange,
 }: {
-  readonly canInspectClubMembers: boolean;
   readonly mode: ProgressMode;
   readonly onModeChange: (next: ProgressMode) => void;
 }) {
@@ -30,16 +28,14 @@ function ModeSwitch({
       >
         {t('modeMine')}
       </button>
-      {canInspectClubMembers ? (
-        <button
-          type="button"
-          className={`prog-mode-btn${mode === 'team' ? ' is-active' : ''}`}
-          aria-pressed={mode === 'team'}
-          onClick={() => onModeChange('team')}
-        >
-          {t('modeTeam')}
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={`prog-mode-btn${mode === 'team' ? ' is-active' : ''}`}
+        aria-pressed={mode === 'team'}
+        onClick={() => onModeChange('team')}
+      >
+        {t('modeTeam')}
+      </button>
     </div>
   );
 }
@@ -150,7 +146,9 @@ export function ProgressHeaderBar(props: {
   return (
     <header className="prog-header">
       <div className="prog-header-controls">
-        <ModeSwitch canInspectClubMembers={props.canInspectClubMembers} mode={props.mode} onModeChange={props.onModeChange} />
+        {props.canInspectClubMembers ? (
+          <ModeSwitch mode={props.mode} onModeChange={props.onModeChange} />
+        ) : null}
         {props.canInspectClubMembers && props.mode === 'team' ? (
           <TeamMemberPickerBar
             departments={props.departments}

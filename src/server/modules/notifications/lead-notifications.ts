@@ -1,6 +1,6 @@
 import type { Config } from '@/server/shared/config';
-import { type Logger, scrubPiiText } from '@/server/shared/logger';
-import type { Mailer } from '@/server/shared/mailer';
+import type { Logger } from '@/server/shared/logger';
+import { extractSafeMailErrorMessage, type Mailer } from '@/server/shared/mailer';
 import { buildLeadActivityEmail } from './lead-email-template';
 import {
   buildNotificationPayload,
@@ -13,26 +13,6 @@ import type {
   NotifyTaskAcceptedInput,
   TaskActivityNotificationContextRecord,
 } from './types';
-
-function formatSubError(item: unknown): string {
-  return item instanceof Error ? item.message : String(item);
-}
-
-function extractAggregateMessages(error: Error): string {
-  if (!('errors' in error) || !Array.isArray(error.errors)) return '';
-  return error.errors
-    .map(formatSubError)
-    .filter((msg) => msg.trim().length > 0)
-    .join('; ');
-}
-
-export function extractSafeMailErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return 'Mail delivery error';
-  if (error.message.trim().length > 0) return scrubPiiText(error.message);
-  const aggregateMessage = extractAggregateMessages(error);
-  if (aggregateMessage.length > 0) return scrubPiiText(aggregateMessage);
-  return scrubPiiText(error.name || 'Mail delivery error');
-}
 
 export interface LeadNotificationsDeps {
   readonly notificationsRepo: NotificationsRepository;

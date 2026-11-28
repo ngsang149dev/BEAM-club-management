@@ -37,14 +37,6 @@ export interface ArchivePurgeStore {
   findExpiredInactiveMemberIds(cutoff: Date, tx: TransactionContext): Promise<string[]>;
 }
 
-export interface RawArchiveUserRow {
-  readonly id: string;
-  readonly fullName: string;
-  readonly avatarUpdatedAt: Date | null;
-  readonly isActive: boolean;
-  readonly leftAt: Date | null;
-}
-
 export interface RawArchiveDepartmentRow {
   readonly userId: string;
   readonly id: string;
@@ -90,18 +82,6 @@ export function groupArchiveDepartments(
     const dept = { id: row.id, name: row.name };
     if (list) list.push(dept);
     else map.set(row.userId, [dept]);
-  }
-  return map;
-}
-
-export function buildArchiveUserSummaryMap(
-  profileRows: readonly RawArchiveUserRow[],
-  deptRows: readonly RawArchiveDepartmentRow[],
-): Map<string, ArchiveUserSummaryRecord> {
-  const deptMap = groupArchiveDepartments(deptRows);
-  const map = new Map<string, ArchiveUserSummaryRecord>();
-  for (const row of profileRows) {
-    map.set(row.id, { ...row, departments: deptMap.get(row.id) ?? [] });
   }
   return map;
 }

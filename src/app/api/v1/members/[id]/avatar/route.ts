@@ -23,7 +23,7 @@ export async function GET(
   const container = getContainer();
 
   try {
-    const auth = await authenticateApiRequest(request, container);
+    const auth = await authenticateApiRequest(request, container, { touch: false });
     const { id } = await context.params;
     const memberId = uuidSchema.parse(id);
     const asset = await container.membersService.getMemberAvatar(

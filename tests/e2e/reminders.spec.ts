@@ -514,6 +514,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s1BoardId,
         columnId: s1TodoColId,
         title: s1OverdueTitle,
+        startAt: vnMidnightFromNow(nowMs, -3),
         dueAt: vnMidnightFromNow(nowMs, -2),
         priority: 4,
         position: '1000',
@@ -525,6 +526,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s1BoardId,
         columnId: s1TodoColId,
         title: s1TodayTitle,
+        startAt: vnMidnightFromNow(nowMs, -1),
         dueAt: vnMidnightFromNow(nowMs, 0),
         priority: 3,
         position: '2000',
@@ -536,6 +538,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s1BoardId,
         columnId: s1TodoColId,
         title: s1UpcomingPublicTitle,
+        startAt: vnMidnightFromNow(nowMs, 0),
         dueAt: vnMidnightFromNow(nowMs, 1),
         priority: 2,
         position: '3000',
@@ -547,6 +550,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s1BoardId,
         columnId: s1TodoColId,
         title: s1UpcomingHiddenTitle,
+        startAt: vnMidnightFromNow(nowMs, 0),
         dueAt: vnMidnightFromNow(nowMs, 2),
         priority: 3,
         position: '4000',
@@ -558,6 +562,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s1BoardId,
         columnId: s1DoneColId,
         title: s1DoneTitle,
+        startAt: vnMidnightFromNow(nowMs, 0),
         dueAt: vnMidnightFromNow(nowMs, 1),
         priority: 4,
         position: '5000',
@@ -569,6 +574,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s1BoardId,
         columnId: s1TodoColId,
         title: s1DeletedTitle,
+        startAt: vnMidnightFromNow(nowMs, 0),
         dueAt: vnMidnightFromNow(nowMs, 1),
         priority: 4,
         position: '6000',
@@ -635,11 +641,17 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         await basicSession.context.close();
       }
 
-      // 3. Member GRANTED reminder.configure: S12 config, all-off warning + restore defaults, add custom day 3, save, reload, E01 preview
+      // 3. Member GRANTED reminder.configure: S12 config, all-off warning + restore defaults, add custom day 3, save, reload, simplified E01 live sample preview
       const mgrContext = await browser.newContext();
       const mgrPage = await mgrContext.newPage();
       const mgrTracker = await attachRuntimeErrorTracker(mgrPage);
       const capturedMgrApiBodies: string[] = [];
+      const meTasksRequests: string[] = [];
+      mgrPage.on('request', (req) => {
+        if (req.url().includes('/api/v1/me/tasks')) {
+          meTasksRequests.push(`${req.method()} ${req.url()}`);
+        }
+      });
 
       try {
         const initialSettingsPromise = mgrPage.waitForResponse(
@@ -648,21 +660,10 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
             res.request().method() === 'GET' &&
             res.status() === 200,
         );
-        const initialPreviewTasksPromise = mgrPage.waitForResponse(
-          (res) =>
-            res.url().includes('/api/v1/me/tasks') &&
-            res.request().method() === 'GET' &&
-            res.status() === 200,
-        );
         await signInAs(mgrPage, reminderMgrStudentId, '/admin/reminders');
-        const [initialSettingsRes, initialPreviewTasksRes] = await Promise.all([
-          initialSettingsPromise,
-          initialPreviewTasksPromise,
-        ]);
-        capturedMgrApiBodies.push(
-          await initialSettingsRes.text(),
-          await initialPreviewTasksRes.text(),
-        );
+        const initialSettingsRes = await initialSettingsPromise;
+        capturedMgrApiBodies.push(await initialSettingsRes.text());
+        expect(meTasksRequests).toEqual([]);
 
         const page = mgrPage;
         await expect(page.locator('.app-side a[href="/admin/reminders"]')).toBeVisible();
@@ -708,6 +709,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         await expect(
           page.locator('article.rem-email').getByText(viMessages.reminders.emailContent.vi.emptyTitle),
         ).toBeVisible();
+        await expect(page.locator('article.rem-email button')).toHaveCount(0);
 
         await allOffBanner
           .getByRole('button', { name: viMessages.reminders.restoreDefaults, exact: true })
@@ -774,21 +776,10 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
             res.request().method() === 'GET' &&
             res.status() === 200,
         );
-        const reloadPreviewTasksPromise = page.waitForResponse(
-          (res) =>
-            res.url().includes('/api/v1/me/tasks') &&
-            res.request().method() === 'GET' &&
-            res.status() === 200,
-        );
         await page.reload();
-        const [reloadSettingsRes, reloadPreviewTasksRes] = await Promise.all([
-          reloadSettingsPromise,
-          reloadPreviewTasksPromise,
-        ]);
-        capturedMgrApiBodies.push(
-          await reloadSettingsRes.text(),
-          await reloadPreviewTasksRes.text(),
-        );
+        const reloadSettingsRes = await reloadSettingsPromise;
+        capturedMgrApiBodies.push(await reloadSettingsRes.text());
+        expect(meTasksRequests).toEqual([]);
 
         await expect(chipList).toContainText(day3Chip);
         await expect(chipList).not.toContainText(day2Chip);
@@ -860,8 +851,8 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
           await adminContext.close();
         }
 
-        // 5. E01 Email Preview on /admin/reminders: enable day 0 in preview draft to verify all 3 groups (WQ-34),
-        //    VI/EN toggle, Done/Deleted exclusion, and complete WQ-27 hidden title redaction + zero PII / peer names.
+        // 5. Simplified E01 Email Preview on /admin/reminders (CR-14 Bug #3):
+        //    no preview controls/lang group/sample toggle/chip, dynamically filtered live sample digest synced to app locale, CTA links to /progress
         await milestonesCard
           .getByLabel(viMessages.reminders.customDayLabel, { exact: true })
           .fill('0');
@@ -872,18 +863,18 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
 
         const previewAside = page.locator('aside.rem-side');
         const emailCard = previewAside.locator('article.rem-email[data-component="ReminderEmail"]');
-        await expect(emailCard).toContainText(reminderMgrFullName);
-        await expect(emailCard).toContainText(s1OverdueTitle);
-        await expect(emailCard).toContainText(s1TodayTitle);
-        await expect(emailCard).toContainText(s1UpcomingPublicTitle);
+        await expect(previewAside.locator('.rem-preview-controls')).toHaveCount(0);
+        await expect(previewAside.locator('[role="group"]')).toHaveCount(0);
+        await expect(previewAside.locator('.rem-email-lang')).toHaveCount(0);
+        await expect(previewAside.locator('.rem-sample-chip')).toHaveCount(0);
+        await expect(previewAside.getByTestId('reminders-sample-chip')).toHaveCount(0);
         await expect(previewAside.locator('.rem-sample-banner')).toHaveCount(0);
         await expect(previewAside.locator('.rem-preview-note')).toHaveCount(0);
         await expect(emailCard.locator('.rem-email-kicker')).toHaveCount(0);
+        await expect(emailCard.locator('.rem-email-foot')).toHaveCount(0);
+        await expect(previewAside.getByRole('button', { name: /mẫu minh họa|sample/i })).toHaveCount(0);
 
-        // Verify VI preview groups, hidden redaction, and exclusions
-        await expect(emailCard.locator('.rem-email-lang')).toHaveText(
-          viMessages.reminders.emailContent.vi.langCode,
-        );
+        await expect(emailCard).toContainText(reminderMgrFullName);
         const viOverdueGroup = emailCard.locator('section.rem-email-group', {
           hasText: viMessages.reminders.emailContent.vi.groupOverdue,
         });
@@ -893,20 +884,26 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         const viUpcomingGroup = emailCard.locator('section.rem-email-group', {
           hasText: viMessages.reminders.emailContent.vi.groupUpcoming,
         });
-        await expect(viOverdueGroup).toContainText(s1OverdueTitle);
-        await expect(viOverdueGroup).toContainText(s1PublicDeptName);
-        await expect(viTodayGroup).toContainText(s1TodayTitle);
-        await expect(viUpcomingGroup).toContainText(s1UpcomingPublicTitle);
-        await expect(viUpcomingGroup).toContainText(
-          viMessages.reminders.emailContent.vi.hiddenTaskTitle,
-        );
-        await expect(viUpcomingGroup).toContainText(
-          viMessages.reminders.emailContent.vi.hiddenTaskSub,
-        );
-        await expect(emailCard.locator('a.rem-email-cta')).toHaveAttribute('href', '/my-tasks');
+        await expect(viOverdueGroup).toContainText(viMessages.reminders.emailContent.vi.sampleTaskOverdue);
+        await expect(viOverdueGroup).toContainText(viMessages.reminders.emailContent.vi.sampleTaskOverdueDept);
+        await expect(viTodayGroup).toContainText(viMessages.reminders.emailContent.vi.sampleTaskToday);
+        await expect(viTodayGroup).toContainText(viMessages.reminders.emailContent.vi.sampleTaskTodayDept);
+        await expect(viUpcomingGroup).toContainText(viMessages.reminders.emailContent.vi.sampleTaskSoon);
+        await expect(viUpcomingGroup).toContainText(viMessages.reminders.emailContent.vi.sampleTaskLater);
+        await expect(emailCard.locator('a.rem-email-cta')).toHaveAttribute('href', '/progress');
         await expect(emailCard.locator('a.rem-email-cta')).toHaveText(
           viMessages.reminders.emailContent.vi.cta,
         );
+
+        // Dynamic filtering: toggling overdue off removes groupOverdue immediately
+        await toggleOverdue.uncheck();
+        await expect(
+          emailCard.locator('section.rem-email-group', {
+            hasText: viMessages.reminders.emailContent.vi.groupOverdue,
+          }),
+        ).toHaveCount(0);
+        await toggleOverdue.check();
+        await expect(viOverdueGroup).toBeVisible();
 
         const viPreviewText = await emailCard.innerText();
         expect(viPreviewText).not.toContain(s1UpcomingHiddenTitle);
@@ -918,18 +915,12 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         assertZeroPiiInStrings([viPreviewText], sensitivePiiValues);
         assertNoRawTranslationKeys(viPreviewText);
 
-        // Switch preview language to EN and assert full EN digest + WQ-27 redaction
-        const previewLangGroup = previewAside.locator(
-          `[role="group"][aria-label="${viMessages.reminders.previewLangAria}"]`,
+        // Switch app language via .app-side .app-side-lang to EN -> preview dynamically follows useLocale()
+        const switchToEnPromise = page.waitForResponse(
+          (res) => res.url().endsWith('/api/v1/me') && res.request().method() === 'PATCH',
         );
-        const enBtn = previewLangGroup.getByRole('button', { name: 'EN', exact: true });
-        const viBtn = previewLangGroup.getByRole('button', { name: 'VI', exact: true });
-
-        await enBtn.click();
-        await expect(enBtn).toHaveAttribute('aria-pressed', 'true');
-        await expect(emailCard.locator('.rem-email-lang')).toHaveText(
-          enMessages.reminders.emailContent.en.langCode,
-        );
+        await page.locator('.app-side .app-side-lang').getByRole('button', { name: 'EN', exact: true }).click();
+        expect((await switchToEnPromise).status()).toBe(200);
         await expect(emailCard).toContainText(`Hi ${reminderMgrFullName},`);
 
         const enOverdueGroup = emailCard.locator('section.rem-email-group', {
@@ -941,15 +932,11 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         const enUpcomingGroup = emailCard.locator('section.rem-email-group', {
           hasText: enMessages.reminders.emailContent.en.groupUpcoming,
         });
-        await expect(enOverdueGroup).toContainText(s1OverdueTitle);
-        await expect(enTodayGroup).toContainText(s1TodayTitle);
-        await expect(enUpcomingGroup).toContainText(s1UpcomingPublicTitle);
-        await expect(enUpcomingGroup).toContainText(
-          enMessages.reminders.emailContent.en.hiddenTaskTitle,
-        );
-        await expect(enUpcomingGroup).toContainText(
-          enMessages.reminders.emailContent.en.hiddenTaskSub,
-        );
+        await expect(enOverdueGroup).toContainText(enMessages.reminders.emailContent.en.sampleTaskOverdue);
+        await expect(enTodayGroup).toContainText(enMessages.reminders.emailContent.en.sampleTaskToday);
+        await expect(enUpcomingGroup).toContainText(enMessages.reminders.emailContent.en.sampleTaskSoon);
+        await expect(enUpcomingGroup).toContainText(enMessages.reminders.emailContent.en.sampleTaskLater);
+        await expect(emailCard.locator('a.rem-email-cta')).toHaveAttribute('href', '/progress');
         await expect(emailCard.locator('a.rem-email-cta')).toHaveText(
           enMessages.reminders.emailContent.en.cta,
         );
@@ -964,22 +951,14 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         assertZeroPiiInStrings([enPreviewText], sensitivePiiValues);
         assertNoRawTranslationKeys(enPreviewText);
 
-        // Toggle sample layout preview on/off using data-testid="reminders-sample-chip" and switch back to VI
-        await expect(previewAside.getByTestId('reminders-sample-chip')).toHaveCount(0);
-        await previewAside
-          .getByRole('button', { name: viMessages.reminders.previewSampleToggleOn, exact: true })
-          .click();
-        const sampleChip = previewAside.getByTestId('reminders-sample-chip');
-        await expect(sampleChip).toBeVisible();
-        await expect(sampleChip).toHaveText(viMessages.reminders.previewSampleChip);
-        await previewAside
-          .getByRole('button', { name: viMessages.reminders.previewSampleToggleOff, exact: true })
-          .click();
-        await expect(previewAside.getByTestId('reminders-sample-chip')).toHaveCount(0);
-
-        await viBtn.click();
-        await expect(viBtn).toHaveAttribute('aria-pressed', 'true');
-        await expect(emailCard.locator('.rem-email-lang')).toHaveText('VI');
+        // Switch app language back to VI
+        const switchToViPromise = page.waitForResponse(
+          (res) => res.url().endsWith('/api/v1/me') && res.request().method() === 'PATCH',
+        );
+        await page.locator('.app-side .app-side-lang').getByRole('button', { name: 'VI', exact: true }).click();
+        expect((await switchToViPromise).status()).toBe(200);
+        await expect(emailCard).toContainText(`Chào ${reminderMgrFullName},`);
+        expect(meTasksRequests).toEqual([]);
 
         // 6. Responsive check on /admin/reminders at 375x812 (zero horizontal overflow)
         await page.setViewportSize({ width: 375, height: 812 });
@@ -1176,6 +1155,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s2BoardId,
         columnId: s2TodoColId,
         title: `S2 D1 Public ${suffix}`,
+        startAt: twoDaysAgoVn,
         dueAt: tomorrowVn,
         priority: 3,
         position: '1000',
@@ -1187,6 +1167,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s2BoardId,
         columnId: s2TodoColId,
         title: `S2_OVERDUE_HIDDEN_${suffix}`,
+        startAt: twoDaysAgoVn,
         dueAt: twoDaysAgoVn,
         priority: 4,
         position: '2000',
@@ -1198,6 +1179,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s2BoardId,
         columnId: s2DoneColId,
         title: `S2 Done Excluded ${suffix}`,
+        startAt: twoDaysAgoVn,
         dueAt: tomorrowVn,
         priority: 4,
         position: '3000',
@@ -1209,6 +1191,7 @@ test.describe('E8-03 Deadline Reminders Admin, E01 Preview & Cron Idempotency E2
         boardId: s2BoardId,
         columnId: s2TodoColId,
         title: `S2 Deleted Excluded ${suffix}`,
+        startAt: twoDaysAgoVn,
         dueAt: tomorrowVn,
         priority: 4,
         position: '4000',

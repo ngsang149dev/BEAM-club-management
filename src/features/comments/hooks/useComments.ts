@@ -6,7 +6,6 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
-import { BOARDS_QUERY_KEYS } from '@/features/boards/hooks/useBoards';
 import { apiFetch, isApiClientError, type components } from '@/features/shared/api/client';
 import { TASKS_QUERY_KEYS } from '@/features/tasks/hooks/useTasks';
 
@@ -33,19 +32,11 @@ function shouldRetryCommentQuery(failureCount: number, error: unknown): boolean 
   return failureCount < 1;
 }
 
-async function invalidateCommentQueries(
-  queryClient: QueryClient,
-  taskId: string,
-  boardId: string,
-): Promise<void> {
+async function invalidateCommentQueries(queryClient: QueryClient, taskId: string): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: COMMENTS_QUERY_KEYS.byTask(taskId) }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.detail(taskId) }),
-    ...(boardId
-      ? [queryClient.invalidateQueries({ queryKey: BOARDS_QUERY_KEYS.detail(boardId) })]
-      : []),
-    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.boardListRoot }),
-    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.myTasksRoot }),
+    queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.calendarRoot }),
     queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.progressRoot }),
     queryClient.invalidateQueries({ queryKey: ['notifications'] }),
     queryClient.invalidateQueries({ queryKey: ['archive'] }),
@@ -68,7 +59,7 @@ export function useTaskCommentsInfiniteQuery(taskId: string | null, enabled = tr
   });
 }
 
-export function useCreateCommentMutation(taskId: string, boardId: string) {
+export function useCreateCommentMutation(taskId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -79,12 +70,12 @@ export function useCreateCommentMutation(taskId: string, boardId: string) {
         body: payload,
       }),
     onSuccess: async () => {
-      await invalidateCommentQueries(queryClient, taskId, boardId);
+      await invalidateCommentQueries(queryClient, taskId);
     },
   });
 }
 
-export function useDeleteCommentMutation(taskId: string, boardId: string) {
+export function useDeleteCommentMutation(taskId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -94,7 +85,7 @@ export function useDeleteCommentMutation(taskId: string, boardId: string) {
         params: { id: commentId },
       }),
     onSuccess: async () => {
-      await invalidateCommentQueries(queryClient, taskId, boardId);
+      await invalidateCommentQueries(queryClient, taskId);
     },
   });
 }

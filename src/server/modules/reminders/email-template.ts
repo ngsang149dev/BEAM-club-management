@@ -158,7 +158,7 @@ function buildDigestGroup(params: {
 }
 
 function buildMyTasksUrl(appUrl: string): string {
-  return `${appUrl.replace(/\/+$/, '')}/my-tasks`;
+  return `${appUrl.replace(/\/+$/, '')}/progress`;
 }
 
 function renderDigestText(

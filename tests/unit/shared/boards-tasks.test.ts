@@ -79,10 +79,12 @@ describe('boards & tasks shared contracts', () => {
       boardId: UUID_1,
       columnId: UUID_2,
       title: '  Draft kickoff  ',
+      startAt: '2026-12-01T00:00:00+07:00',
       dueAt: '2026-12-01T10:00:00+07:00',
     });
     expect(created.title).toBe('Draft kickoff');
     expect(created.priority).toBe(2);
+    expect(created.startAt).toBeInstanceOf(Date);
     expect(created.dueAt).toBeInstanceOf(Date);
     expect(created.assigneeIds).toEqual([]);
     expect(created.departmentIds).toEqual([]);
@@ -93,13 +95,49 @@ describe('boards & tasks shared contracts', () => {
       createTaskRequestSchema.safeParse({
         boardId: UUID_1,
         columnId: UUID_2,
+        title: 'Missing dates',
+      }).success,
+    ).toBe(false);
+    expect(
+      createTaskRequestSchema.safeParse({
+        title: 'Null dates',
+        startAt: null,
+        dueAt: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      createTaskRequestSchema.safeParse({
+        title: 'Inverted range',
+        startAt: '2026-12-05T00:00:00+07:00',
+        dueAt: '2026-12-01T00:00:00+07:00',
+      }).success,
+    ).toBe(false);
+    expect(
+      createTaskRequestSchema.safeParse({
+        boardId: UUID_1,
+        columnId: UUID_2,
         title: 'Bad priority',
+        startAt: '2026-12-01T00:00:00+07:00',
+        dueAt: '2026-12-01T10:00:00+07:00',
         priority: 5,
       }).success,
     ).toBe(false);
 
     expect(
       updateTaskRequestSchema.safeParse({ title: 'Updated' }).success,
+    ).toBe(false);
+    expect(
+      updateTaskRequestSchema.safeParse({ startAt: null, version: 1 }).success,
+    ).toBe(false);
+    expect(
+      updateTaskRequestSchema.safeParse({ dueAt: null, version: 1 }).success,
+    ).toBe(false);
+    expect(
+      updateTaskRequestSchema.safeParse({
+        startAt: '2026-12-05T00:00:00+07:00',
+        dueAt: '2026-12-01T00:00:00+07:00',
+        version: 1,
+      }).success,
     ).toBe(false);
     expect(
       updateTaskRequestSchema.safeParse({ title: 'Updated', version: 1 }).success,
@@ -176,6 +214,8 @@ describe('boards & tasks shared contracts', () => {
         boardId: UUID_1,
         columnId: UUID_2,
         title: 'Channel overrides',
+        startAt: '2026-12-01T00:00:00+07:00',
+        dueAt: '2026-12-01T10:00:00+07:00',
         notifyDepartmentMembers: false,
         notifyInApp: true,
       }),
@@ -188,6 +228,8 @@ describe('boards & tasks shared contracts', () => {
         boardId: UUID_1,
         columnId: UUID_2,
         title: 'Invalid notifyEmail',
+        startAt: '2026-12-01T00:00:00+07:00',
+        dueAt: '2026-12-01T10:00:00+07:00',
         notifyEmail: 'no',
       }).success,
     ).toBe(false);
@@ -271,8 +313,14 @@ describe('boards & tasks shared contracts', () => {
       listTasksQuerySchema.safeParse({ priority: '0' }).success,
     ).toBe(false);
 
-    // CR-09 task create/update/acceptance/deliverable contracts
-    expect(createTaskRequestSchema.safeParse({ title: 'Boardless Task' }).success).toBe(true);
+    // CR-09 + CR-14 task create/update/acceptance/deliverable contracts
+    expect(
+      createTaskRequestSchema.safeParse({
+        title: 'Boardless Task',
+        startAt: '2026-12-01T00:00:00.000Z',
+        dueAt: '2026-12-02T00:00:00.000Z',
+      }).success,
+    ).toBe(true);
     expect(
       createTaskRequestSchema.safeParse({ title: 'Bad Pair', boardId: UUID_1 }).success,
     ).toBe(false);

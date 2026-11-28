@@ -46,7 +46,7 @@ export function ClubLogo({
   className,
 }: ClubLogoProps) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const subscribedLogoUrl = useOptionalClubLogoUrl();
+  const subscribedLogoUrl = useOptionalClubLogoUrl(logoUrl === undefined);
   const resolvedUrl = logoUrl !== undefined ? logoUrl : subscribedLogoUrl;
   const showCustom = Boolean(resolvedUrl && failedUrl !== resolvedUrl);
 

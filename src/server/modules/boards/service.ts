@@ -73,10 +73,8 @@ export class BoardsService {
     assertActorActive(actor);
     const board = await this.deps.boardsRepo.findBoardById(boardId);
     if (!board) throw notFound('errors.notFound', {}, 'NOT_FOUND');
-    const [columns, visibleTasks] = await Promise.all([
-      this.deps.boardsRepo.findColumnsByBoardId(boardId),
-      this.deps.tasksRepo.listVisibleByBoardId(boardId, actor),
-    ]);
+    const columns = await this.deps.boardsRepo.findColumnsByBoardId(boardId);
+    const visibleTasks = await this.deps.tasksRepo.listVisibleByBoardId(boardId, actor);
     return toBoardDetailResponseDto({ board, columns, visibleTasks, now: this.deps.clock.now() });
   }
 

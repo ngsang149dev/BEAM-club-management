@@ -58,9 +58,7 @@ const ARCHIVE_TAB_PERMISSIONS: Record<ArchiveTab, PermissionCode> = {
   boards: 'board.delete',
 };
 
-export function escapeLikePattern(input: string): string {
-  return input.replace(/[\\%_]/g, '\\$&');
-}
+export { escapeLikePattern } from '@/lib/query-params';
 
 export function assertCanViewArchiveTab(
   actor: AuthActor,

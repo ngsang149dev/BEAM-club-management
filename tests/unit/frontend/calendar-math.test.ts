@@ -69,7 +69,7 @@ describe('calendar-math pure helpers', () => {
 
     expect(tasks.map((t) => getCalendarDeadlineTier(t, todayIso))).toEqual([
       'done',
-      'unscheduled',
+      'safe',
       'overdue',
       'urgent',
       'urgent',
@@ -85,18 +85,16 @@ describe('calendar-math pure helpers', () => {
       overdue: 1,
       urgent: 2,
       soon: 1,
-      safe: 1,
+      safe: 2,
       done: 1,
-      unscheduled: 1,
     });
     expect(filterCalendarTasks(tasks, 'all', todayIso)).toHaveLength(7);
     expect(filterCalendarTasks(tasks, 'urgent', todayIso).map((t) => t.id)).toEqual(['d0', 'd1']);
     expect(filterCalendarTasks(tasks, 'done', todayIso).map((t) => t.id)).toEqual(['done']);
   });
 
-  it('packs spanning, single-date, cross-year clamped, out-of-year, and unscheduled tasks into greedy swimlanes', () => {
+  it('packs spanning, single-date, cross-year clamped, and out-of-year tasks into greedy swimlanes', () => {
     const tasks = [
-      { id: 'unsched', startAt: null, dueAt: null },
       { id: 'past-year', startAt: '2025-01-01T10:00:00Z', dueAt: '2025-12-30T10:00:00Z' },
       { id: 'cross-start', startAt: '2025-12-28T10:00:00Z', dueAt: '2026-01-03T10:00:00Z' },
       { id: 'overlap', startAt: '2026-01-02T10:00:00Z', dueAt: '2026-01-05T10:00:00Z' },
@@ -106,7 +104,6 @@ describe('calendar-math pure helpers', () => {
     ];
 
     const packed = packCalendarLanes(tasks, '2026-01-01', 365);
-    expect(packed.unscheduled.map((t) => t.id)).toEqual(['unsched']);
     expect(packed.lanes).toHaveLength(2);
     expect(packed.lanes[0]!.map((item) => [item.task.id, item.startIdx, item.endIdx, item.span])).toEqual([
       ['cross-start', 0, 2, 3],

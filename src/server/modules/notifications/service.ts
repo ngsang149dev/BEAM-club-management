@@ -5,13 +5,12 @@ import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
 import type { Logger } from '@/server/shared/logger';
-import type { Mailer } from '@/server/shared/mailer';
+import { extractSafeMailErrorMessage, type Mailer } from '@/server/shared/mailer';
 import type { TransactionRunner } from '@/server/shared/transaction';
 import { buildDepartmentAssignedEmail } from './email-template';
 import {
   executeNotifyDeliverableSubmitted,
   executeNotifyTaskAccepted,
-  extractSafeMailErrorMessage,
 } from './lead-notifications';
 import {
   type NotificationPageResponseDto,

@@ -55,6 +55,7 @@ export const EXPECTED_CRITICAL_TRIGGERS = [
   { table: 'profiles', trigger: 'prevent_student_id_change' },
   { table: 'boards', trigger: 'prevent_entity_unpurge' },
   { table: 'tasks', trigger: 'prevent_entity_unpurge' },
+  { table: 'tasks', trigger: 'tasks_normalize_dates_bi_trg' },
 ];
 
 function buildTempDbName() {
@@ -114,9 +115,9 @@ async function assertSystemRowsAndCounts(client, restoredCounts, sourceCounts) {
       `Expected at least 3 rows in permission_presets after restore, got ${presetsCount}.`,
     );
   }
-  if (migrationsCount < 6) {
+  if (migrationsCount < 9) {
     throw new Error(
-      `Expected at least 6 rows in schema_migrations after restore, got ${migrationsCount}.`,
+      `Expected at least 9 rows in schema_migrations after restore, got ${migrationsCount}.`,
     );
   }
 
@@ -271,8 +272,8 @@ async function assertRuntimeTriggerBehavior(client) {
     );
 
     const tempTaskRes = await client.query(
-      `INSERT INTO "public"."tasks" (board_id, column_id, title, position, deleted_at, purged_at, created_by)
-       VALUES ($1, NULL, 'Verify Temp Task', '1000', now(), now(), $2)
+      `INSERT INTO "public"."tasks" (board_id, column_id, title, start_at, due_at, position, deleted_at, purged_at, created_by)
+       VALUES ($1, NULL, 'Verify Temp Task', now(), now(), '1000', now(), now(), $2)
        RETURNING id`,
       [tempBoardId, tempAdminId],
     );

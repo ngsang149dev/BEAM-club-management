@@ -7,6 +7,7 @@ import {
   type UpdateTaskHiddenRequestInput,
   type UpdateTaskRequestInput,
 } from '@/lib/tasks';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { TransactionContext } from '@/server/shared/transaction';
 import {
@@ -40,7 +41,49 @@ export function extractTaskCursorValue(
   if (sortBy === 'position') return task.position;
   if (sortBy === 'priority') return task.priority;
   if (sortBy === 'createdAt') return task.createdAt.toISOString();
-  return task.dueAt ? task.dueAt.toISOString() : null;
+  return task.dueAt.toISOString();
+}
+
+export async function recordTaskLifecycleAudit(params: {
+  readonly auditWriter?: AuditLogWriter;
+  readonly actorId: string;
+  readonly action: string;
+  readonly task: {
+    readonly id: string;
+    readonly boardId: string;
+    readonly isHidden: boolean;
+    readonly title: string;
+  };
+  readonly extra?: Record<string, unknown>;
+  readonly now: Date;
+  readonly tx: TransactionContext;
+}): Promise<void> {
+  if (!params.auditWriter) return;
+  await params.auditWriter.record(
+    {
+      actorId: params.actorId,
+      action: params.action,
+      detail: {
+        taskId: params.task.id,
+        boardId: params.task.boardId,
+        isHidden: params.task.isHidden,
+        taskTitle: params.task.isHidden ? null : params.task.title,
+        ...params.extra,
+      },
+      createdAt: params.now,
+    },
+    params.tx,
+  );
+}
+
+function resolveTaskUpdateAuditAction(
+  updatedFields: readonly string[],
+  isCompleted: boolean,
+): string {
+  if (updatedFields.length === 1 && updatedFields[0] === 'is_completed') {
+    return isCompleted ? 'task.completed' : 'task.reopened';
+  }
+  return 'task.updated';
 }
 
 function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
@@ -50,6 +93,7 @@ function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
 
 export async function runTaskUpdateInTx(params: {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly actor: AuthActor;
   readonly taskId: string;
   readonly input: UpdateTaskRequestInput;
@@ -62,23 +106,20 @@ export async function runTaskUpdateInTx(params: {
   if (target.version !== params.input.version) {
     throw conflict('errors.taskVersionConflict', {}, 'TASK_VERSION_CONFLICT');
   }
-  const nextStartAt = params.input.startAt !== undefined ? params.input.startAt : target.startAt;
-  const nextDueAt = params.input.dueAt !== undefined ? params.input.dueAt : target.dueAt;
+  const nextStartAt = params.input.startAt ?? target.startAt;
+  const nextDueAt = params.input.dueAt ?? target.dueAt;
   assertValidDateRange(nextStartAt, nextDueAt);
 
   const changes = buildTaskUpdateChanges(target, params.input);
   if (!hasTaskChanges(changes)) return { task: target, eventId: null };
-  return params.tasksRepo.updateTaskWithEvent(
-    {
-      ...params.input,
-      id: params.taskId,
-      boardId: target.boardId,
-      actorId: params.actor.id,
-      changes,
-      now: params.now,
-    },
+  const mutated = await params.tasksRepo.updateTaskWithEvent(
+    { ...params.input, id: params.taskId, boardId: target.boardId, actorId: params.actor.id, changes, now: params.now },
     params.tx,
   );
+  const updatedFields = Object.keys(changes);
+  const action = resolveTaskUpdateAuditAction(updatedFields, mutated.task.isCompleted);
+  await recordTaskLifecycleAudit({ auditWriter: params.auditWriter, actorId: params.actor.id, action, task: mutated.task, extra: { updatedFields }, now: params.now, tx: params.tx });
+  return mutated;
 }
 
 export interface RunTaskAssigneesResult extends TaskOptionalEventMutationResult {
@@ -114,6 +155,7 @@ function computeNextAssignments(
 
 export async function runTaskAssigneesInTx(params: {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly actor: AuthActor;
   readonly taskId: string;
   readonly input: ReplaceTaskAssigneesRequestInput;
@@ -133,23 +175,20 @@ export async function runTaskAssigneesInTx(params: {
   }
   const mutated = await params.tasksRepo.replaceAssigneesWithEvent(
     {
-      id: params.taskId,
-      boardId: target.boardId,
-      actorId: params.actor.id,
-      currentAssigneeIds: next.currentAssigneeIds,
-      nextAssigneeIds: next.nextAssigneeIds,
-      currentDepartmentIds: next.currentDepartmentIds,
-      nextDepartmentIds: next.nextDepartmentIds,
-      expectedVersion: params.input.version,
-      now: params.now,
+      id: params.taskId, boardId: target.boardId, actorId: params.actor.id,
+      currentAssigneeIds: next.currentAssigneeIds, nextAssigneeIds: next.nextAssigneeIds,
+      currentDepartmentIds: next.currentDepartmentIds, nextDepartmentIds: next.nextDepartmentIds,
+      expectedVersion: params.input.version, now: params.now,
     },
     params.tx,
   );
-  return {
-    ...mutated,
-    addedDepartmentIds: next.addedDepartmentIds,
-    addedAssigneeIds: next.addedAssigneeIds,
-  };
+  await recordTaskLifecycleAudit({
+    auditWriter: params.auditWriter, actorId: params.actor.id, action: 'task.assignees_changed',
+    task: mutated.task,
+    extra: { assigneeCount: mutated.task.assignees.length, departmentIds: mutated.task.assignedDepartments.map((d) => d.id) },
+    now: params.now, tx: params.tx,
+  });
+  return { ...mutated, addedDepartmentIds: next.addedDepartmentIds, addedAssigneeIds: next.addedAssigneeIds };
 }
 
 export async function runTaskMoveInTx(params: {
@@ -184,6 +223,7 @@ export async function runTaskMoveInTx(params: {
 
 export async function runTaskHiddenInTx(params: {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly actor: AuthActor;
   readonly taskId: string;
   readonly input: UpdateTaskHiddenRequestInput;
@@ -206,16 +246,17 @@ export async function runTaskHiddenInTx(params: {
   if (target.isHidden === params.input.isHidden) {
     return { task: target, eventId: null };
   }
-  return params.tasksRepo.updateTaskHiddenWithEvent(
+  const mutated = await params.tasksRepo.updateTaskHiddenWithEvent(
     {
-      id: params.taskId,
-      boardId: target.boardId,
-      actorId: params.actor.id,
-      currentIsHidden: target.isHidden,
-      nextIsHidden: params.input.isHidden,
-      expectedVersion: params.input.version,
-      now: params.now,
+      id: params.taskId, boardId: target.boardId, actorId: params.actor.id,
+      currentIsHidden: target.isHidden, nextIsHidden: params.input.isHidden,
+      expectedVersion: params.input.version, now: params.now,
     },
     params.tx,
   );
+  await recordTaskLifecycleAudit({
+    auditWriter: params.auditWriter, actorId: params.actor.id, action: 'task.hidden_changed',
+    task: mutated.task, now: params.now, tx: params.tx,
+  });
+  return mutated;
 }

@@ -313,7 +313,13 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
     expect(renameColRes.status()).toBe(200);
 
     const blockingTaskRes = await page.request.post('/api/v1/tasks', {
-      data: { boardId, columnId: qaColId, title: blockingTaskTitle },
+      data: {
+        boardId,
+        columnId: qaColId,
+        title: blockingTaskTitle,
+        startAt: `${yearStr}-01-05T00:00:00.000+07:00`,
+        dueAt: `${yearStr}-01-06T00:00:00.000+07:00`,
+      },
     });
     expect(blockingTaskRes.status()).toBe(201);
     const blockingTaskId = ((await blockingTaskRes.json()) as { task: { id: string } }).task.id;
@@ -402,9 +408,10 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
     await page.getByRole('button', { name: `+ ${viMessages.calendar.createTask}` }).click();
     const urgentModal = page.locator('.ui-modal[role="dialog"]');
     await expect(urgentModal).toBeVisible();
-    await expect(urgentModal.getByLabel(viMessages.tasks.priorityLabel)).toHaveCount(0);
+    await expect(urgentModal.getByLabel(/priority|độ ưu tiên/i)).toHaveCount(0);
     await urgentModal.getByLabel(viMessages.tasks.titleLabel).fill(urgentTitle);
     await urgentModal.getByLabel(viMessages.tasks.descriptionLabel).fill('Initial urgent description');
+    await urgentModal.getByLabel(viMessages.tasks.startAtLabel).fill(`${yearStr}-01-09`);
     await urgentModal.getByLabel(viMessages.tasks.dueAtLabel).fill(`${yearStr}-01-10`);
     await urgentModal
       .locator('summary', { hasText: viMessages.tasks.individualAssigneesSummary })
@@ -440,6 +447,7 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
     await page.getByRole('button', { name: `+ ${viMessages.calendar.createTask}` }).click();
     const hiddenModal = page.locator('.ui-modal[role="dialog"]');
     await hiddenModal.getByLabel(viMessages.tasks.titleLabel).fill(hiddenTitle);
+    await hiddenModal.getByLabel(viMessages.tasks.startAtLabel).fill(`${yearStr}-01-11`);
     await hiddenModal.getByLabel(viMessages.tasks.dueAtLabel).fill(`${yearStr}-01-12`);
     await hiddenModal.getByRole('switch', { name: viMessages.tasks.isHiddenShortLabel }).click();
     const createHiddenPromise = page.waitForResponse(
@@ -534,6 +542,7 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
         boardId,
         columnId: todoColId,
         title: disposableTitle,
+        startAt: `${yearStr}-02-09T00:00:00.000+07:00`,
         dueAt: `${yearStr}-02-10T00:00:00.000+07:00`,
       },
     });
@@ -579,7 +588,13 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
       expect(
         (
           await basicPage.request.post('/api/v1/tasks', {
-            data: { boardId, columnId: todoColId, title: `Forbidden ${suffix}` },
+            data: {
+              boardId,
+              columnId: todoColId,
+              title: `Forbidden ${suffix}`,
+              startAt: `${yearStr}-02-09T00:00:00.000+07:00`,
+              dueAt: `${yearStr}-02-10T00:00:00.000+07:00`,
+            },
           })
         ).status(),
       ).toBe(403);
@@ -609,7 +624,7 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
     await tracker.assertClean();
   });
 
-  test('renders S06 /my-tasks with deadline tiers, acceptance & deliverable counts, WQ-03 includeDone toggle, and zero PII (FR-42)', async ({
+  test('consolidates /my-tasks -> /progress with deadline tiers, acceptance & deliverable counts, default Đang làm vs Đã xong filter, and zero PII (FR-42)', async ({
     browser,
     page,
   }) => {
@@ -643,6 +658,7 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
           boardId,
           columnId: todoColId,
           title: activeMyTaskTitle,
+          startAt: `${yearStr}-01-09T00:00:00.000Z`,
           dueAt: `${yearStr}-01-10T00:00:00.000Z`,
           assigneeIds: [basicUserId],
         },
@@ -655,6 +671,8 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
           boardId,
           columnId: doneColId,
           title: doneMyTaskTitle,
+          startAt: `${yearStr}-01-09T00:00:00.000Z`,
+          dueAt: `${yearStr}-01-10T00:00:00.000Z`,
           assigneeIds: [basicUserId],
         },
       });
@@ -681,30 +699,33 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
       }
     });
 
-    await signInAs(page, basicStudentId, '/my-tasks');
+    await signInAs(page, basicStudentId, '/progress');
+    await expect(page.locator('.app-side a[href="/my-tasks"]')).toHaveCount(0);
+    await page.goto('/my-tasks');
+    await page.waitForURL(`${BASE_ORIGIN}/progress`);
 
-    const activeRow = page.locator('.my-task-row', { hasText: activeMyTaskTitle });
+    const activeRow = page.locator('.prog-row', { hasText: activeMyTaskTitle });
     await expect(activeRow).toBeVisible();
-    await expect(activeRow).toHaveClass(/deadline-overdue/);
-    await expect(activeRow.locator('.task-deadline-badge')).toHaveClass(/is-overdue/);
-    await expect(activeRow).toContainText(viMessages.myTasks.pendingAcceptBadge);
-    await expect(activeRow).toContainText(viMessages.myTasks.deliverableCount.replace('{count}', '0'));
+    await expect(activeRow.locator('.prog-dot.is-overdue')).toBeVisible();
+    await expect(activeRow).toContainText(viMessages.progress.unacceptedShort);
     await expect(page.locator('.ui-prio, .prio-p1, .prio-p2, .prio-p3, .prio-p4')).toHaveCount(0);
-
-    // WQ-03: Done task hidden by default (includeDone=false)
-    await expect(page.locator('.my-task-row', { hasText: doneMyTaskTitle })).toHaveCount(0);
-
-    const includeDoneRespPromise = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/v1/me/tasks') &&
-        res.url().includes('includeDone=true') &&
-        res.status() === 200,
+    await activeRow.locator('.prog-row-btn').click();
+    await expect(page.locator('.prog-summary-card .prog-deadline-box.is-overdue')).toBeVisible();
+    await expect(page.locator('.prog-deliv-card')).toContainText(
+      viMessages.progress.deliverablesTitle.replace('{count}', '0'),
     );
-    await page.getByLabel(viMessages.myTasks.includeDoneLabel).check();
-    await includeDoneRespPromise;
-    await expect(page.locator('.my-task-row', { hasText: doneMyTaskTitle })).toBeVisible();
 
-    const myTasksDomText = await page.locator('main').innerText();
+    // Default Đang làm tab excludes completed tasks until clicking Đã xong
+    await expect(page.locator('.prog-row', { hasText: doneMyTaskTitle })).toHaveCount(0);
+    await page
+      .locator('.prog-filter-tabs')
+      .getByRole('tab', { name: viMessages.progress.filterDone, exact: true })
+      .click();
+    await expect(page.locator('.prog-row', { hasText: doneMyTaskTitle })).toBeVisible();
+
+    const progressTaskListText = await page.locator('.prog-list-scroll').innerText();
+    const progressInspectorText = await page.locator('.prog-inspector').innerText();
+    const progressMainText = await page.locator('main').innerText();
 
     await page.goto('/tasks');
     await expect(page.locator(`.hcal-task-bar[data-task-id="${activeTaskId}"]`)).toBeVisible();
@@ -723,16 +744,20 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
     }
 
     assertZeroPiiInStrings(capturedJsonResponses, sensitiveValues);
-    for (const domText of [myTasksDomText, calendarDomText]) {
+    // Task lists/inspector/calendar & other-member secrets never expose MSSV/email; only own banner displays basicUser's own identity (AGENTS §7)
+    for (const domText of [progressTaskListText, progressInspectorText, calendarDomText]) {
       for (const secret of sensitiveValues) {
         expect(domText).not.toContain(secret);
       }
+    }
+    for (const otherSecret of [adminStudentId, leadStudentId, adminEmail, leadEmail]) {
+      expect(progressMainText).not.toContain(otherSecret);
     }
 
     await tracker.assertClean();
   });
 
-  test('uploads member avatar on S08 /profile, renders across ProfileView, AppShell, /members, /my-tasks, and /tasks modal, enforces 403/400 guards, and reverts to colorful initials (CR-02)', async ({
+  test('uploads member avatar on S08 /profile, renders across ProfileView, AppShell, /members, /progress, and /tasks modal, enforces 403/400 guards, and reverts to colorful initials (CR-02)', async ({
     browser,
     page,
   }) => {
@@ -767,6 +792,7 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
           boardId,
           columnId: todoColId,
           title: avatarTaskTitle,
+          startAt: `${yearStr}-03-14T00:00:00.000+07:00`,
           dueAt: `${yearStr}-03-15T00:00:00.000+07:00`,
           assigneeIds: [basicUserId],
         },
@@ -817,10 +843,11 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
       await page.reload();
       await expect(page.locator('.profile-hero .ui-banner.is-danger')).toHaveCount(0);
 
-      // Prime SPA QueryClient caches (/my-tasks & /tasks modal) before avatar upload
-      await page.locator('.app-side a[href="/my-tasks"]').click();
-      await page.waitForURL(`${BASE_ORIGIN}/my-tasks`);
-      await page.locator('.my-task-row', { hasText: avatarTaskTitle }).click();
+      // Prime SPA QueryClient caches (/progress & /tasks modal) before avatar upload
+      await page.locator('.app-side a[href="/progress"]').click();
+      await page.waitForURL(`${BASE_ORIGIN}/progress`);
+      await page.locator('.prog-row', { hasText: avatarTaskTitle }).locator('.prog-row-btn').click();
+      await page.getByRole('button', { name: viMessages.progress.expandDetail, exact: true }).click();
       const primedModal = getTaskModal(page);
       await expectColorfulInitialsAvatar(
         primedModal.locator('.task-acceptance-list .ui-avatar'),
@@ -832,7 +859,7 @@ test.describe('Boards API, Calendar Tasks & My Tasks E2E (CR-10, S05, S06)', () 
       await page.locator('.app-side a[href="/profile"]').click();
       await page.waitForURL(`${BASE_ORIGIN}/profile`);
 
-      // Upload valid PNG on S08 /profile -> invalidates SPA caches across ProfileView, AppShell, /members, /my-tasks & /tasks modal
+      // Upload valid PNG on S08 /profile -> invalidates SPA caches across ProfileView, AppShell, /members, /progress & /tasks modal
       const uploadPromise = page.waitForResponse(
         (res) => res.url().endsWith('/api/v1/me/avatar') && res.request().method() === 'PUT',
       );

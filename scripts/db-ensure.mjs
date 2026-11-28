@@ -2,24 +2,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import {
+  buildDatabaseUrlWithName,
+  parsePgConnection,
+  VALID_DB_NAME_RE,
+} from './db-cli.mjs';
+import {
   formatSafeDbTarget,
   isLocalDatabaseUrl,
   loadEnvFiles,
 } from './load-env.mjs';
 
-const VALID_DB_NAME = /^[a-zA-Z_][a-zA-Z0-9_-]{0,62}$/;
 const DB_CONNECT_TIMEOUT_MS = 3000;
-
-function extractDatabaseName(connectionString) {
-  const parsed = new URL(connectionString);
-  return parsed.pathname.replace(/^\//, '');
-}
-
-function buildMaintenanceUrl(connectionString) {
-  const parsed = new URL(connectionString);
-  parsed.pathname = '/postgres';
-  return parsed.toString();
-}
 
 async function tryConnectDirect(connectionString) {
   const client = new pg.Client({
@@ -49,12 +42,12 @@ async function createLocalDatabaseIfMissing(connectionString, dbName) {
     );
   }
 
-  if (!VALID_DB_NAME.test(dbName)) {
+  if (!VALID_DB_NAME_RE.test(dbName)) {
     throw new Error(`Invalid PostgreSQL database name "${dbName}".`);
   }
 
   const adminClient = new pg.Client({
-    connectionString: buildMaintenanceUrl(connectionString),
+    connectionString: buildDatabaseUrlWithName(connectionString, 'postgres'),
     connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
   });
 
@@ -81,7 +74,7 @@ async function createLocalDatabaseIfMissing(connectionString, dbName) {
 
 export async function ensureSingleDatabase(connectionString) {
   const target = formatSafeDbTarget(connectionString);
-  const dbName = extractDatabaseName(connectionString);
+  const { database: dbName } = parsePgConnection(connectionString);
   const direct = await tryConnectDirect(connectionString);
 
   if (direct.connected) {

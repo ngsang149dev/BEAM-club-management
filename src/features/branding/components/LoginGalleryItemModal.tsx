@@ -1,10 +1,11 @@
 'use client';
 
-import { createElement, useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
+import { createElement, useId, useRef, useState, type ChangeEvent } from 'react';
 import { useForm, type UseFormRegister, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import {
   compressImageFileToDataUrl,
   GALLERY_IMAGE_COMPRESSION_OPTIONS,
@@ -29,16 +30,6 @@ const galleryItemFormSchema = z.object({
 });
 
 type GalleryItemFormValues = z.infer<typeof galleryItemFormSchema>;
-
-function useEscapeClose(isBusy: boolean, onClose: () => void) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isBusy) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isBusy, onClose]);
-}
 
 function useGalleryImagePicker(onClearApiError?: () => void) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -78,19 +69,12 @@ function GalleryImagePreviewBox({
   onPickClick: () => void;
 }) {
   const t = useTranslations('branding.gallery');
-
   return (
     <div className="gallery-modal-upload-row">
       <div className="gallery-modal-preview">
-        {previewSrc ? (
-          createElement('img', {
-            src: previewSrc,
-            alt: title || t('previewAlt'),
-            className: 'gallery-modal-preview-img',
-          })
-        ) : (
-          <span className="gallery-modal-preview-empty">{t('noImageSelected')}</span>
-        )}
+        {previewSrc
+          ? createElement('img', { src: previewSrc, alt: title || t('previewAlt'), className: 'gallery-modal-preview-img' })
+          : <span className="gallery-modal-preview-empty">{t('noImageSelected')}</span>}
       </div>
       <div className="gallery-modal-upload-meta">
         <button type="button" className="ui-btn secondary is-sm" disabled={isBusy} onClick={onPickClick}>
@@ -102,23 +86,14 @@ function GalleryImagePreviewBox({
   );
 }
 
-function GalleryModalErrorBanner({
-  errorKey,
-  imageRequiredError,
-}: {
-  errorKey: BrandingErrorKey | null;
-  imageRequiredError: boolean;
-}) {
+function GalleryModalErrorBanner({ errorKey, imageRequiredError }: { errorKey: BrandingErrorKey | null; imageRequiredError: boolean }) {
   const t = useTranslations('branding.gallery');
   const tErr = useTranslations('errors');
   const message = imageRequiredError ? t('validationImageRequired') : errorKey ? tErr(errorKey) : null;
   if (!message) return null;
-
   return (
     <div className="ui-banner is-danger" role="alert">
-      <div className="ui-banner-body">
-        <span className="ui-banner-text">{message}</span>
-      </div>
+      <div className="ui-banner-body"><span className="ui-banner-text">{message}</span></div>
     </div>
   );
 }
@@ -212,7 +187,7 @@ function useGalleryModalController(props: {
   const t = useTranslations('branding.gallery');
   const picker = useGalleryImagePicker(props.onClearError);
   const isBusy = props.isSubmitting || picker.isCompressing;
-  useEscapeClose(isBusy, props.onClose);
+  useEscapeClose(!isBusy, props.onClose);
 
   const form = useForm<GalleryItemFormValues>({
     resolver: zodResolver(galleryItemFormSchema),
@@ -297,7 +272,7 @@ export function LoginGalleryDeleteModal({
   const tErr = useTranslations('errors');
   const titleId = useId();
   const errorKey = describeBrandingError(error);
-  useEscapeClose(isDeleting, onClose);
+  useEscapeClose(!isDeleting, onClose);
 
   return (
     <div className="ui-modal-backdrop" role="presentation">

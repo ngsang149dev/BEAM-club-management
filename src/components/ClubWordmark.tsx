@@ -16,7 +16,7 @@ function joinWordmarkClasses(base: string, extra?: string): string {
 export function ClubWordmark({ wordmarkUrl, className }: ClubWordmarkProps) {
   const tApp = useTranslations('app');
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const subscribedWordmarkUrl = useOptionalClubWordmarkUrl();
+  const subscribedWordmarkUrl = useOptionalClubWordmarkUrl(wordmarkUrl === undefined);
   const resolvedUrl = wordmarkUrl !== undefined ? wordmarkUrl : subscribedWordmarkUrl;
   const showCustom = Boolean(resolvedUrl && failedUrl !== resolvedUrl);
 

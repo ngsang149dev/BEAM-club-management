@@ -1,6 +1,6 @@
 'use client';
 
-import type { HTMLAttributes, RefObject } from 'react';
+import { memo, type HTMLAttributes, type RefObject } from 'react';
 import { useTranslations } from 'next-intl';
 import type { TaskDto } from '@/features/tasks/hooks/useTasks';
 import type { CalendarPackedTask, YearCalendarModel, ZoomTier } from '../calendar-math';
@@ -87,7 +87,7 @@ function CalendarTimelineMarkers({ calendar }: { readonly calendar: YearCalendar
   );
 }
 
-export function CalendarTimeline({
+export const CalendarTimeline = memo(function CalendarTimeline({
   scrollerRef,
   canvasRef,
   calendar,
@@ -129,4 +129,4 @@ export function CalendarTimeline({
       </div>
     </div>
   );
-}
+});

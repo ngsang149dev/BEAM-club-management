@@ -118,13 +118,14 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(auditHooksMock.useAuditMembersFilterQuery).toHaveBeenCalledWith(false);
   });
 
-  it('allows audit.view without member.view without querying /members, shows Asia/Ho_Chi_Minh time, and has zero edit/delete controls', () => {
+  it('allows audit.view without member.view without querying /members, defaults to all dates, shows Asia/Ho_Chi_Minh time, and has zero edit/delete controls', () => {
     const html = renderAudit({ permissions: ['audit.view'], isAdmin: false });
     expect(auditHooksMock.useAuditLogsInfiniteQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ dateRange: '30d' }),
+      expect.objectContaining({ dateRange: 'all' }),
       true
     );
     expect(auditHooksMock.useAuditMembersFilterQuery).toHaveBeenCalledWith(false);
+    expect(html).not.toContain('page-subtitle');
     expect(html).toContain('Tran Thi B');
     expect(html).toContain('Vu Quoc F');
     expect(html).toContain('(đã rời)');
@@ -606,5 +607,123 @@ describe('AuditLogsView & S13 helpers', () => {
     expect(enHtml).toContain('Updated department');
     expect(enHtml).toContain('Unassigned');
     expect(enHtml).not.toContain(leadUuid);
+  });
+
+  it('supports all 12 CR-14 task audit actions, redacts hidden task titles, and renders member metadata rows', () => {
+    const actions = [
+      'task.created',
+      'task.updated',
+      'task.completed',
+      'task.reopened',
+      'task.assignees_changed',
+      'task.accepted',
+      'task.deliverable_added',
+      'task.deliverable_removed',
+      'task.hidden_changed',
+      'task.deleted',
+      'task.restored',
+      'task.reverted',
+    ] as const;
+
+    for (const action of actions) {
+      expect(resolveAuditActionKey(action)).toBeTruthy();
+    }
+
+    expect(
+      formatAuditDetailPreview(
+        { taskId: 't-1', taskTitle: 'Chốt banner sự kiện', isHidden: false },
+        '(Công việc ẩn)'
+      )
+    ).toBe('Chốt banner sự kiện');
+    expect(
+      formatAuditDetailPreview(
+        { taskId: 't-2', taskTitle: null, isHidden: true },
+        '(Công việc ẩn)'
+      )
+    ).toBe('(Công việc ẩn)');
+    expect(
+      formatAuditDetailPreview(
+        { taskId: 't-2', taskTitle: 'SECRET_SHOULD_NOT_SHOW', isHidden: true },
+        '(Hidden task)'
+      )
+    ).toBe('(Hidden task)');
+    expect(
+      formatAuditDetailPreview({ grantedPermissions: ['member.view', 'task.create'] })
+    ).toContain('member.view, task.create');
+
+    const hiddenTaskEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      action: 'task.created',
+      targetUser: null,
+      detail: { taskId: 't-hid', taskTitle: null, isHidden: true, assigneeCount: 2, departmentCount: 1 },
+    };
+    const memberCreatedEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      id: '90000000-0000-4000-8000-000000000089',
+      action: 'member.created',
+      detail: { grantedPermissions: ['member.view', 'task.update_assigned'] },
+    };
+    const revertedTaskEntry: AuditLogDto = {
+      ...ENTRY_PERM,
+      id: '90000000-0000-4000-8000-000000000090',
+      action: 'task.reverted',
+      targetUser: null,
+      detail: {
+        taskId: 't-rev',
+        taskTitle: 'Chốt banner sự kiện',
+        isHidden: false,
+        revertedType: 'task.updated',
+        departmentCount: 1,
+        departmentIds: ['d-1'],
+      },
+    };
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [hiddenTaskEntry, memberCreatedEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const viHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(viHtml).toContain('value="task.created"');
+    expect(viHtml).toContain('value="task.deliverable_added"');
+    expect(viHtml).toContain('Tạo công việc');
+    expect(viHtml).toContain('(Công việc ẩn)');
+    expect(viHtml).toContain('member.view, task.update_assigned');
+
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [memberCreatedEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const memberViHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(memberViHtml).toContain('Quyền được cấp');
+    expect(memberViHtml).toContain('member.view, task.update_assigned');
+
+    expect(formatAuditDetailPreview({ revertedType: 'task.moved' })).toBe('task.moved');
+    expect(formatAuditDetailPreview({ revertedEventType: 'task.updated' })).toBe('task.updated');
+    auditHooksMock.useAuditLogsInfiniteQuery.mockReturnValueOnce({
+      isPending: false,
+      isError: false,
+      error: null,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+      data: { pages: [{ items: [revertedTaskEntry], meta: { nextCursor: null, limit: 20 } }] },
+    });
+    const revertedViHtml = renderAudit({ permissions: ['audit.view'], locale: 'vi' });
+    expect(revertedViHtml).toContain('Loại sự kiện đã hoàn tác');
+    expect(revertedViHtml).toContain('task.updated');
+    expect(revertedViHtml).toContain('Số ban được giao');
+    expect(revertedViHtml).not.toContain('<span>Số ban</span>');
   });
 });

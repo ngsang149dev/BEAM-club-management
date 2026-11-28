@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
 import { PasswordInput } from '@/components/PasswordInput';
-import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import type { MemberListItem } from '../hooks/useMembers';
 import {
   generateCompliantPassword,

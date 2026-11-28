@@ -5,6 +5,8 @@ import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   auditLogs,
+  boards,
+  columns,
   departments,
   memberDepartments,
   permissions,
@@ -13,12 +15,27 @@ import {
 } from '@db/schema';
 import { GET as auditLogsGet } from '@/app/api/v1/audit-logs/route';
 import { POST as loginPost } from '@/app/api/v1/auth/login/route';
+import { PUT as taskAcceptancePut } from '@/app/api/v1/tasks/[id]/acceptance/route';
+import { PUT as taskAssigneesPut } from '@/app/api/v1/tasks/[id]/assignees/route';
+import { DELETE as deliverableDelete } from '@/app/api/v1/tasks/[id]/deliverables/[deliverableId]/route';
+import { POST as deliverablesPost } from '@/app/api/v1/tasks/[id]/deliverables/route';
+import { POST as taskEventRevertPost } from '@/app/api/v1/tasks/[id]/events/[eventId]/revert/route';
+import { PUT as taskHiddenPut } from '@/app/api/v1/tasks/[id]/hidden/route';
+import { POST as taskRestorePost } from '@/app/api/v1/tasks/[id]/restore/route';
+import { DELETE as taskDelete, PATCH as taskPatch } from '@/app/api/v1/tasks/[id]/route';
+import { POST as tasksPost } from '@/app/api/v1/tasks/route';
 import { SESSION_COOKIE_NAME } from '@/lib/auth';
+import { DrizzleArchiveRepository } from '@/server/modules/archive';
 import { DrizzleAuditRepository } from '@/server/modules/audit';
 import { DrizzleAuthRepository } from '@/server/modules/auth';
+import { DrizzleBoardsRepository } from '@/server/modules/boards';
+import { DrizzleCommentsRepository } from '@/server/modules/comments';
 import { DrizzleDepartmentsRepository } from '@/server/modules/departments';
 import { DrizzleMembersRepository } from '@/server/modules/members';
+import { DrizzleNotificationsRepository } from '@/server/modules/notifications';
 import { DrizzlePermissionsRepository } from '@/server/modules/permissions';
+import { DrizzleTaskEventsRepository } from '@/server/modules/task-events';
+import { DrizzleTasksRepository } from '@/server/modules/tasks';
 import { createContainer, setContainerForTesting } from '@/server/shared/composition';
 import type { Config } from '@/server/shared/config';
 import { createDb, createDbPool, type Database } from '@/server/shared/db';
@@ -115,13 +132,10 @@ describe('Audit Logs Route Handler integration', () => {
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `audit-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'audit-cron-secret',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -380,6 +394,409 @@ describe('Audit Logs Route Handler integration', () => {
       for (const secret of [adminSid, viewerSid, noPermSid, leftSid, adminEmail, viewerEmail, leftEmail]) {
         expect(serialized).not.toContain(secret);
       }
+    });
+  });
+
+  it('records all 12 task lifecycle audit events inside tx, redacts hidden titles (WQ-27), and filters inaccessible hidden task entries for non-admins', async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const adminId = randomUUID();
+    const auditViewerId = randomUUID();
+    const boardId = randomUUID();
+    const todoColId = randomUUID();
+    const adminSid = `MSSV-TAADM-${suffix}`;
+    const viewerSid = `MSSV-TAVIEW-${suffix}`;
+    const baseHost = Math.floor(Math.random() * 140) + 10;
+
+    const testConfig: Config = {
+      nodeEnv: 'test',
+      databaseUrl: process.env.TEST_DATABASE_URL!,
+      testDatabaseUrl: process.env.TEST_DATABASE_URL!,
+      sessionSecret: `audit-task-secret-${suffix}-0123456789`,
+      sessionTtlMinutes: 30,
+      allowedEmailDomain: 'eiu.edu.vn',
+      cronSecret: 'audit-cron-secret',
+      smtp: {},
+      appUrl: 'http://localhost:3000',
+    };
+
+    const sinceIso = new Date(Date.now() - 5_000).toISOString();
+
+    await withRolledBackDb(db, async (tx) => {
+      const auditRepo = new DrizzleAuditRepository(tx);
+      const container = createContainer({
+        config: testConfig,
+        db,
+        transactionRunner: { runInTransaction: (fn) => tx.transaction(fn) },
+        mailer: { send: async () => undefined },
+        auditWriter: auditRepo,
+        auditRepo,
+        authRepo: new DrizzleAuthRepository(tx),
+        departmentsRepo: new DrizzleDepartmentsRepository(tx),
+        membersRepo: new DrizzleMembersRepository(tx),
+        permissionsRepo: new DrizzlePermissionsRepository(tx),
+        boardsRepo: new DrizzleBoardsRepository(tx),
+        tasksRepo: new DrizzleTasksRepository(tx),
+        taskEventsRepo: new DrizzleTaskEventsRepository(tx),
+        archiveRepo: new DrizzleArchiveRepository(tx),
+        commentsRepo: new DrizzleCommentsRepository(tx),
+        notificationsRepo: new DrizzleNotificationsRepository(tx),
+        logger: new StructuredLogger({ writeOut: () => undefined, writeErr: () => undefined }),
+      });
+      setContainerForTesting(container);
+
+      await tx
+        .insert(permissions)
+        .values([
+          { code: 'member.view', groupName: 'members', description: 'V', scopable: false },
+          { code: 'audit.view', groupName: 'system', description: 'A', scopable: false },
+        ])
+        .onConflictDoNothing();
+
+      const seedPasswordHash = await hashPassword(DEV_SEED_PASSWORD);
+      await tx.insert(profiles).values([
+        {
+          id: adminId,
+          studentId: adminSid,
+          email: `ta-adm-${suffix}@eiu.edu.vn`,
+          fullName: `TA Admin ${suffix}`,
+          passwordHash: seedPasswordHash,
+          isAdmin: true,
+          isActive: true,
+          locale: 'vi',
+        },
+        {
+          id: auditViewerId,
+          studentId: viewerSid,
+          email: `ta-view-${suffix}@eiu.edu.vn`,
+          fullName: `TA Viewer ${suffix}`,
+          passwordHash: seedPasswordHash,
+          isAdmin: false,
+          isActive: true,
+          locale: 'en',
+        },
+      ]);
+      await tx.insert(userPermissions).values({
+        userId: auditViewerId,
+        permissionCode: 'audit.view',
+        grantedBy: null,
+      });
+
+      await tx.insert(boards).values({ id: boardId, name: `Audit Board ${suffix}`, createdBy: adminId });
+      await tx.insert(columns).values({ id: todoColId, boardId, name: 'Todo', orderIndex: 0 });
+
+      const loginAs = async (studentId: string, hostOffset: number) =>
+        cookiePairFromLogin(
+          await loginPost(
+            new Request('http://localhost:3000/api/v1/auth/login', {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'x-forwarded-for': `198.51.101.${baseHost + hostOffset}`,
+              },
+              body: JSON.stringify({ studentId, password: DEV_SEED_PASSWORD }),
+            }),
+          ),
+        );
+
+      const adminCookie = await loginAs(adminSid, 0);
+      const viewerCookie = await loginAs(viewerSid, 1);
+
+      const publicTitle = `Public Task ${suffix}`;
+      const publicUpdatedTitle = `Public Updated ${suffix}`;
+      const publicDelivTitle = `Public Deck ${suffix}`;
+      const secretTitle = `Top Secret Hidden ${suffix}`;
+      const secretDelivTitle = `Top Secret Deliverable ${suffix}`;
+      const sharedHiddenTitle = `Shared Hidden ${suffix}`;
+
+      const createPublicRes = await tasksPost(
+        new Request('http://localhost:3000/api/v1/tasks', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({
+            boardId,
+            columnId: todoColId,
+            title: publicTitle,
+            startAt: '2026-11-26T00:00:00.000Z',
+            dueAt: '2026-11-29T00:00:00.000Z',
+            assigneeIds: [auditViewerId],
+          }),
+        }),
+      );
+      expect(createPublicRes.status).toBe(201);
+      const publicTaskId = ((await createPublicRes.json()) as { task: { id: string } }).task.id;
+
+      const patchTitleRes = await taskPatch(
+        new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({ title: publicUpdatedTitle, version: 1 }),
+        }),
+        { params: Promise.resolve({ id: publicTaskId }) },
+      );
+      expect(patchTitleRes.status).toBe(200);
+      const titleEventId = ((await patchTitleRes.json()) as { eventId: string }).eventId;
+
+      expect(
+        (
+          await taskPatch(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}`, {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({ isCompleted: true, version: 2 }),
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      expect(
+        (
+          await taskPatch(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}`, {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({ isCompleted: false, version: 3 }),
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      expect(
+        (
+          await taskAssigneesPut(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/assignees`, {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({ assigneeIds: [adminId, auditViewerId] }),
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      expect(
+        (
+          await taskAcceptancePut(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/acceptance`, {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', cookie: viewerCookie },
+              body: JSON.stringify({ accepted: true }),
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      const addDelivRes = await deliverablesPost(
+        new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/deliverables`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: viewerCookie },
+          body: JSON.stringify({ title: publicDelivTitle, url: 'https://example.com/public-deck' }),
+        }),
+        { params: Promise.resolve({ id: publicTaskId }) },
+      );
+      expect(addDelivRes.status).toBe(201);
+      const publicDelivId = ((await addDelivRes.json()) as { deliverable: { id: string } }).deliverable.id;
+
+      expect(
+        (
+          await deliverableDelete(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/deliverables/${publicDelivId}`, {
+              method: 'DELETE',
+              headers: { cookie: adminCookie },
+            }),
+            { params: Promise.resolve({ id: publicTaskId, deliverableId: publicDelivId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      expect(
+        (
+          await taskHiddenPut(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/hidden`, {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({ isHidden: true }),
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await taskHiddenPut(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/hidden`, {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({ isHidden: false }),
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      expect(
+        (
+          await taskDelete(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}`, {
+              method: 'DELETE',
+              headers: { cookie: adminCookie },
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      expect(
+        (
+          await taskRestorePost(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/restore`, {
+              method: 'POST',
+              headers: { cookie: adminCookie },
+            }),
+            { params: Promise.resolve({ id: publicTaskId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      expect(
+        (
+          await taskEventRevertPost(
+            new Request(`http://localhost:3000/api/v1/tasks/${publicTaskId}/events/${titleEventId}/revert`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({}),
+            }),
+            { params: Promise.resolve({ id: publicTaskId, eventId: titleEventId }) },
+          )
+        ).status,
+      ).toBe(200);
+
+      // Secret hidden task NOT visible to auditViewerId
+      const secretRes = await tasksPost(
+        new Request('http://localhost:3000/api/v1/tasks', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({
+            boardId,
+            columnId: todoColId,
+            title: secretTitle,
+            startAt: '2026-11-26T00:00:00.000Z',
+            dueAt: '2026-11-29T00:00:00.000Z',
+            isHidden: true,
+          }),
+        }),
+      );
+      expect(secretRes.status).toBe(201);
+      const secretHiddenTaskId = ((await secretRes.json()) as { task: { id: string } }).task.id;
+
+      expect(
+        (
+          await deliverablesPost(
+            new Request(`http://localhost:3000/api/v1/tasks/${secretHiddenTaskId}/deliverables`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({ title: secretDelivTitle, url: 'https://example.com/secret-deck' }),
+            }),
+            { params: Promise.resolve({ id: secretHiddenTaskId }) },
+          )
+        ).status,
+      ).toBe(201);
+
+      // Shared hidden task visible to auditViewerId (assignee), title STILL redacted in audit detail (WQ-27)
+      const sharedRes = await tasksPost(
+        new Request('http://localhost:3000/api/v1/tasks', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: adminCookie },
+          body: JSON.stringify({
+            boardId,
+            columnId: todoColId,
+            title: sharedHiddenTitle,
+            startAt: '2026-11-26T00:00:00.000Z',
+            dueAt: '2026-11-29T00:00:00.000Z',
+            isHidden: true,
+            assigneeIds: [auditViewerId],
+          }),
+        }),
+      );
+      expect(sharedRes.status).toBe(201);
+      const sharedHiddenTaskId = ((await sharedRes.json()) as { task: { id: string } }).task.id;
+
+      const listUrl = `http://localhost:3000/api/v1/audit-logs?from=${encodeURIComponent(sinceIso)}&limit=50`;
+      const adminListRes = await auditLogsGet(new Request(listUrl, { headers: { cookie: adminCookie } }));
+      expect(adminListRes.status).toBe(200);
+      const adminListBody = (await adminListRes.json()) as {
+        items: Array<{ action: string; detail: Record<string, unknown> }>;
+      };
+
+      const expectedActions = [
+        'task.created',
+        'task.updated',
+        'task.completed',
+        'task.reopened',
+        'task.assignees_changed',
+        'task.hidden_changed',
+        'task.accepted',
+        'task.deliverable_added',
+        'task.deliverable_removed',
+        'task.deleted',
+        'task.restored',
+        'task.reverted',
+      ];
+      const adminTaskActions = new Set(adminListBody.items.map((item) => item.action));
+      for (const action of expectedActions) {
+        expect(adminTaskActions.has(action)).toBe(true);
+      }
+
+      const secretEntriesAdmin = adminListBody.items.filter(
+        (item) => item.detail.taskId === secretHiddenTaskId,
+      );
+      expect(secretEntriesAdmin.length).toBeGreaterThanOrEqual(2);
+      for (const entry of secretEntriesAdmin) {
+        expect(entry.detail.isHidden).toBe(true);
+        expect(entry.detail.taskTitle).toBeNull();
+        if (entry.action === 'task.deliverable_added') {
+          expect(entry.detail.deliverableTitle).toBeNull();
+          expect(entry.detail.deliverableUrl).toBeUndefined();
+        }
+      }
+
+      const viewerListRes = await auditLogsGet(new Request(listUrl, { headers: { cookie: viewerCookie } }));
+      expect(viewerListRes.status).toBe(200);
+      const viewerListBody = (await viewerListRes.json()) as {
+        items: Array<{ action: string; detail: Record<string, unknown> }>;
+      };
+
+      // Non-admin viewer cannot see secretHiddenTaskId audit entries at all, CAN see sharedHiddenTaskId & publicTaskId
+      expect(
+        viewerListBody.items.some((item) => item.detail.taskId === secretHiddenTaskId),
+      ).toBe(false);
+      const viewerSharedEntries = viewerListBody.items.filter(
+        (item) => item.detail.taskId === sharedHiddenTaskId,
+      );
+      expect(viewerSharedEntries).toHaveLength(1);
+      expect(viewerSharedEntries[0]!.detail.isHidden).toBe(true);
+      expect(viewerSharedEntries[0]!.detail.taskTitle).toBeNull();
+
+      expect(
+        viewerListBody.items.some((item) => item.detail.taskId === publicTaskId),
+      ).toBe(true);
+
+      const serializedAll = JSON.stringify([adminListBody, viewerListBody]);
+      for (const redacted of [
+        secretTitle,
+        secretDelivTitle,
+        sharedHiddenTitle,
+        'secret-deck',
+        adminSid,
+        viewerSid,
+        `ta-adm-${suffix}`,
+        `ta-view-${suffix}`,
+      ]) {
+        expect(serializedAll).not.toContain(redacted);
+      }
+      expect(JSON.stringify(viewerListBody)).not.toContain(secretHiddenTaskId);
     });
   });
 });

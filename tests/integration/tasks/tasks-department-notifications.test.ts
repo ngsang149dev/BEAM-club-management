@@ -137,13 +137,10 @@ describe('Department Task Assignment & Notifications integration', () => {
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `cr03-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: `cr03-cron-secret-${suffix}`,
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -241,13 +238,13 @@ describe('Department Task Assignment & Notifications integration', () => {
       expect((await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: creatorCookie },
-        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Deny Dept', departmentIds: [deptMediaId] }),
+        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Deny Dept', startAt: '2026-11-26T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z', departmentIds: [deptMediaId] }),
       }))).status).toBe(403);
 
       const badDeptRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Bad Dept', departmentIds: [randomUUID()] }),
+        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Bad Dept', startAt: '2026-11-26T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z', departmentIds: [randomUUID()] }),
       }));
       expect(badDeptRes.status).toBe(400);
       expect(((await badDeptRes.json()) as { error: { code: string } }).error.code).toBe('INVALID_DEPARTMENT_IDS');
@@ -260,6 +257,8 @@ describe('Department Task Assignment & Notifications integration', () => {
           boardId,
           columnId: todoColId,
           title: `Public Dept Task ${suffix}`,
+          startAt: '2026-11-26T00:00:00.000Z',
+          dueAt: '2026-11-28T00:00:00.000Z',
           departmentIds: [deptMediaId, deptEventId],
         }),
       }));
@@ -290,6 +289,8 @@ describe('Department Task Assignment & Notifications integration', () => {
           boardId,
           columnId: todoColId,
           title: hiddenSecretTitle,
+          startAt: '2026-11-26T00:00:00.000Z',
+          dueAt: '2026-11-28T00:00:00.000Z',
           departmentIds: [deptMediaId],
           isHidden: true,
         }),
@@ -433,6 +434,8 @@ describe('Department Task Assignment & Notifications integration', () => {
           boardId,
           columnId: todoColId,
           title: `Mixed Assign ${suffix}`,
+          startAt: '2026-11-26T00:00:00.000Z',
+          dueAt: '2026-11-28T00:00:00.000Z',
           departmentIds: [deptEventId],
           assigneeIds: [adminId, deptMemberEnId, outsiderId],
         }),
@@ -460,6 +463,8 @@ describe('Department Task Assignment & Notifications integration', () => {
           boardId,
           columnId: todoColId,
           title: `InApp Only ${suffix}`,
+          startAt: '2026-11-26T00:00:00.000Z',
+          dueAt: '2026-11-28T00:00:00.000Z',
           assigneeIds: [outsiderId],
           notifyInApp: true,
           notifyEmail: false,
@@ -478,6 +483,8 @@ describe('Department Task Assignment & Notifications integration', () => {
           boardId,
           columnId: todoColId,
           title: `Email Only ${suffix}`,
+          startAt: '2026-11-26T00:00:00.000Z',
+          dueAt: '2026-11-28T00:00:00.000Z',
           assigneeIds: [deptMemberEnId],
           notifyInApp: false,
           notifyEmail: true,
@@ -499,6 +506,8 @@ describe('Department Task Assignment & Notifications integration', () => {
           boardId,
           columnId: todoColId,
           title: directSecretTitle,
+          startAt: '2026-11-26T00:00:00.000Z',
+          dueAt: '2026-11-28T00:00:00.000Z',
           assigneeIds: [outsiderId],
           isHidden: true,
         }),
@@ -541,7 +550,7 @@ describe('Department Task Assignment & Notifications integration', () => {
       const silentTempTaskRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ boardId, columnId: todoColId, title: `Temp Purge ${suffix}`, departmentIds: [deptTempId], notifyDepartmentMembers: true }),
+        body: JSON.stringify({ boardId, columnId: todoColId, title: `Temp Purge ${suffix}`, startAt: '2026-11-26T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z', departmentIds: [deptTempId], notifyDepartmentMembers: true }),
       }));
       expect(silentTempTaskRes.status).toBe(201);
       const tempTaskId = ((await silentTempTaskRes.json()) as { task: { id: string } }).task.id;

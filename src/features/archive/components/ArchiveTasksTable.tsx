@@ -1,10 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import {
-  TaskAssigneeChips,
-  TaskPriorityBadge,
-} from '@/features/tasks/components/TaskPriorityBadge';
+import { TaskAssigneeChips } from '@/features/tasks/components/TaskPriorityBadge';
 import { formatTaskDateTime } from '@/features/tasks/formatters';
 import type { ArchiveTaskItem } from '../hooks/useArchive';
 
@@ -17,34 +14,16 @@ export interface ArchiveTasksTableProps {
   readonly onPurge: (item: ArchiveTaskItem) => void;
 }
 
-function TaskBoardColumnCell({ item }: { readonly item: ArchiveTaskItem }) {
-  const t = useTranslations('archive');
-  return (
-    <div className="archive-board-col-cell">
-      <div className="archive-board-row">
-        <span className="archive-board-name">{item.boardName}</span>
-        {item.boardArchived ? (
-          <span className="status-pill is-inactive">{t('boardArchivedBadge')}</span>
-        ) : null}
-      </div>
-      <span className={item.columnName ? 'archive-col-name' : 'archive-fallback-note'}>
-        {item.columnName ?? t('deletedColumnFallback')}
-      </span>
-    </div>
-  );
-}
-
 function TaskTitleCell({ item }: { readonly item: ArchiveTaskItem }) {
   const tTasks = useTranslations('tasks');
   return (
     <div className="archive-task-title-cell">
       <span className="archive-primary-title">{item.task.title}</span>
-      <div className="archive-inline-badges">
-        <TaskPriorityBadge priority={item.task.priority} />
-        {item.task.isHidden ? (
+      {item.task.isHidden ? (
+        <div className="archive-inline-badges">
           <span className="ui-chip task-hidden-chip">{tTasks('hiddenBadge')}</span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -65,21 +44,11 @@ function ArchiveRowActions({
   const t = useTranslations('archive');
   return (
     <div className="archive-row-actions">
-      <button
-        type="button"
-        className="ui-btn secondary is-sm"
-        disabled={isBusy}
-        onClick={onRestore}
-      >
+      <button type="button" className="ui-btn secondary is-sm" disabled={isBusy} onClick={onRestore}>
         {isRestoringThis ? t('restoringButton') : t('restoreButton')}
       </button>
       {isAdmin ? (
-        <button
-          type="button"
-          className="ui-btn danger is-sm"
-          disabled={isBusy}
-          onClick={onPurge}
-        >
+        <button type="button" className="ui-btn danger is-sm" disabled={isBusy} onClick={onPurge}>
           {t('purgeButton')}
         </button>
       ) : null}
@@ -106,15 +75,8 @@ function ArchiveTaskDesktopRow({
 }) {
   return (
     <tr>
-      <td>
-        <TaskTitleCell item={item} />
-      </td>
-      <td>
-        <TaskBoardColumnCell item={item} />
-      </td>
-      <td>
-        <TaskAssigneeChips assignees={item.task.assignees} />
-      </td>
+      <td><TaskTitleCell item={item} /></td>
+      <td><TaskAssigneeChips assignees={item.task.assignees} /></td>
       <td className="mono">{formatTaskDateTime(item.task.deletedAt, locale)}</td>
       <td className="ui-col-right">
         <ArchiveRowActions
@@ -150,7 +112,6 @@ function ArchiveTaskMobileCard({
   return (
     <li className="directory-mobile-card">
       <TaskTitleCell item={item} />
-      <TaskBoardColumnCell item={item} />
       <TaskAssigneeChips assignees={item.task.assignees} />
       <div className="directory-mobile-meta">
         <span className="mono archive-mobile-time">
@@ -186,7 +147,6 @@ export function ArchiveTasksTable({
           <thead>
             <tr>
               <th>{t('colTask')}</th>
-              <th>{t('colBoardColumn')}</th>
               <th>{t('colAssignees')}</th>
               <th>{t('colDeletedAt')}</th>
               <th className="ui-col-right">{t('colActions')}</th>

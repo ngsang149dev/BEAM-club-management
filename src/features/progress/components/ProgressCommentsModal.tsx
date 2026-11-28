@@ -3,7 +3,7 @@
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';
 import { TaskCommentsSection } from '@/features/comments/components/TaskCommentsSection';
-import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import type { TaskDto } from '@/features/tasks/hooks/useTasks';
 
 function CommentsModalHeader({
@@ -54,7 +54,7 @@ export function ProgressCommentsModal({
       <div className="prog-card prog-modal-shell" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <CommentsModalHeader titleId={titleId} taskTitle={task.title} onClose={onClose} />
         <div className="prog-modal-body">
-          <TaskCommentsSection taskId={task.id} boardId={task.boardId} commentCount={task.commentCount} />
+          <TaskCommentsSection taskId={task.id} commentCount={task.commentCount} />
         </div>
       </div>
     </div>

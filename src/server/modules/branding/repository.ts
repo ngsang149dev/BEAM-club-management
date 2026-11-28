@@ -1,6 +1,6 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { clubAssets, loginGalleryItems } from '@db/schema';
-import type { DbExecutor } from '@/server/shared/db';
+import { type DbExecutor, runExecutorQueries } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
 import type {
   BrandingRepository,
@@ -51,6 +51,27 @@ export class DrizzleBrandingRepository implements BrandingRepository {
       .where(eq(clubAssets.key, key))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  async findBrandingAssetsMetadata(tx?: TransactionContext): Promise<{
+    readonly logoAsset: ClubAssetMetadataRecord | null;
+    readonly wordmarkAsset: ClubAssetMetadataRecord | null;
+    readonly galleryItems: LoginGalleryItemMetadataRecord[];
+  }> {
+    const executor = tx ?? this.db;
+    const [assetRows, galleryItems] = await runExecutorQueries(executor, [
+      () =>
+        executor
+          .select({ key: clubAssets.key, updatedAt: clubAssets.updatedAt })
+          .from(clubAssets)
+          .where(inArray(clubAssets.key, [CLUB_LOGO_ASSET_KEY, CLUB_WORDMARK_ASSET_KEY])),
+      () => this.listGalleryItemsMetadata(tx),
+    ]);
+    return {
+      logoAsset: assetRows.find((r) => r.key === CLUB_LOGO_ASSET_KEY) ?? null,
+      wordmarkAsset: assetRows.find((r) => r.key === CLUB_WORDMARK_ASSET_KEY) ?? null,
+      galleryItems,
+    };
   }
 
   async findAssetByKey(key: string): Promise<ClubAssetBinaryRecord | null> {

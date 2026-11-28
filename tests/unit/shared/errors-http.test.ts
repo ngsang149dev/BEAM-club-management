@@ -116,13 +116,10 @@ describe('composition container', () => {
       databaseUrl: 'postgresql://unused:unused@localhost:5432/unused',
       sessionSecret: 'test-session-secret-0123456789abcdef',
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'test-cron-secret',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
     const fakeClock = new FakeClock('2026-11-23T00:00:00.000Z');
     const mockDb = {} as Database;

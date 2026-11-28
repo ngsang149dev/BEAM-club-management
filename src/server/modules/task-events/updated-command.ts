@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { conflict } from '@/lib/errors';
 import { taskPrioritySchema } from '@/lib/tasks';
 import { assertValidDateRange, type TaskRecord } from '@/server/modules/tasks';
 import type {
@@ -45,13 +46,17 @@ export function detectUpdatedConflicts(
 }
 
 function applyDateDiff(
-  current: Date | null,
+  field: 'start_at' | 'due_at',
+  current: Date,
   diff: { readonly from: string | null; readonly to: string | null },
-) {
-  const nextDate = diff.from === null ? null : new Date(diff.from);
+): { readonly nextDate: Date; readonly change: { readonly from: string; readonly to: string } } {
+  if (diff.from === null) {
+    throw conflict('errors.revertConflict', { conflictingFields: [field] }, 'REVERT_CONFLICT');
+  }
+  const nextDate = new Date(diff.from);
   return {
     nextDate,
-    change: { from: current ? current.toISOString() : null, to: nextDate ? nextDate.toISOString() : null },
+    change: { from: current.toISOString(), to: nextDate.toISOString() },
   };
 }
 
@@ -82,26 +87,40 @@ function applyScalarUpdatedDiffs(params: {
   }
 }
 
+function assertRevertDatesNonNull(parsed: TaskUpdatedChangesPayload): void {
+  const nullFields: string[] = [];
+  if (parsed.start_at?.from === null) nullFields.push('start_at');
+  if (parsed.due_at?.from === null) nullFields.push('due_at');
+  if (nullFields.length > 0) {
+    throw conflict(
+      'errors.revertConflict',
+      { conflictingFields: nullFields },
+      'REVERT_CONFLICT',
+    );
+  }
+}
+
 export function buildUpdatedPlan(
   task: TaskRecord,
   parsed: TaskUpdatedChangesPayload,
   now: Date,
 ): RevertPersistencePlan {
+  assertRevertDatesNonNull(parsed);
   const patch: Record<string, unknown> = {};
   const changes: Record<string, unknown> = {};
   applyScalarUpdatedDiffs({ task, parsed, now, patch, changes });
   if (parsed.start_at) {
-    const startDiff = applyDateDiff(task.startAt, parsed.start_at);
+    const startDiff = applyDateDiff('start_at', task.startAt, parsed.start_at);
     patch.startAt = startDiff.nextDate;
     changes.start_at = startDiff.change;
   }
   if (parsed.due_at) {
-    const dueDiff = applyDateDiff(task.dueAt, parsed.due_at);
+    const dueDiff = applyDateDiff('due_at', task.dueAt, parsed.due_at);
     patch.dueAt = dueDiff.nextDate;
     changes.due_at = dueDiff.change;
   }
-  const nextStart = patch.startAt !== undefined ? (patch.startAt as Date | null) : task.startAt;
-  const nextDue = patch.dueAt !== undefined ? (patch.dueAt as Date | null) : task.dueAt;
+  const nextStart = patch.startAt !== undefined ? (patch.startAt as Date) : task.startAt;
+  const nextDue = patch.dueAt !== undefined ? (patch.dueAt as Date) : task.dueAt;
   assertValidDateRange(nextStart, nextDue);
   return { taskPatch: patch as RevertTaskPatch, compensatingType: 'task.updated', compensatingChanges: changes };
 }
