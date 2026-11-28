@@ -462,9 +462,9 @@ describe('Database backup & restore verification scripts (NFR-06)', () => {
         connectionString: cleanDbUrl,
         quiet: true,
       });
-      expect(firstMigrate.applied).toHaveLength(8);
+      expect(firstMigrate.applied).toHaveLength(9);
       expect(firstMigrate.applied.at(-1)).toBe(
-        '0008_calendar_tasks_leads_deliverables.sql',
+        '0009_require_task_dates.sql',
       );
       expect(firstMigrate.skipped).toEqual([]);
 
@@ -649,7 +649,7 @@ describe('Database backup & restore verification scripts (NFR-06)', () => {
       );
       expect(cleanVerify.counts.permissions).toBe(18);
       expect(cleanVerify.counts.permission_presets).toBe(3);
-      expect(cleanVerify.counts.schema_migrations).toBe(8);
+      expect(cleanVerify.counts.schema_migrations).toBe(9);
       expect(cleanVerify.counts.profiles).toBe(1);
     } finally {
       await adminClient

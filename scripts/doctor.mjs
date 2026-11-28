@@ -74,10 +74,19 @@ async function checkDatabase(label, connectionString) {
   try {
     await client.connect();
     const res = await client.query(
-      "SELECT to_regclass('public.profiles') AS profiles, to_regclass('public.club_assets') AS club_assets",
+      `SELECT
+        to_regclass('public.profiles') AS profiles,
+        to_regclass('public.club_assets') AS club_assets,
+        to_regclass('public.task_deliverables') AS task_deliverables,
+        to_regclass('public.login_gallery_items') AS login_gallery_items`,
     );
     const row = res.rows[0] ?? {};
-    if (row.profiles && row.club_assets) {
+    if (
+      row.profiles &&
+      row.club_assets &&
+      row.task_deliverables &&
+      row.login_gallery_items
+    ) {
       return {
         status: 'OK',
         message: `${label} reachable & migrated (${target})`,

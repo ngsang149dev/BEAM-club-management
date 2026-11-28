@@ -21,15 +21,19 @@ export {
   RATE_LIMIT_MAX_FAILED_PER_PAIR,
   RATE_LIMIT_WINDOW_MINUTES,
   resolveLoginRedirect,
+  SESSION_TOUCH_THROTTLE_MS,
   type SessionTtlConfig,
+  shouldThrottleSessionTouch,
 } from './policy';
 export { DrizzleAuthRepository } from './repository';
 export type {
   AuthRepository,
   CreateSessionInput,
   DepartmentRecord,
+  LoginRateLimitFailures,
   ProfileWithDepartmentsRecord,
   RevokeAllActiveSessionsInput,
+  SessionAuthContextRecord,
   SessionRecord,
 } from './types';
 export {
@@ -51,7 +55,7 @@ export {
   type LoginFormInput,
   type LoginRequestInput,
   type UpdateMeRequestInput,
-} from './schemas';
+} from '@/lib/auth';
 export {
   AuthService,
   type AuthenticatedSession,

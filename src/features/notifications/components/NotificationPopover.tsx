@@ -78,7 +78,7 @@ function NotificationItemRow({
       <button
         type="button"
         className={isUnread ? 'notif-item is-unread' : 'notif-item'}
-        title={t('openTaskHint', { boardName: item.boardName })}
+        title={t('openTaskHint')}
         onClick={() => onSelect(item)}
       >
         <span
@@ -89,8 +89,6 @@ function NotificationItemRow({
         <span className="notif-item-body">
           <span className="notif-item-msg">{message}</span>
           <span className="notif-item-meta">
-            <span>{item.boardName}</span>
-            <span aria-hidden="true">·</span>
             <time className="mono" dateTime={item.createdAt}>
               {formatTaskDateTime(item.createdAt, locale)}
             </time>

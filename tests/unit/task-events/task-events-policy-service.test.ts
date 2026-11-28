@@ -68,7 +68,7 @@ function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
     columnId: COL_A,
     title: 'Initial Title',
     description: 'Initial Desc',
-    startAt: null,
+    startAt: new Date('2026-11-26T04:00:00.000Z'),
     dueAt: new Date('2026-12-01T10:00:00.000Z'),
     isCompleted: false,
     completedAt: null,
@@ -694,5 +694,27 @@ describe('task-events schemas, policy, commands & TaskEventsService', () => {
     await expect(
       service.revertTaskEvent(ASSIGNEE_UPDATE, TASK_ID, rangeConflictEvt.id, { force: false }),
     ).rejects.toMatchObject({ httpStatus: 400, code: 'INVALID_DATE_RANGE' });
+
+    // Reverting historical task.updated with null start_at/due_at fails 409 REVERT_CONFLICT (even with force=true)
+    const legacyNullEvt = repo.seedEvent({
+      taskId: TASK_ID,
+      boardId: BOARD_ID,
+      actorId: ASSIGNEE_ID,
+      type: 'task.updated',
+      changes: {
+        start_at: { from: null, to: '2026-11-25T00:00:00.000Z' },
+        due_at: { from: null, to: '2026-11-27T00:00:00.000Z' },
+      },
+      revertsEventId: null,
+      forced: false,
+      createdAt: clock.now(),
+    });
+    await expect(
+      service.revertTaskEvent(ASSIGNEE_UPDATE, TASK_ID, legacyNullEvt.id, { force: true }),
+    ).rejects.toMatchObject({
+      httpStatus: 409,
+      code: 'REVERT_CONFLICT',
+      details: { conflictingFields: ['start_at', 'due_at'] },
+    });
   });
 });

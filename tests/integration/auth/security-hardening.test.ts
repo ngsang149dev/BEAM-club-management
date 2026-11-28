@@ -97,14 +97,11 @@ function makeTestConfig(suffix: string): Config {
     testDatabaseUrl: process.env.TEST_DATABASE_URL!,
     sessionSecret: `hardening-test-secret-${suffix}-0123456789`,
     sessionTtlMinutes: 30,
-    sessionTtlDefaultHours: 24,
-    sessionTtlRememberDays: 30,
     allowedEmailDomain: 'eiu.edu.vn',
     defaultInitialPassword: DEV_SEED_PASSWORD,
     cronSecret: `hardening-cron-${suffix}`,
     smtp: {},
     appUrl: 'http://localhost:3000',
-    undoToastSeconds: 10,
   };
 }
 

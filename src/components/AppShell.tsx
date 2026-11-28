@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import { usePermissions } from '@/features/shared/permissions/can';
 import type { AppLocale } from '@/i18n/locale';
 import {
@@ -176,17 +177,6 @@ function AppMobileTabs({
   );
 }
 
-function useEscapeCloseDrawer(drawerOpen: boolean, closeDrawer: () => void) {
-  useEffect(() => {
-    if (!drawerOpen) return;
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') closeDrawer();
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drawerOpen, closeDrawer]);
-}
-
 export function AppShell(props: AppShellProps) {
   const pathname = usePathname() ?? '/';
   const tApp = useTranslations('app');
@@ -194,7 +184,7 @@ export function AppShell(props: AppShellProps) {
   const permCheck = usePermissions();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  useEscapeCloseDrawer(drawerOpen, () => setDrawerOpen(false));
+  useEscapeClose(drawerOpen, () => setDrawerOpen(false));
 
   const workspaceItems = WORKSPACE_NAV.filter((item) => isNavPermitted(item, permCheck));
   const adminItems = ADMIN_NAV.filter((item) => isNavPermitted(item, permCheck));

@@ -81,8 +81,8 @@ export interface RevertResolvedTargets {
 export interface RevertTaskPatch {
   readonly title?: string;
   readonly description?: string | null;
-  readonly startAt?: Date | null;
-  readonly dueAt?: Date | null;
+  readonly startAt?: Date;
+  readonly dueAt?: Date;
   readonly isCompleted?: boolean;
   readonly completedAt?: Date | null;
   readonly priority?: TaskPriority;

@@ -168,7 +168,6 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
     const taskSoftDeletedId = randomUUID();
     const taskPurgedId = randomUUID();
     const taskOnArchivedBoardId = randomUUID();
-    const taskNoDueId = randomUUID();
     const taskUnmatchedDayId = randomUUID();
     const taskRetryId = randomUUID();
 
@@ -186,13 +185,10 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `rem-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: `rem-cron-secret-${suffix}`,
       smtp: {},
       appUrl: 'https://beam.club.test/',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -342,6 +338,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colDoingId,
           title: `Overdue Task ${suffix}`,
+          startAt: new Date('2026-11-24T10:00:00.000Z'),
           dueAt: new Date('2026-11-25T10:00:00.000Z'), // -1 VN day
           priority: 4,
           position: '1000',
@@ -353,6 +350,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colTodoId,
           title: `Due Today Task ${suffix}`,
+          startAt: new Date('2026-11-25T10:00:00.000Z'),
           dueAt: new Date('2026-11-26T10:00:00.000Z'), // 0 VN days
           priority: 3,
           position: '2000',
@@ -364,6 +362,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colTodoId,
           title: `TOP_SECRET_BUDGET_${suffix}`,
+          startAt: new Date('2026-11-26T10:00:00.000Z'),
           dueAt: new Date('2026-11-27T10:00:00.000Z'), // +1 VN day
           priority: 2,
           position: '3000',
@@ -375,6 +374,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colTodoId,
           title: `SECRET_DEPT_PLAN_${suffix}`,
+          startAt: new Date('2026-11-26T10:00:00.000Z'),
           dueAt: new Date('2026-11-28T10:00:00.000Z'), // +2 VN days
           priority: 3,
           position: '4000',
@@ -387,6 +387,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colDoneId,
           title: `Done Overdue ${suffix}`,
+          startAt: new Date('2026-11-24T10:00:00.000Z'),
           dueAt: new Date('2026-11-25T10:00:00.000Z'),
           priority: 4,
           position: '5000',
@@ -398,6 +399,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colTodoId,
           title: `Deleted Task ${suffix}`,
+          startAt: new Date('2026-11-24T10:00:00.000Z'),
           dueAt: new Date('2026-11-25T10:00:00.000Z'),
           priority: 4,
           position: '6000',
@@ -410,6 +412,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colTodoId,
           title: `Purged Task ${suffix}`,
+          startAt: new Date('2026-11-24T10:00:00.000Z'),
           dueAt: new Date('2026-11-25T10:00:00.000Z'),
           priority: 4,
           position: '7000',
@@ -423,20 +426,10 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: archivedBoardId,
           columnId: colArchivedBoardId,
           title: `Archived Board Task ${suffix}`,
+          startAt: new Date('2026-11-24T10:00:00.000Z'),
           dueAt: new Date('2026-11-25T10:00:00.000Z'),
           priority: 4,
           position: '8000',
-          isHidden: false,
-          createdBy: adminId,
-        },
-        {
-          id: taskNoDueId,
-          boardId: activeBoardId,
-          columnId: colTodoId,
-          title: `No Due Task ${suffix}`,
-          dueAt: null,
-          priority: 2,
-          position: '9000',
           isHidden: false,
           createdBy: adminId,
         },
@@ -445,6 +438,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
           boardId: activeBoardId,
           columnId: colTodoId,
           title: `Far Future Task ${suffix}`,
+          startAt: new Date('2026-12-01T10:00:00.000Z'),
           dueAt: new Date('2026-12-02T10:00:00.000Z'), // +6 VN days
           priority: 2,
           position: '10000',
@@ -462,7 +456,6 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
         { taskId: taskSoftDeletedId, userId: userViId },
         { taskId: taskPurgedId, userId: userViId },
         { taskId: taskOnArchivedBoardId, userId: userViId },
-        { taskId: taskNoDueId, userId: userViId },
         { taskId: taskUnmatchedDayId, userId: userViId },
       ]);
 
@@ -624,7 +617,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
       expect(viMail!.text).toContain(`Overdue Task ${suffix}`);
       expect(viMail!.text).toContain(`Due Today Task ${suffix}`);
       expect(viMail!.text).toContain('(Công việc ẩn — đăng nhập để xem chi tiết)');
-      expect(viMail!.text).toContain('https://beam.club.test/my-tasks');
+      expect(viMail!.text).toContain('https://beam.club.test/progress');
       expect(viMail!.text).not.toContain(`TOP_SECRET_BUDGET_${suffix}`);
       expect(viMail!.html).not.toContain(`TOP_SECRET_BUDGET_${suffix}`);
       expect(viMail!.text).not.toContain(`SECRET_DEPT_PLAN_${suffix}`);
@@ -639,7 +632,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
       expect(enMail!.text).toContain('Due today');
       expect(enMail!.text).toContain('Coming up');
       expect(enMail!.text).toContain('(Hidden task — sign in to view details)');
-      expect(enMail!.text).toContain('https://beam.club.test/my-tasks');
+      expect(enMail!.text).toContain('https://beam.club.test/progress');
       expect(enMail!.text).not.toContain(`TOP_SECRET_BUDGET_${suffix}`);
       expect(enMail!.text).not.toContain(`SECRET_DEPT_PLAN_${suffix}`);
       expect(enMail!.html).not.toContain(`SECRET_DEPT_PLAN_${suffix}`);
@@ -674,6 +667,7 @@ describe('Reminders Settings & Cron Route Handlers integration', () => {
         boardId: activeBoardId,
         columnId: colTodoId,
         title: `Retry Task ${suffix}`,
+        startAt: new Date('2026-11-26T10:00:00.000Z'),
         dueAt: new Date('2026-11-28T10:00:00.000Z'), // d2
         priority: 2,
         position: '11000',

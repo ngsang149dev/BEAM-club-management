@@ -1,7 +1,7 @@
+import type { ChangeMyPasswordRequestInput } from '@/lib/auth';
 import type { PermissionCode } from '@/lib/permissions';
 import type { AuthActor } from '@/server/shared/authorize';
 import type { TransactionContext } from '@/server/shared/transaction';
-import type { ChangeMyPasswordRequestInput } from './schemas';
 
 export interface DepartmentRecord {
   readonly id: string;
@@ -46,6 +46,16 @@ export interface RevokeAllActiveSessionsInput {
   readonly revokedAt: Date;
 }
 
+export interface LoginRateLimitFailures {
+  readonly pairFailedCount: number;
+  readonly ipFailedCount: number;
+}
+
+export interface SessionAuthContextRecord {
+  readonly profile: ProfileWithDepartmentsRecord;
+  readonly permissions: PermissionCode[];
+}
+
 export interface AuthRepository {
   countRecentFailedLoginAttempts(ip: string, since: Date): Promise<number>;
   countRecentFailedLoginAttemptsForPair(
@@ -53,6 +63,11 @@ export interface AuthRepository {
     studentId: string,
     since: Date,
   ): Promise<number>;
+  countLoginRateLimitFailures?(params: {
+    readonly ip: string;
+    readonly attemptKey: string;
+    readonly since: Date;
+  }): Promise<LoginRateLimitFailures>;
   countRecentFailedAttemptsByKey(key: string, since: Date): Promise<number>;
   recordLoginAttempt(input: {
     readonly studentId: string;
@@ -67,6 +82,9 @@ export interface AuthRepository {
     userId: string,
   ): Promise<ProfileWithDepartmentsRecord | null>;
   findUserPermissions(userId: string): Promise<PermissionCode[]>;
+  findSessionAuthContext?(
+    userId: string,
+  ): Promise<SessionAuthContextRecord | null>;
   createSession(
     input: CreateSessionInput,
     tx?: TransactionContext,

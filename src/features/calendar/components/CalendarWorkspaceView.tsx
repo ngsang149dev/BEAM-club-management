@@ -3,9 +3,9 @@
 import { useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { ErrorState } from '@/components/ErrorState';
-import { BoardTrashModal } from '@/features/boards/components/BoardTrashModal';
 import { CreateTaskModal } from '@/features/tasks/components/CreateTaskModal';
 import { TaskDetailDrawer } from '@/features/tasks/components/TaskDetailDrawer';
+import { WorkspaceTrashModal } from '@/features/tasks/components/WorkspaceTrashModal';
 import { describeTaskError } from '@/features/tasks/error-mapping';
 import {
   buildYearCalendar,
@@ -18,7 +18,6 @@ import { useCalendarViewport } from '../hooks/useCalendarViewport';
 import { CalendarLegend } from './CalendarLegend';
 import { CalendarTimeline } from './CalendarTimeline';
 import { CalendarToolbar } from './CalendarToolbar';
-import { CalendarUnscheduledTray } from './CalendarUnscheduledTray';
 
 function CalendarErrorBody({ error, onRetry }: { readonly error: unknown; readonly onRetry: () => void }) {
   const tCal = useTranslations('calendar');
@@ -55,17 +54,10 @@ function CalendarModals({
   readonly onCloseTrash: () => void;
   readonly onCloseTask: () => void;
 }) {
-  const tCal = useTranslations('calendar');
   return (
     <>
       {createOpen ? <CreateTaskModal onClose={onCloseCreate} /> : null}
-      {trashOpen ? (
-        <BoardTrashModal
-          boardId={null}
-          boardName={tCal('workspaceBoardName')}
-          onClose={onCloseTrash}
-        />
-      ) : null}
+      {trashOpen ? <WorkspaceTrashModal onClose={onCloseTrash} /> : null}
       <TaskDetailDrawer taskId={selectedTaskId} onClose={onCloseTask} />
     </>
   );
@@ -98,7 +90,6 @@ function useCalendarWorkspaceData() {
     viewport,
     counts,
     lanes: packed.lanes,
-    unscheduled: packed.unscheduled,
     departments,
     currentVnYear,
     currentVnMonthIndex: Number.parseInt(todayIso.slice(5, 7), 10) - 1,
@@ -156,7 +147,7 @@ export function CalendarWorkspaceView() {
   const [createOpen, setCreateOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const data = useCalendarWorkspaceData();
-  const { state, setYear, setDeadlineFilter, setDepartmentId, setSearchQuery, openTaskModal, closeTaskModal } = data.calTasks;
+  const { state, setYear, setDeadlineFilter, setDepartmentId, setSearchQuery, closeTaskModal } = data.calTasks;
 
   const handleCenterToday = () => {
     if (state.year !== data.currentVnYear) {
@@ -192,7 +183,6 @@ export function CalendarWorkspaceView() {
         onOpenTrash={() => setTrashOpen(true)}
       />
       <CalendarBodyContent data={data} />
-      <CalendarUnscheduledTray tasks={data.unscheduled} todayIso={data.calTasks.todayIso} onOpenTask={openTaskModal} />
       <CalendarLegend />
       <CalendarModals
         createOpen={createOpen}

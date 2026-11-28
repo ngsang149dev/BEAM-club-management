@@ -115,13 +115,10 @@ describe('Auth & /me Route Handlers integration', () => {
       testDatabaseUrl: testDbUrl,
       sessionSecret: `route-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'route-test-cron-secret',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     container = createContainer({

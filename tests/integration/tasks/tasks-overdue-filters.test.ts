@@ -109,13 +109,10 @@ describe('GET /api/v1/tasks dueStatus=overdue & combined filters/sort integratio
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `tasks-overdue-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'tasks-overdue-cron',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -174,12 +171,12 @@ describe('GET /api/v1/tasks dueStatus=overdue & combined filters/sort integratio
       const tUpcoming = randomUUID();
 
       await tx.insert(tasks).values([
-        { id: tActiveOverdue1, boardId: board1Id, columnId: colTodo, title: `Alpha_100% ${suffix}`, dueAt: pastDue1, priority: 3, position: '1000', isHidden: false, createdBy: adminId },
-        { id: tActiveOverdue2, boardId: board1Id, columnId: colDoing, title: `AlphaX1000 ${suffix}`, dueAt: pastDue2, priority: 4, position: '2000', isHidden: false, createdBy: adminId },
-        { id: tHiddenOverdue, boardId: board1Id, columnId: colTodo, title: `Alpha_100% Hidden ${suffix}`, dueAt: pastDue1, priority: 4, position: '3000', isHidden: true, createdBy: adminId },
-        { id: tDoneNameOverdue, boardId: board1Id, columnId: colDoneName, title: `Alpha_100% Done ${suffix}`, dueAt: pastDue1, priority: 4, position: '1000', isHidden: false, createdBy: adminId },
-        { id: tFinalOrderOverdue, boardId: board2Id, columnId: colBoard2Final, title: `Final Col Overdue ${suffix}`, dueAt: pastDue1, priority: 4, position: '1000', isHidden: false, createdBy: adminId },
-        { id: tUpcoming, boardId: board1Id, columnId: colTodo, title: `Upcoming ${suffix}`, dueAt: futureDue, priority: 4, position: '4000', isHidden: false, createdBy: adminId },
+        { id: tActiveOverdue1, boardId: board1Id, columnId: colTodo, title: `Alpha_100% ${suffix}`, startAt: pastDue1, dueAt: pastDue1, priority: 3, position: '1000', isHidden: false, createdBy: adminId },
+        { id: tActiveOverdue2, boardId: board1Id, columnId: colDoing, title: `AlphaX1000 ${suffix}`, startAt: pastDue2, dueAt: pastDue2, priority: 4, position: '2000', isHidden: false, createdBy: adminId },
+        { id: tHiddenOverdue, boardId: board1Id, columnId: colTodo, title: `Alpha_100% Hidden ${suffix}`, startAt: pastDue1, dueAt: pastDue1, priority: 4, position: '3000', isHidden: true, createdBy: adminId },
+        { id: tDoneNameOverdue, boardId: board1Id, columnId: colDoneName, title: `Alpha_100% Done ${suffix}`, startAt: pastDue1, dueAt: pastDue1, priority: 4, position: '1000', isHidden: false, createdBy: adminId },
+        { id: tFinalOrderOverdue, boardId: board2Id, columnId: colBoard2Final, title: `Final Col Overdue ${suffix}`, startAt: pastDue1, dueAt: pastDue1, priority: 4, position: '1000', isHidden: false, createdBy: adminId },
+        { id: tUpcoming, boardId: board1Id, columnId: colTodo, title: `Upcoming ${suffix}`, startAt: futureDue, dueAt: futureDue, priority: 4, position: '4000', isHidden: false, createdBy: adminId },
       ]);
       await tx.insert(taskAssignees).values([
         { taskId: tActiveOverdue1, userId: assigneeId },

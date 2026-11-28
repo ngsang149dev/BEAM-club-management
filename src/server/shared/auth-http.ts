@@ -98,20 +98,6 @@ export function attachSessionCookie(
   });
 }
 
-export function refreshSessionCookieIfRemembered(
-  response: NextResponse,
-  options: {
-    readonly rawToken: string | null;
-    readonly rememberMe?: boolean;
-    readonly request: Request;
-    readonly config: Pick<Config, 'nodeEnv'>;
-  },
-): void {
-  // Retained as a no-op for route callers; browser session cookies never carry Max-Age.
-  void response;
-  void options;
-}
-
 export function clearSessionCookie(
   response: NextResponse,
   request: Request,
@@ -210,28 +196,21 @@ export async function authenticateApiRequest(
 export interface AuthenticatedJsonResponseOptions {
   readonly status?: number;
   readonly requestId: string;
-  readonly rawToken: string;
-  readonly rememberMe: boolean;
-  readonly request: Request;
-  readonly config: Pick<Config, 'nodeEnv'>;
+  readonly rawToken?: string;
+  readonly rememberMe?: boolean;
+  readonly request?: Request;
+  readonly config?: Pick<Config, 'nodeEnv'>;
 }
 
 export function createAuthenticatedJsonResponse<T>(
   data: T,
   options: AuthenticatedJsonResponseOptions,
 ): NextResponse<T> {
-  const response = NextResponse.json(data, {
+  return NextResponse.json(data, {
     status: options.status ?? 200,
     headers: {
       'Cache-Control': 'no-store',
       'x-request-id': options.requestId,
     },
   });
-  refreshSessionCookieIfRemembered(response, {
-    rawToken: options.rawToken,
-    rememberMe: options.rememberMe,
-    request: options.request,
-    config: options.config,
-  });
-  return response;
 }

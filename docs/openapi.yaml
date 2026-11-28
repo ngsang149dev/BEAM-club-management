@@ -3412,10 +3412,10 @@ components:
         description:
           type: ["string", "null"]
         startAt:
-          type: ["string", "null"]
+          type: string
           format: date-time
         dueAt:
-          type: ["string", "null"]
+          type: string
           format: date-time
         isCompleted:
           type: boolean
@@ -3497,7 +3497,7 @@ components:
 
     CreateTaskRequest:
       type: object
-      required: [title]
+      required: [title, startAt, dueAt]
       properties:
         boardId:
           type: string
@@ -3514,10 +3514,10 @@ components:
         description:
           type: ["string", "null"]
         startAt:
-          type: ["string", "null"]
+          type: string
           format: date-time
         dueAt:
-          type: ["string", "null"]
+          type: string
           format: date-time
         priority:
           type: integer
@@ -3561,10 +3561,10 @@ components:
         description:
           type: ["string", "null"]
         startAt:
-          type: ["string", "null"]
+          type: string
           format: date-time
         dueAt:
-          type: ["string", "null"]
+          type: string
           format: date-time
         isCompleted:
           type: boolean

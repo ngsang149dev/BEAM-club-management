@@ -49,7 +49,9 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).toContain('href="/tasks"');
     expect(html).toContain('href="/tasks" class="app-brand"');
     expect(html).not.toContain('href="/"');
-    expect(html).toContain('href="/my-tasks"');
+    expect(html).not.toContain('href="/my-tasks"');
+    expect(html).toContain('href="/progress"');
+    expect(html).toContain('Tiến độ cá nhân');
     expect(html).toContain('href="/profile"');
     expect(html).not.toContain('href="/members"');
     expect(html).not.toContain('href="/archive"');
@@ -76,6 +78,8 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     );
 
     expect(html).toContain('href="/members"');
+    expect(html).toContain('href="/progress"');
+    expect(html).toContain('Member Progress');
     expect(html).toContain('href="/admin/departments"');
     expect(html).toContain('href="/admin/reminders"');
     expect(html).toContain('href="/admin/audit"');
@@ -85,8 +89,8 @@ describe('AppShell navigation visibility and bilingual rendering', () => {
     expect(html).not.toContain('href="/admin/branding"');
   });
 
-  it('shows archive link when non-admin holds any archive permission (task.delete, member.deactivate, board.delete)', () => {
-    for (const perm of ['task.delete', 'member.deactivate', 'board.delete'] as const) {
+  it('shows archive link when non-admin holds any archive permission (task.delete, member.deactivate)', () => {
+    for (const perm of ['task.delete', 'member.deactivate'] as const) {
       const html = renderToStaticMarkup(
         <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Ho_Chi_Minh">
           <PermissionsProvider isAdmin={false} permissions={[perm]}>

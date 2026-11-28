@@ -1,6 +1,7 @@
 import net from 'node:net';
 import tls from 'node:tls';
 import type { Config } from './config';
+import { scrubPiiText } from './logger';
 import {
   buildMimePayload,
   parseAuthMechanisms,
@@ -180,4 +181,32 @@ export function createMailerFromConfig(config: Pick<Config, 'smtp'>): Mailer {
     });
   }
   return new NoopMailer();
+}
+
+function formatMailSubError(item: unknown): string {
+  return item instanceof Error ? item.message : String(item);
+}
+
+function extractAggregateMailMessages(error: Error): string {
+  if (!('errors' in error) || !Array.isArray(error.errors)) {
+    return '';
+  }
+  return error.errors
+    .map(formatMailSubError)
+    .filter((msg) => msg.trim().length > 0)
+    .join('; ');
+}
+
+export function extractSafeMailErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Mail delivery error';
+  }
+  if (error.message.trim().length > 0) {
+    return scrubPiiText(error.message);
+  }
+  const aggregateMessage = extractAggregateMailMessages(error);
+  if (aggregateMessage.length > 0) {
+    return scrubPiiText(aggregateMessage);
+  }
+  return scrubPiiText(error.name || 'Mail delivery error');
 }

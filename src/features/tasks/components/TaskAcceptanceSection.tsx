@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { MemberAvatar } from '@/components/MemberAvatar';
@@ -72,7 +71,6 @@ function useAcceptanceController(
 ) {
   const tTasks = useTranslations('tasks');
   const tMember = useTranslations('member');
-  const [notice, setNotice] = useState<string | null>(null);
   const acceptanceMutation = useUpdateTaskAcceptanceMutation();
 
   const currentAssignee = currentUserId
@@ -87,7 +85,6 @@ function useAcceptanceController(
   );
 
   const handleToggle = (nextAccepted: boolean) => {
-    setNotice(null);
     acceptanceMutation.mutate(
       { id: task.id, accepted: nextAccepted },
       {
@@ -97,14 +94,13 @@ function useAcceptanceController(
             leadNames.length > 0
               ? tTasks('notifiedLeadsBanner', { leads: leadNames.join(', ') })
               : tTasks('notifiedCreatorBanner');
-          setNotice(banner);
           toast.success(banner);
         },
       }
     );
   };
 
-  return { isAccepted, acceptedCount, notice, acceptanceMutation, handleToggle };
+  return { isAccepted, acceptedCount, acceptanceMutation, handleToggle };
 }
 
 export function TaskAcceptanceSection({
@@ -140,11 +136,6 @@ export function TaskAcceptanceSection({
         />
       ) : null}
       <TaskErrorBanner error={ctrl.acceptanceMutation.error} />
-      {ctrl.notice ? (
-        <div className="ui-banner is-success" role="status">
-          <div className="ui-banner-body"><span className="ui-banner-text">{ctrl.notice}</span></div>
-        </div>
-      ) : null}
       {task.assignees.length === 0 ? (
         <p className="ui-field-hint">{tTasks('assigneesEmpty')}</p>
       ) : (

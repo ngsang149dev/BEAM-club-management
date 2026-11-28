@@ -134,6 +134,7 @@ function buildTaskEventsService(
     new TaskEventsService({
       taskEventsRepo:
         overrides.taskEventsRepo ?? new DrizzleTaskEventsRepository(infra.db),
+      auditWriter: infra.auditWriter,
       transactionRunner: infra.transactionRunner,
       clock: infra.clock,
       logger: infra.logger,
@@ -152,6 +153,7 @@ export function buildWorkstreamServices(
     overrides.tasksService ??
     new TasksService({
       tasksRepo,
+      auditWriter: infra.auditWriter,
       transactionRunner: infra.transactionRunner,
       clock: infra.clock,
       logger: infra.logger,

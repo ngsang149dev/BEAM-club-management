@@ -5,7 +5,7 @@ import { useId } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
-import { useEscapeClose } from '@/features/departments/components/DepartmentModals';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import type { DepartmentDto } from '@/features/departments/hooks/useDepartments';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { DEFAULT_ALLOWED_EMAIL_DOMAIN } from '@/lib/members';

@@ -135,11 +135,9 @@ export function CreateTaskToggleRow({
 
 export function CreateTaskModalHeader({
   titleId,
-  columnName,
   onClose,
 }: {
   readonly titleId: string;
-  readonly columnName?: string;
   readonly onClose: () => void;
 }) {
   const tTasks = useTranslations('tasks');
@@ -147,10 +145,7 @@ export function CreateTaskModalHeader({
 
   return (
     <div className="ui-modal-header">
-      <div>
-        <h2 id={titleId} className="ui-modal-title">{tTasks('createModalTitle')}</h2>
-        {columnName ? <span className="admin-card-hint">{columnName}</span> : null}
-      </div>
+      <h2 id={titleId} className="ui-modal-title">{tTasks('createModalTitle')}</h2>
       <button type="button" className="ui-icon-btn" aria-label={tCommon('close')} onClick={onClose}>
         ✕
       </button>

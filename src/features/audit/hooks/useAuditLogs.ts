@@ -18,7 +18,7 @@ export interface AuditFiltersState {
 
 export const DEFAULT_AUDIT_FILTERS: AuditFiltersState = {
   action: '',
-  dateRange: '30d',
+  dateRange: 'all',
   actorId: '',
   targetUserId: '',
   limit: 20,

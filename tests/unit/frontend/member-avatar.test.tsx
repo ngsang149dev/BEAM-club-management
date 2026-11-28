@@ -175,7 +175,7 @@ describe('MemberAvatar, ClubLogo & TaskAssigneeChips', () => {
     expect(logoImgV2.props.src).toBe(logoV2);
   });
 
-  it('invalidates boardDetail, taskDetail, myTasks, assigneeMembers, me, members, and auditLogs on avatar updates', async () => {
+  it('invalidates tasks, taskDetail, me, members, and auditLogs on avatar updates', async () => {
     const queryClient = new QueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -184,10 +184,8 @@ describe('MemberAvatar, ClubLogo & TaskAssigneeChips', () => {
     expect(myKeys).toContainEqual(['auth', 'me']);
     expect(myKeys).toContainEqual(['members']);
     expect(myKeys).toContainEqual(['auditLogs']);
-    expect(myKeys).toContainEqual(['boardDetail']);
     expect(myKeys).toContainEqual(['taskDetail']);
-    expect(myKeys).toContainEqual(['myTasks']);
-    expect(myKeys).toContainEqual(['tasks', 'assigneeMembers']);
+    expect(myKeys).toContainEqual(['tasks']);
 
     invalidateSpy.mockClear();
     await invalidateMemberAvatarRelatedQueries(queryClient);
@@ -195,9 +193,7 @@ describe('MemberAvatar, ClubLogo & TaskAssigneeChips', () => {
     expect(memberKeys).toContainEqual(['members']);
     expect(memberKeys).toContainEqual(['auth', 'me']);
     expect(memberKeys).toContainEqual(['auditLogs']);
-    expect(memberKeys).toContainEqual(['boardDetail']);
     expect(memberKeys).toContainEqual(['taskDetail']);
-    expect(memberKeys).toContainEqual(['myTasks']);
-    expect(memberKeys).toContainEqual(['tasks', 'assigneeMembers']);
+    expect(memberKeys).toContainEqual(['tasks']);
   });
 });

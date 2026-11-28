@@ -12,6 +12,7 @@ import {
   toTaskPageResponseDto,
   toTaskVisibilitySubject,
 } from '@/server/modules/tasks';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Logger } from '@/server/shared/logger';
@@ -35,6 +36,7 @@ import type { RevertTaskEventMutationResult, TaskEventsRepository } from './type
 
 export interface TaskEventsServiceDeps {
   readonly taskEventsRepo: TaskEventsRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly transactionRunner: TransactionRunner;
   readonly clock: Clock;
   readonly logger: Logger;
@@ -171,7 +173,14 @@ export class TaskEventsService {
       force: params.input.force,
     });
 
-    return this.commitRevertCommand({ ...params, task: context.task, eventId: event.id, changes: event.changes, command });
+    return this.commitRevertCommand({
+      ...params,
+      task: context.task,
+      eventId: event.id,
+      eventType: event.type,
+      changes: event.changes,
+      command,
+    });
   }
 
   private async commitRevertCommand(params: {
@@ -179,6 +188,7 @@ export class TaskEventsService {
     readonly taskId: string;
     readonly task: TaskRecord;
     readonly eventId: string;
+    readonly eventType: string;
     readonly changes: Record<string, unknown>;
     readonly input: RevertTaskEventRequestInput;
     readonly command: TaskEventCommand;
@@ -190,25 +200,44 @@ export class TaskEventsService {
       { boardId: params.task.boardId, taskId: params.taskId, intent },
       params.tx,
     );
-    const plan = params.command.apply({
-      task: params.task,
-      intent,
-      resolved,
-      now: params.now,
-    });
+    const plan = params.command.apply({ task: params.task, intent, resolved, now: params.now });
     const mutated = await this.deps.taskEventsRepo.applyRevertAndInsertEvent(
       {
-        taskId: params.taskId,
-        boardId: params.task.boardId,
-        actorId: params.actor.id,
-        expectedVersion: params.task.version,
-        revertsEventId: params.eventId,
-        forced: params.input.force,
-        plan,
-        now: params.now,
+        taskId: params.taskId, boardId: params.task.boardId, actorId: params.actor.id,
+        expectedVersion: params.task.version, revertsEventId: params.eventId,
+        forced: params.input.force, plan, now: params.now,
       },
       params.tx,
     );
+    await this.recordRevertAudit({
+      actorId: params.actor.id, revertedEventId: params.eventId,
+      revertedType: params.eventType, forced: params.input.force,
+      task: mutated.task, now: params.now, tx: params.tx,
+    });
     return { ...mutated, revertedEventId: params.eventId };
+  }
+
+  private async recordRevertAudit(params: {
+    readonly actorId: string;
+    readonly revertedEventId: string;
+    readonly revertedType: string;
+    readonly forced: boolean;
+    readonly task: TaskRecord;
+    readonly now: Date;
+    readonly tx: TransactionContext;
+  }): Promise<void> {
+    await this.deps.auditWriter?.record(
+      {
+        actorId: params.actorId, action: 'task.reverted',
+        detail: {
+          taskId: params.task.id, boardId: params.task.boardId,
+          revertedEventId: params.revertedEventId, revertedType: params.revertedType,
+          forced: params.forced, isHidden: params.task.isHidden,
+          taskTitle: params.task.isHidden ? null : params.task.title,
+        },
+        createdAt: params.now,
+      },
+      params.tx,
+    );
   }
 }

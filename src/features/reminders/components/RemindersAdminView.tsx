@@ -10,7 +10,6 @@ import { usePermissions } from '@/features/shared/permissions/can';
 import { formatTaskDateTime } from '@/features/tasks/formatters';
 import {
   describeReminderError,
-  useReminderPreviewTasksQuery,
   useReminderSettingsQuery,
   useUpdateReminderSettingsMutation,
   type ReminderSettingsDto,
@@ -115,11 +114,6 @@ function RemindersLoadErrorState({ error, onRetry }: { readonly error: unknown; 
   );
 }
 
-function resolveDefaultPreviewLocale(profileLocale: string | undefined, appLocale: string): 'vi' | 'en' {
-  if (profileLocale === 'en' || profileLocale === 'vi') return profileLocale;
-  return appLocale === 'en' ? 'en' : 'vi';
-}
-
 function validateReminderSaveDraft(
   draft: UpdateReminderSettingsRequest,
   t: ReturnType<typeof useTranslations<'reminders'>>,
@@ -134,7 +128,7 @@ function validateReminderSaveDraft(
   };
 }
 
-interface RemindersMainColumnProps {
+function RemindersMainColumn(props: {
   readonly settings: ReminderSettingsDto;
   readonly effectiveDraft: UpdateReminderSettingsRequest;
   readonly isDirty: boolean;
@@ -144,9 +138,7 @@ interface RemindersMainColumnProps {
   readonly onChangeDraft: (next: UpdateReminderSettingsRequest) => void;
   readonly onCancel: () => void;
   readonly onSave: () => void;
-}
-
-function RemindersMainColumn(props: RemindersMainColumnProps) {
+}) {
   const { settings, effectiveDraft, isSaving, onChangeDraft } = props;
   const locale = useLocale();
   const t = useTranslations('reminders');
@@ -176,10 +168,8 @@ function RemindersMainColumn(props: RemindersMainColumnProps) {
 function RemindersLoadedLayout(props: {
   readonly settings: ReminderSettingsDto;
   readonly recipientName: string;
-  readonly defaultPreviewLocale: 'vi' | 'en';
-  readonly tasksQuery: ReturnType<typeof useReminderPreviewTasksQuery>;
 }) {
-  const { settings, tasksQuery } = props;
+  const { settings } = props;
   const t = useTranslations('reminders');
   const tErr = useTranslations('errors');
   const updateMutation = useUpdateReminderSettingsMutation();
@@ -215,28 +205,21 @@ function RemindersLoadedLayout(props: {
       />
       <ReminderEmailPreview
         recipientName={props.recipientName}
-        defaultLocale={props.defaultPreviewLocale}
         sendHourVn={settings.sendHourVn}
         daysBefore={effectiveDraft.daysBefore}
         remindOverdue={effectiveDraft.remindOverdue}
-        tasks={tasksQuery.data?.items ?? []}
-        isLoadingTasks={tasksQuery.isPending}
-        isTasksError={tasksQuery.isError}
-        onRetryTasks={() => void tasksQuery.refetch()}
       />
     </div>
   );
 }
 
 export function RemindersAdminView() {
-  const appLocale = useLocale();
   const tCommon = useTranslations('common');
   const { can } = usePermissions();
   const canConfigure = can('reminder.configure');
 
   const settingsQuery = useReminderSettingsQuery(canConfigure);
   const meQuery = useMeQuery(canConfigure);
-  const tasksQuery = useReminderPreviewTasksQuery(canConfigure);
 
   if (!canConfigure) return <RemindersForbiddenState />;
   if (settingsQuery.isPending) return <p className="auth-loading" role="status">{tCommon('loading')}</p>;
@@ -248,8 +231,6 @@ export function RemindersAdminView() {
     <RemindersLoadedLayout
       settings={settingsQuery.data.settings}
       recipientName={meQuery.data?.profile.fullName ?? ''}
-      defaultPreviewLocale={resolveDefaultPreviewLocale(meQuery.data?.profile.locale, appLocale)}
-      tasksQuery={tasksQuery}
     />
   );
 }

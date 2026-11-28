@@ -12,6 +12,7 @@ import {
   permissions,
   profiles,
   taskEvents,
+  tasks,
   userPermissions,
 } from '@db/schema';
 import { POST as loginPost } from '@/app/api/v1/auth/login/route';
@@ -139,13 +140,10 @@ describe('Task Events History, Revert & Board Trash Route Handlers integration',
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `task-events-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'task-events-cron-secret',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -249,6 +247,8 @@ describe('Task Events History, Revert & Board Trash Route Handlers integration',
             boardId,
             columnId: todoColId,
             title: `Task History ${suffix}`,
+            startAt: '2026-11-26T00:00:00.000Z',
+            dueAt: '2026-11-28T00:00:00.000Z',
             priority: 2,
             assigneeIds: [assigneeId],
             departmentIds: [deptId],
@@ -559,7 +559,7 @@ describe('Task Events History, Revert & Board Trash Route Handlers integration',
         new Request('http://localhost:3000/api/v1/tasks', {
           method: 'POST',
           headers: { 'content-type': 'application/json', cookie: adminCookie },
-          body: JSON.stringify({ boardId, columnId: todoColId, title: `Hidden Trash ${suffix}`, isHidden: true }),
+          body: JSON.stringify({ boardId, columnId: todoColId, title: `Hidden Trash ${suffix}`, startAt: '2026-11-26T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z', isHidden: true }),
         }),
       );
       const hiddenTaskId = ((await hiddenTaskCreateRes.json()) as { task: { id: string } }).task.id;
@@ -692,6 +692,58 @@ describe('Task Events History, Revert & Board Trash Route Handlers integration',
         'Audit note',
       ]) {
         expect(serialized).not.toContain(pii);
+      }
+
+      // 10. Historical task.updated event with null start_at/due_at cannot be reverted even with force=true (409 REVERT_CONFLICT)
+      const legacyBoardId = randomUUID();
+      const legacyColId = randomUUID();
+      const legacyTaskId = randomUUID();
+      const legacyEventId = randomUUID();
+      await tx.insert(boards).values({ id: legacyBoardId, name: `Legacy Board ${suffix}`, createdBy: adminId });
+      await tx.insert(columns).values({ id: legacyColId, boardId: legacyBoardId, name: 'Todo', orderIndex: 0 });
+      await tx.insert(tasks).values({
+        id: legacyTaskId,
+        boardId: legacyBoardId,
+        columnId: legacyColId,
+        title: `Legacy Task ${suffix}`,
+        position: '1000',
+        startAt: new Date('2026-11-26T00:00:00.000Z'),
+        dueAt: new Date('2026-11-28T00:00:00.000Z'),
+        createdBy: adminId,
+      });
+      await tx.insert(taskEvents).values({
+        id: legacyEventId,
+        taskId: legacyTaskId,
+        boardId: legacyBoardId,
+        actorId: adminId,
+        type: 'task.updated',
+        changes: {
+          start_at: { from: null, to: '2026-11-26T00:00:00.000Z' },
+          due_at: { from: null, to: '2026-11-28T00:00:00.000Z' },
+        },
+      });
+
+      for (const force of [false, true]) {
+        const legacyRevertRes = await taskEventRevertPost(
+          new Request(
+            `http://localhost:3000/api/v1/tasks/${legacyTaskId}/events/${legacyEventId}/revert`,
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', cookie: adminCookie },
+              body: JSON.stringify({ force }),
+            },
+          ),
+          { params: Promise.resolve({ id: legacyTaskId, eventId: legacyEventId }) },
+        );
+        expect(legacyRevertRes.status).toBe(409);
+        const legacyRevertBody = (await legacyRevertRes.json()) as {
+          error: { code: string; details?: { conflictingFields?: string[] } };
+        };
+        expect(legacyRevertBody.error.code).toBe('REVERT_CONFLICT');
+        expect(legacyRevertBody.error.details?.conflictingFields).toEqual([
+          'start_at',
+          'due_at',
+        ]);
       }
     });
   });

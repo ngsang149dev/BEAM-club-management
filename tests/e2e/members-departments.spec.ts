@@ -679,9 +679,9 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       await memberPage.waitForURL(`${BASE_ORIGIN}/profile`);
       await expect(passwordCard.locator('.ui-banner.is-warn')).toHaveCount(0);
       await expect(passwordCard).not.toHaveClass(/is-highlighted/);
-      await expect(passwordCard.locator('.ui-banner.is-success')).toContainText(
-        viMessages.profile.passwordChangedBanner,
-      );
+      await expect(
+        memberPage.locator('[data-sonner-toast]', { hasText: viMessages.profile.passwordChangedToast }),
+      ).toBeVisible();
 
       const postChangeMeRes = await memberPage.request.get('/api/v1/me');
       expect(postChangeMeRes.status()).toBe(200);
@@ -787,6 +787,30 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
       expect(JSON.parse(await directRegularResetRes.text())).toMatchObject({
         error: { code: 'FORBIDDEN' },
       });
+
+      // Verify S07 /members (canViewDetail=true 6-column table) keeps ".role-badge" ("Thành viên" / "Admin") on a single line without vertical overflow
+      await hrPage.goto('/members');
+      const hrDirTable = hrPage.locator('.directory-table-wrap table.ui-table');
+      await expect(hrDirTable).toBeVisible();
+      await hrPage.getByLabel(viMessages.members.searchLabel).fill(resetTargetFullName);
+      const memberRoleBadge = hrDirTable.locator('tbody tr', { hasText: resetTargetFullName }).locator('.role-badge');
+      await expect(memberRoleBadge).toHaveText(viMessages.members.roleMember);
+      const memberBadgeMetrics = await memberRoleBadge.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const textRects = range.getClientRects();
+        const box = el.getBoundingClientRect();
+        return {
+          whiteSpace: getComputedStyle(el).whiteSpace,
+          height: box.height,
+          textRectCount: textRects.length,
+          scrollWidthOverflow: el.scrollWidth - el.clientWidth,
+        };
+      });
+      expect(memberBadgeMetrics.whiteSpace).toBe('nowrap');
+      expect(memberBadgeMetrics.height).toBeLessThanOrEqual(30);
+      expect(memberBadgeMetrics.textRectCount).toBe(1);
+      expect(memberBadgeMetrics.scrollWidthOverflow).toBeLessThanOrEqual(1);
 
       await hrTracker.assertClean();
     } finally {
@@ -1125,6 +1149,8 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
 
     const createdRow = page.locator('li.dept-row', { hasText: createdDeptName });
     await expect(createdRow).toBeVisible();
+    await expect(createdRow).not.toContainText(/\d+\s*board/i);
+    await expect(page.locator('li.dept-row', { hasText: /\d+\s*board/i })).toHaveCount(0);
 
     await createdRow.getByRole('button', { name: viMessages.departmentsAdmin.renameAction }).click();
     const renameModal = page.getByRole('dialog');

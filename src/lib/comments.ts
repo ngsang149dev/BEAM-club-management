@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { optionalCursorQuerySchema, parseIntegerInput } from './tasks';
+import {
+  defaultQueryLimitSchema,
+  optionalCursorQuerySchema,
+} from './query-params';
 
 export const COMMENT_BODY_MAX = 4000;
 
@@ -17,10 +20,7 @@ export type CreateCommentRequestInput = z.infer<
 
 export const listCommentsQuerySchema = z.object({
   cursor: optionalCursorQuerySchema,
-  limit: z.preprocess(
-    parseIntegerInput,
-    z.number().int().min(1).max(100).default(20),
-  ),
+  limit: defaultQueryLimitSchema,
 });
 
 export type ListCommentsQueryInput = z.infer<typeof listCommentsQuerySchema>;

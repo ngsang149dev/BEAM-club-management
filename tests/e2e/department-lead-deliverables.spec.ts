@@ -25,6 +25,15 @@ import viMessages from '../../messages/vi.json';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
+const VN_OFFSET_MS = 7 * 3_600_000;
+
+function vnMidnightIso(daysOffset: number): string {
+  const vnNow = new Date(Date.now() + VN_OFFSET_MS);
+  const shifted = new Date(
+    Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate() + daysOffset),
+  );
+  return `${shifted.toISOString().slice(0, 10)}T00:00:00+07:00`;
+}
 
 async function attachRuntimeErrorTracker(page: Page): Promise<{
   assertClean: () => Promise<void>;
@@ -595,6 +604,8 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
       const createTaskRes = await creatorPage.request.post('/api/v1/tasks', {
         data: {
           title: workspaceTaskTitle,
+          startAt: vnMidnightIso(0),
+          dueAt: vnMidnightIso(2),
           departmentIds: [deptAId],
           notifyInApp: false,
           notifyEmail: false,
@@ -653,7 +664,8 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
     }
 
     // 3. Assigned Dept A member ticks acceptance via PUT /api/v1/tasks/{id}/acceptance -> task.assignees has acceptedAt !== null
-    await signInAs(page, memberStudentId, '/my-tasks');
+    await signInAs(page, memberStudentId, '/progress');
+    await expect(page.locator('.app-side a[href="/my-tasks"]')).toHaveCount(0);
     const acceptRes = await page.request.put(`/api/v1/tasks/${taskId}/acceptance`, {
       data: { accepted: true },
     });
@@ -797,6 +809,8 @@ test.describe('Department Leads, Task Acceptance Loop & Deliverables E2E (CR-09)
           boardId,
           columnId: todoColId,
           title: hiddenSecretTitle,
+          startAt: vnMidnightIso(0),
+          dueAt: vnMidnightIso(2),
           departmentIds: [deptAId],
           isHidden: true,
           notifyInApp: false,

@@ -1,10 +1,11 @@
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from 'drizzle-orm';
-import { boards, columns, comments, departments, memberDepartments, profiles, taskAssignees, taskDeliverables, taskDepartments, taskEvents, tasks } from '@db/schema';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, type SQL, sql } from 'drizzle-orm';
+import { boards, columns, departments, profiles, taskAssignees, taskDepartments, taskEvents, tasks } from '@db/schema';
 import { conflict } from '@/lib/errors';
 import { dedupeSortedUuids } from '@/lib/tasks';
-import { assembleTaskRecords, buildUserSummariesMap, computeAssigneeSyncPlan, type RawTaskRow, taskAccessSqlCondition, type TaskMemberSummaryRecord, type TaskRecord } from '@/server/modules/tasks';
-import type { DbExecutor } from '@/server/shared/db';
+import { computeAssigneeSyncPlan, hydrateTaskRecords, taskAccessSqlCondition, type TaskRecord } from '@/server/modules/tasks';
+import { type DbExecutor, runExecutorQueries } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 import type { ApplyRevertRepoParams, ListBoardTrashRepoParams, ListTaskEventsRepoParams, RevertColumnLookup, RevertResolvedColumn, RevertResolvedTargets, RevertTargetIntent, TaskEventContext, TaskEventRecord, TaskEventsRepository } from './types';
 
 function buildEventsListWhere(params: ListTaskEventsRepoParams): SQL {
@@ -85,7 +86,7 @@ export class DrizzleTaskEventsRepository implements TaskEventsRepository {
     const [boardRow] = await executor.select({ archivedAt: boards.archivedAt }).from(boards)
       .where(and(eq(boards.id, taskRow.boardId), isNull(boards.purgedAt))).limit(1);
     if (!boardRow) return null;
-    const hydrated = await this.hydrateTasks(executor, [taskRow]);
+    const hydrated = await hydrateTaskRecords(executor, [taskRow]);
     return hydrated[0] ? { task: hydrated[0], boardArchivedAt: boardRow.archivedAt } : null;
   }
 
@@ -111,10 +112,10 @@ export class DrizzleTaskEventsRepository implements TaskEventsRepository {
     params: { readonly boardId: string; readonly taskId: string; readonly intent: RevertTargetIntent },
     tx: TransactionContext,
   ): Promise<RevertResolvedTargets> {
-    const [column, validAssigneeIds, validDepartmentIds] = await Promise.all([
-      params.intent.columnLookup ? resolveColumnTarget(params.boardId, params.taskId, params.intent.columnLookup, tx) : Promise.resolve(undefined),
-      params.intent.desiredAssigneeIds !== undefined ? filterNonPurgedProfileIds(params.intent.desiredAssigneeIds, tx) : Promise.resolve(undefined),
-      params.intent.desiredDepartmentIds !== undefined ? filterExistingDepartmentIds(params.intent.desiredDepartmentIds, tx) : Promise.resolve(undefined),
+    const [column, validAssigneeIds, validDepartmentIds] = await runExecutorQueries(tx, [
+      () => params.intent.columnLookup ? resolveColumnTarget(params.boardId, params.taskId, params.intent.columnLookup, tx) : Promise.resolve(undefined),
+      () => params.intent.desiredAssigneeIds !== undefined ? filterNonPurgedProfileIds(params.intent.desiredAssigneeIds, tx) : Promise.resolve(undefined),
+      () => params.intent.desiredDepartmentIds !== undefined ? filterExistingDepartmentIds(params.intent.desiredDepartmentIds, tx) : Promise.resolve(undefined),
     ]);
     return { column, validAssigneeIds, validDepartmentIds };
   }
@@ -132,7 +133,7 @@ export class DrizzleTaskEventsRepository implements TaskEventsRepository {
       changes: params.plan.compensatingChanges, revertsEventId: params.revertsEventId, forced: params.forced, createdAt: params.now,
     }).returning({ id: taskEvents.id });
     if (!evt) throw new Error('Failed to record compensating task event');
-    return { task: (await this.hydrateTasks(tx, [updated]))[0]!, eventId: evt.id };
+    return { task: (await hydrateTaskRecords(tx, [updated]))[0]!, eventId: evt.id };
   }
 
   async boardExists(boardId: string): Promise<boolean> {
@@ -146,7 +147,7 @@ export class DrizzleTaskEventsRepository implements TaskEventsRepository {
       .orderBy(desc(tasks.deletedAt), desc(tasks.id)).limit(params.limit + 1);
     const hasMore = fetched.length > params.limit;
     const pageRows = hasMore ? fetched.slice(0, params.limit) : fetched;
-    return { rows: await this.hydrateTasks(this.db, pageRows), hasMore };
+    return { rows: await hydrateTaskRecords(this.db, pageRows), hasMore };
   }
 
   private async syncRevertedAssignments(params: ApplyRevertRepoParams, tx: TransactionContext): Promise<void> {
@@ -170,38 +171,11 @@ export class DrizzleTaskEventsRepository implements TaskEventsRepository {
 
   private async hydrateEvents(executor: DbExecutor, rows: ReadonlyArray<typeof taskEvents.$inferSelect>): Promise<TaskEventRecord[]> {
     if (rows.length === 0) return [];
-    const userMap = await this.loadUserSummaries(executor, Array.from(new Set(rows.map((r) => r.actorId))));
+    const userMap = await loadUserSummariesMap(executor, Array.from(new Set(rows.map((r) => r.actorId))));
     return rows.map((row) => {
       const actor = userMap.get(row.actorId);
       if (!actor) throw new Error('Missing event actor profile');
       return { ...row, actor };
     });
-  }
-
-  private async hydrateTasks(executor: DbExecutor, taskRows: readonly RawTaskRow[]): Promise<TaskRecord[]> {
-    if (taskRows.length === 0) return [];
-    const taskIds = taskRows.map((row) => row.id);
-    const [assigneeRows, departmentRows, deliverableRows, commentCountRows] = await Promise.all([
-      executor.select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId, acceptedAt: taskAssignees.acceptedAt }).from(taskAssignees).where(inArray(taskAssignees.taskId, taskIds)),
-      executor.select({ taskId: taskDepartments.taskId, id: departments.id, name: departments.name }).from(taskDepartments)
-        .innerJoin(departments, eq(taskDepartments.departmentId, departments.id)).where(inArray(taskDepartments.taskId, taskIds)).orderBy(asc(departments.name), asc(departments.id)),
-      executor.select({ id: taskDeliverables.id, taskId: taskDeliverables.taskId, title: taskDeliverables.title, url: taskDeliverables.url, submittedBy: taskDeliverables.submittedBy, createdAt: taskDeliverables.createdAt })
-        .from(taskDeliverables).where(inArray(taskDeliverables.taskId, taskIds)).orderBy(desc(taskDeliverables.createdAt), desc(taskDeliverables.id)),
-      executor.select({ taskId: comments.taskId, total: count() }).from(comments).where(inArray(comments.taskId, taskIds)).groupBy(comments.taskId),
-    ]);
-    const userIds = Array.from(new Set([...taskRows.map((r) => r.createdBy), ...assigneeRows.map((a) => a.userId), ...deliverableRows.map((d) => d.submittedBy)]));
-    const userMap = await this.loadUserSummaries(executor, userIds);
-    return assembleTaskRecords({ taskRows, assigneeRows, departmentRows, deliverableRows, commentCountRows, userMap });
-  }
-
-  private async loadUserSummaries(executor: DbExecutor, userIds: readonly string[]): Promise<Map<string, TaskMemberSummaryRecord>> {
-    if (userIds.length === 0) return new Map();
-    const [profileRows, deptRows] = await Promise.all([
-      executor.select({ id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt, isActive: profiles.isActive, leftAt: profiles.leftAt })
-        .from(profiles).where(inArray(profiles.id, [...userIds])),
-      executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name }).from(memberDepartments)
-        .innerJoin(departments, eq(memberDepartments.departmentId, departments.id)).where(inArray(memberDepartments.userId, [...userIds])).orderBy(asc(departments.name), asc(departments.id)),
-    ]);
-    return buildUserSummariesMap(profileRows, deptRows);
   }
 }

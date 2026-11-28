@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { useMeQuery } from '@/features/auth/hooks/useAuth';
+import { useSessionQuery } from '@/features/auth/hooks/useAuth';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { hasTaskVersionChanged } from '../drawer-helpers';
 import { useUndoTaskActionToast } from '../hooks/useTaskEvents';
@@ -44,11 +44,12 @@ function UnassignedHiddenWarning() {
   );
 }
 
-function useTaskHiddenToggleController(task: TaskDto) {
+function useTaskHiddenToggleController(task: TaskDto, currentUserId?: string | null) {
   const tTasks = useTranslations('tasks');
   const { isAdmin } = usePermissions();
-  const meQuery = useMeQuery(true);
-  const hiddenMutation = useUpdateTaskHiddenMutation(task.boardId);
+  const sessionQuery = useSessionQuery(currentUserId === undefined);
+  const resolvedUserId = currentUserId === undefined ? sessionQuery.data?.userId : currentUserId;
+  const hiddenMutation = useUpdateTaskHiddenMutation();
   const { isError: isHiddenError, reset: resetHiddenMutation } = hiddenMutation;
   const syncedRef = useRef({ id: task.id, version: task.version });
   const showUndoToast = useUndoTaskActionToast();
@@ -62,7 +63,7 @@ function useTaskHiddenToggleController(task: TaskDto) {
   const canToggle = canToggleTaskHidden({
     isAdmin,
     creatorId: task.creator.id,
-    currentUserId: meQuery.data?.profile.id,
+    currentUserId: resolvedUserId,
   });
 
   const handleToggle = () => {
@@ -74,7 +75,6 @@ function useTaskHiddenToggleController(task: TaskDto) {
           showUndoToast({
             message: nextHidden ? tTasks('hiddenEnabledToast') : tTasks('hiddenDisabledToast'),
             taskId: data.task.id,
-            boardId: data.task.boardId,
             eventId: data.eventId,
           }),
       }
@@ -86,13 +86,18 @@ function useTaskHiddenToggleController(task: TaskDto) {
 
 export function TaskHiddenSection({
   task,
+  currentUserId,
   onReload,
 }: {
   readonly task: TaskDto;
+  readonly currentUserId?: string | null;
   readonly onReload: () => void;
 }) {
   const tTasks = useTranslations('tasks');
-  const { canToggle, hiddenMutation, handleToggle } = useTaskHiddenToggleController(task);
+  const { canToggle, hiddenMutation, handleToggle } = useTaskHiddenToggleController(
+    task,
+    currentUserId
+  );
   if (!canToggle) return null;
 
   const isUnassigned = task.assignees.length === 0 && task.assignedDepartments.length === 0;

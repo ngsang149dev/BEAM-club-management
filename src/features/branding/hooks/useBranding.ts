@@ -41,21 +41,21 @@ export function useBrandingQuery(enabled = true) {
   return useQuery(buildBrandingQueryOptions(enabled));
 }
 
-export function useOptionalBranding(): BrandingResponse | null {
+export function useOptionalBranding(enabled = true): BrandingResponse | null {
   const contextClient = useContext(QueryClientContext);
   const query = useQuery(
-    buildBrandingQueryOptions(Boolean(contextClient)),
+    buildBrandingQueryOptions(Boolean(contextClient) && enabled),
     contextClient ?? IDLE_QUERY_CLIENT,
   );
-  return contextClient ? (query.data ?? null) : null;
+  return contextClient && enabled ? (query.data ?? null) : null;
 }
 
-export function useOptionalClubLogoUrl(): string | null {
-  return useOptionalBranding()?.logoUrl ?? null;
+export function useOptionalClubLogoUrl(enabled = true): string | null {
+  return useOptionalBranding(enabled)?.logoUrl ?? null;
 }
 
-export function useOptionalClubWordmarkUrl(): string | null {
-  return useOptionalBranding()?.wordmarkUrl ?? null;
+export function useOptionalClubWordmarkUrl(enabled = true): string | null {
+  return useOptionalBranding(enabled)?.wordmarkUrl ?? null;
 }
 
 async function syncBrandingAfterGalleryChange(

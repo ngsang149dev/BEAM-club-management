@@ -1,9 +1,10 @@
 'use client';
 
+import { memo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { YearCalendarModel } from '../calendar-math';
 
-export function CalendarTimelineHeader({
+export const CalendarTimelineHeader = memo(function CalendarTimelineHeader({
   calendar,
   currentVnMonthIndex,
   isCurrentYear,
@@ -56,4 +57,4 @@ export function CalendarTimelineHeader({
       </div>
     </div>
   );
-}
+});

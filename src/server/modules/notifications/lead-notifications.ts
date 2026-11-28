@@ -1,6 +1,6 @@
 import type { Config } from '@/server/shared/config';
-import { type Logger, scrubPiiText } from '@/server/shared/logger';
-import type { Mailer } from '@/server/shared/mailer';
+import type { Logger } from '@/server/shared/logger';
+import { extractSafeMailErrorMessage, type Mailer } from '@/server/shared/mailer';
 import { buildLeadActivityEmail } from './lead-email-template';
 import {
   buildNotificationPayload,
@@ -14,31 +14,35 @@ import type {
   TaskActivityNotificationContextRecord,
 } from './types';
 
-function formatSubError(item: unknown): string {
-  return item instanceof Error ? item.message : String(item);
-}
-
-function extractAggregateMessages(error: Error): string {
-  if (!('errors' in error) || !Array.isArray(error.errors)) return '';
-  return error.errors
-    .map(formatSubError)
-    .filter((msg) => msg.trim().length > 0)
-    .join('; ');
-}
-
-export function extractSafeMailErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return 'Mail delivery error';
-  if (error.message.trim().length > 0) return scrubPiiText(error.message);
-  const aggregateMessage = extractAggregateMessages(error);
-  if (aggregateMessage.length > 0) return scrubPiiText(aggregateMessage);
-  return scrubPiiText(error.name || 'Mail delivery error');
-}
-
 export interface LeadNotificationsDeps {
   readonly notificationsRepo: NotificationsRepository;
   readonly mailer: Mailer;
   readonly config: Pick<Config, 'appUrl'>;
   readonly logger: Logger;
+}
+
+function extractVisibleLeadDetails(
+  context: TaskActivityNotificationContextRecord,
+  isHiddenTask: boolean,
+) {
+  if (isHiddenTask) {
+    return {
+      taskTitle: null,
+      taskDescription: null,
+      startAt: null,
+      dueAt: null,
+      deliverableTitle: null,
+      deliverableUrl: null,
+    };
+  }
+  return {
+    taskTitle: context.task.title,
+    taskDescription: context.task.description ?? null,
+    startAt: context.task.startAt ?? null,
+    dueAt: context.task.dueAt ?? null,
+    deliverableTitle: context.deliverable?.title ?? null,
+    deliverableUrl: context.deliverable?.url ?? null,
+  };
 }
 
 async function sendSingleLeadEmail(params: {
@@ -48,8 +52,10 @@ async function sendSingleLeadEmail(params: {
   readonly recipient: DeduplicatedLeadRecipient;
   readonly isHiddenTask: boolean;
   readonly notificationId: string | null;
+  readonly now: Date;
 }): Promise<void> {
   const { context, recipient, isHiddenTask } = params;
+  const details = extractVisibleLeadDetails(context, isHiddenTask);
   const rendered = buildLeadActivityEmail({
     kind: params.kind,
     locale: recipient.locale,
@@ -57,9 +63,8 @@ async function sendSingleLeadEmail(params: {
     actorName: context.actor.fullName,
     boardName: context.board.name,
     departmentNames: recipient.departmentNames,
-    taskTitle: isHiddenTask ? null : context.task.title,
-    deliverableTitle: isHiddenTask ? null : (context.deliverable?.title ?? null),
-    deliverableUrl: isHiddenTask ? null : (context.deliverable?.url ?? null),
+    ...details,
+    now: params.now,
     isHiddenTask,
     appUrl: params.deps.config.appUrl,
     boardId: context.board.id,
@@ -85,6 +90,7 @@ async function deliverLeadEmails(params: {
   readonly recipients: readonly DeduplicatedLeadRecipient[];
   readonly isHiddenTask: boolean;
   readonly idByUser: ReadonlyMap<string, string>;
+  readonly now: Date;
 }): Promise<void> {
   for (const recipient of params.recipients) {
     await sendSingleLeadEmail({
@@ -94,6 +100,7 @@ async function deliverLeadEmails(params: {
       recipient,
       isHiddenTask: params.isHiddenTask,
       notificationId: params.idByUser.get(recipient.userId) ?? null,
+      now: params.now,
     });
   }
 }
@@ -146,7 +153,7 @@ async function dispatchLeadActivityNotification(params: {
     buildLeadNotificationRows({ kind: params.kind, context, recipients, actorId: params.actorId, isHiddenTask, now: params.now }),
   );
   const idByUser = new Map(inserted.map((r) => [r.userId, r.id]));
-  await deliverLeadEmails({ deps: params.deps, kind: params.kind, context, recipients, isHiddenTask, idByUser });
+  await deliverLeadEmails({ deps: params.deps, kind: params.kind, context, recipients, isHiddenTask, idByUser, now: params.now });
   params.deps.logger.info('Lead activity notifications dispatched', {
     taskId: context.task.id, boardId: context.board.id, actorId: params.actorId, kind: params.kind, recipientCount: recipients.length, isHiddenTask,
   });

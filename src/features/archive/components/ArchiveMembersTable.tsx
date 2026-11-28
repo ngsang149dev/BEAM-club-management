@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 import { MemberAvatar } from '@/components/MemberAvatar';
-import type { MemberDetail } from '@/features/members/hooks/useMembers';
+import { isMemberDetail } from '@/features/members/hooks/useMembers';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { formatTaskDateTime } from '@/features/tasks/formatters';
 import type { MemberListItem } from '../hooks/useArchive';
@@ -16,30 +16,14 @@ export interface ArchiveMembersTableProps {
   readonly onPurge: (member: MemberListItem) => void;
 }
 
-function hasMemberPii(member: MemberListItem): member is MemberDetail {
-  return (
-    'studentId' in member &&
-    typeof member.studentId === 'string' &&
-    'email' in member &&
-    typeof member.email === 'string'
-  );
-}
-
 function MemberIdentityCell({ member }: { readonly member: MemberListItem }) {
   const tMember = useTranslations('member');
   return (
     <div className="member-name-cell">
-      <MemberAvatar
-        memberId={member.id}
-        fullName={member.fullName}
-        avatarUrl={member.avatarUrl}
-        isActive={member.isActive}
-      />
+      <MemberAvatar memberId={member.id} fullName={member.fullName} avatarUrl={member.avatarUrl} isActive={member.isActive} />
       <span className="member-name-text">
         <span>{member.fullName}</span>
-        {!member.isActive ? (
-          <span className="member-left-badge">{tMember('leftBadge')}</span>
-        ) : null}
+        {!member.isActive ? <span className="member-left-badge">{tMember('leftBadge')}</span> : null}
       </span>
     </div>
   );
@@ -47,16 +31,10 @@ function MemberIdentityCell({ member }: { readonly member: MemberListItem }) {
 
 function MemberDepartmentsCell({ member }: { readonly member: MemberListItem }) {
   const tDir = useTranslations('members');
-  if (member.departments.length === 0) {
-    return <span className="muted-dash">{tDir('noDepartment')}</span>;
-  }
+  if (member.departments.length === 0) return <span className="muted-dash">{tDir('noDepartment')}</span>;
   return (
     <div className="dept-chip-list">
-      {member.departments.map((dept) => (
-        <span key={dept.id} className="ui-chip">
-          {dept.name}
-        </span>
-      ))}
+      {member.departments.map((dept) => <span key={dept.id} className="ui-chip">{dept.name}</span>)}
     </div>
   );
 }
@@ -77,23 +55,11 @@ function MemberRowActions({
   const t = useTranslations('archive');
   return (
     <div className="archive-row-actions">
-      <button
-        type="button"
-        className="ui-btn secondary is-sm"
-        disabled={isBusy}
-        onClick={onRestore}
-      >
+      <button type="button" className="ui-btn secondary is-sm" disabled={isBusy} onClick={onRestore}>
         {isRestoringThis ? t('restoringButton') : t('restoreButton')}
       </button>
       {isAdmin ? (
-        <button
-          type="button"
-          className="ui-btn danger is-sm"
-          disabled={isBusy}
-          onClick={onPurge}
-        >
-          {t('purgeButton')}
-        </button>
+        <button type="button" className="ui-btn danger is-sm" disabled={isBusy} onClick={onPurge}>{t('purgeButton')}</button>
       ) : null}
     </div>
   );
@@ -120,27 +86,16 @@ function ArchiveMemberDesktopRow({
   readonly onRestore: () => void;
   readonly onPurge: () => void;
 }) {
-  const detail = canViewDetail && hasMemberPii(member) ? member : null;
-
+  const detail = canViewDetail && isMemberDetail(member) ? member : null;
   return (
     <tr className={member.isActive ? undefined : 'is-inactive'}>
-      <td>
-        <MemberIdentityCell member={member} />
-      </td>
+      <td><MemberIdentityCell member={member} /></td>
       {showPiiColumns ? <td className="mono">{detail?.studentId ?? ''}</td> : null}
       {showPiiColumns ? <td>{detail?.email ?? ''}</td> : null}
-      <td>
-        <MemberDepartmentsCell member={member} />
-      </td>
+      <td><MemberDepartmentsCell member={member} /></td>
       <td className="mono">{formatTaskDateTime(member.leftAt, locale)}</td>
       <td className="ui-col-right">
-        <MemberRowActions
-          isAdmin={isAdmin}
-          isRestoringThis={restoringId === member.id}
-          isBusy={isBusy}
-          onRestore={onRestore}
-          onPurge={onPurge}
-        />
+        <MemberRowActions isAdmin={isAdmin} isRestoringThis={restoringId === member.id} isBusy={isBusy} onRestore={onRestore} onPurge={onPurge} />
       </td>
     </tr>
   );
@@ -166,31 +121,15 @@ function ArchiveMemberMobileCard({
   readonly onPurge: () => void;
 }) {
   const t = useTranslations('archive');
-  const detail = canViewDetail && hasMemberPii(member) ? member : null;
-
+  const detail = canViewDetail && isMemberDetail(member) ? member : null;
   return (
     <li className="directory-mobile-card">
-      <div className="directory-mobile-head">
-        <MemberIdentityCell member={member} />
-      </div>
-      {detail ? (
-        <div className="directory-mobile-pii">
-          <span className="mono">{detail.studentId}</span>
-          <span>{detail.email}</span>
-        </div>
-      ) : null}
+      <div className="directory-mobile-head"><MemberIdentityCell member={member} /></div>
+      {detail ? <div className="directory-mobile-pii"><span className="mono">{detail.studentId}</span><span>{detail.email}</span></div> : null}
       <MemberDepartmentsCell member={member} />
       <div className="directory-mobile-meta">
-        <span className="mono archive-mobile-time">
-          {t('colLeftAt')}: {formatTaskDateTime(member.leftAt, locale)}
-        </span>
-        <MemberRowActions
-          isAdmin={isAdmin}
-          isRestoringThis={restoringId === member.id}
-          isBusy={isBusy}
-          onRestore={onRestore}
-          onPurge={onPurge}
-        />
+        <span className="mono archive-mobile-time">{t('colLeftAt')}: {formatTaskDateTime(member.leftAt, locale)}</span>
+        <MemberRowActions isAdmin={isAdmin} isRestoringThis={restoringId === member.id} isBusy={isBusy} onRestore={onRestore} onPurge={onPurge} />
       </div>
     </li>
   );
@@ -219,7 +158,6 @@ function ArchiveMembersDesktopTable({
 }) {
   const t = useTranslations('archive');
   const tDir = useTranslations('members');
-
   return (
     <div className="directory-table-wrap">
       <table className="ui-table">
@@ -266,7 +204,7 @@ export function ArchiveMembersTable({
   const t = useTranslations('archive');
   const { can } = usePermissions();
   const canViewDetail = can('member.view_detail');
-  const showPiiColumns = canViewDetail && items.some(hasMemberPii);
+  const showPiiColumns = canViewDetail && items.some(isMemberDetail);
 
   return (
     <>

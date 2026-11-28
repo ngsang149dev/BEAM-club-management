@@ -18,7 +18,7 @@ import {
   type AssigneeSelectionDraft,
   type EditTaskValues,
 } from '../drawer-helpers';
-import { hoChiMinhInputToUtcIso } from '../formatters';
+import { requireHoChiMinhInputToUtcIso } from '../formatters';
 import { useUndoTaskActionToast } from '../hooks/useTaskEvents';
 import {
   useDeleteTaskMutation,
@@ -65,8 +65,8 @@ function useTaskEditFormController(task: TaskDto) {
         payload: {
           title: values.title.trim(),
           description: values.description.trim() || null,
-          startAt: hoChiMinhInputToUtcIso(values.startAtInput),
-          dueAt: hoChiMinhInputToUtcIso(values.dueAtInput),
+          startAt: requireHoChiMinhInputToUtcIso(values.startAtInput),
+          dueAt: requireHoChiMinhInputToUtcIso(values.dueAtInput),
           version: task.version,
         },
       },
@@ -75,7 +75,6 @@ function useTaskEditFormController(task: TaskDto) {
           showUndoToast({
             message: tTasks('updatedToast'),
             taskId: data.task.id,
-            boardId: data.task.boardId,
             eventId: data.eventId,
           }),
       }
@@ -85,6 +84,15 @@ function useTaskEditFormController(task: TaskDto) {
   return { ...form, updateMutation, handleSave };
 }
 
+function resolveTaskDueErrorText(
+  error: { message?: string } | undefined,
+  tTasks: ReturnType<typeof useTranslations<'tasks'>>,
+  tErr: ReturnType<typeof useTranslations<'errors'>>
+): string | null {
+  if (!error) return null;
+  return error.message === 'invalidDateRange' ? tErr('invalidDateRange') : tTasks('validationDueAt');
+}
+
 export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReload: () => void }) {
   const tTasks = useTranslations('tasks');
   const tErr = useTranslations('errors');
@@ -92,7 +100,8 @@ export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReloa
   const ctrl = useTaskEditFormController(task);
   const startAtInput = useWatch({ control: ctrl.control, name: 'startAtInput' });
   const dueAtInput = useWatch({ control: ctrl.control, name: 'dueAtInput' });
-  const dateRangeError = ctrl.formState.errors.dueAtInput ? tErr('invalidDateRange') : null;
+  const startAtError = ctrl.formState.errors.startAtInput ? tTasks('validationStartAt') : null;
+  const dueAtError = resolveTaskDueErrorText(ctrl.formState.errors.dueAtInput, tTasks, tErr);
 
   return (
     <form className="task-edit-form" method="post" onSubmit={ctrl.handleSubmit(ctrl.handleSave)} noValidate>
@@ -113,8 +122,8 @@ export function TaskEditFormSection({ task, onReload }: { task: TaskDto; onReloa
         <textarea id={`${baseId}-desc`} className="ui-textarea" rows={5} {...ctrl.register('description')} />
       </div>
       <div className="task-form-two-col">
-        <TaskStartDateInput value={startAtInput} onChange={(next) => ctrl.setValue('startAtInput', next, { shouldValidate: true })} />
-        <TaskDueDateInput value={dueAtInput} errorText={dateRangeError} onChange={(next) => ctrl.setValue('dueAtInput', next, { shouldValidate: true })} />
+        <TaskStartDateInput value={startAtInput} errorText={startAtError} onChange={(next) => ctrl.setValue('startAtInput', next, { shouldValidate: true })} />
+        <TaskDueDateInput value={dueAtInput} errorText={dueAtError} onChange={(next) => ctrl.setValue('dueAtInput', next, { shouldValidate: true })} />
       </div>
       <div className="task-section-actions">
         <button type="submit" className="ui-btn primary" disabled={ctrl.updateMutation.isPending}>
@@ -165,7 +174,6 @@ function useTaskAssigneesController(task: TaskDto) {
           showUndoToast({
             message: tTasks('departmentsUpdatedToast'),
             taskId: data.task.id,
-            boardId: data.task.boardId,
             eventId: data.eventId,
           }),
       }
@@ -245,7 +253,6 @@ export function TaskDeleteSection({ task, onDeleted }: { task: TaskDto; onDelete
         showUndoToast({
           message: tTasks('deletedToast'),
           taskId: data.task.id,
-          boardId: data.task.boardId,
           eventId: data.eventId,
         });
         onDeleted();

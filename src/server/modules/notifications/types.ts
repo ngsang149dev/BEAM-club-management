@@ -53,6 +53,10 @@ export interface DepartmentAssignmentContextRecord {
   readonly task: {
     readonly id: string;
     readonly title: string;
+    readonly description?: string | null;
+    readonly startAt?: Date | null;
+    readonly dueAt?: Date | null;
+    readonly isCompleted?: boolean;
     readonly isHidden: boolean;
   };
   readonly board: {
@@ -83,6 +87,10 @@ export interface TaskActivityNotificationContextRecord {
   readonly task: {
     readonly id: string;
     readonly title: string;
+    readonly description?: string | null;
+    readonly startAt?: Date | null;
+    readonly dueAt?: Date | null;
+    readonly isCompleted?: boolean;
     readonly isHidden: boolean;
     readonly createdBy: string;
     readonly assigneeIds: readonly string[];

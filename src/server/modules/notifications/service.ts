@@ -5,13 +5,12 @@ import type { AuthActor } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Config } from '@/server/shared/config';
 import type { Logger } from '@/server/shared/logger';
-import type { Mailer } from '@/server/shared/mailer';
+import { extractSafeMailErrorMessage, type Mailer } from '@/server/shared/mailer';
 import type { TransactionRunner } from '@/server/shared/transaction';
 import { buildDepartmentAssignedEmail } from './email-template';
 import {
   executeNotifyDeliverableSubmitted,
   executeNotifyTaskAccepted,
-  extractSafeMailErrorMessage,
 } from './lead-notifications';
 import {
   type NotificationPageResponseDto,
@@ -72,6 +71,33 @@ function buildDepartmentNotificationRows(params: {
   }));
 }
 
+function renderAssignmentEmail(params: {
+  readonly context: DepartmentAssignmentContextRecord;
+  readonly recipient: DeduplicatedDepartmentRecipient;
+  readonly isHiddenTask: boolean;
+  readonly now: Date;
+  readonly appUrl: string;
+}) {
+  const { context, recipient, isHiddenTask } = params;
+  const { task } = context;
+  return buildDepartmentAssignedEmail({
+    locale: recipient.locale,
+    recipientName: recipient.fullName,
+    actorName: context.actor.fullName,
+    boardName: context.board.name,
+    departmentNames: recipient.departmentNames,
+    taskTitle: isHiddenTask ? null : task.title,
+    taskDescription: isHiddenTask ? null : (task.description ?? null),
+    startAt: isHiddenTask ? null : (task.startAt ?? null),
+    dueAt: isHiddenTask ? null : (task.dueAt ?? null),
+    now: params.now,
+    isHiddenTask,
+    appUrl: params.appUrl,
+    boardId: context.board.id,
+    taskId: task.id,
+  });
+}
+
 function resolveDispatchInput(input: NotifyDepartmentAssignmentInput) {
   const notifyInApp = input.notifyInApp ?? true;
   const notifyEmail = input.notifyEmail ?? true;
@@ -107,7 +133,7 @@ export class NotificationsService implements NotificationsDispatcher {
     const idByUser = resolved.notifyInApp
       ? await this.persistNotificationRows({ context, recipients, actorId: input.actorId, isHiddenTask, now: input.now })
       : new Map<string, string>();
-    if (resolved.notifyEmail) await this.deliverEmails({ context, recipients, isHiddenTask, idByUser });
+    if (resolved.notifyEmail) await this.deliverEmails({ context, recipients, isHiddenTask, idByUser, now: input.now });
     this.deps.logger.info('Department assignment notifications dispatched', {
       taskId: context.task.id,
       boardId: context.board.id,
@@ -200,19 +226,15 @@ export class NotificationsService implements NotificationsDispatcher {
     readonly recipients: readonly DeduplicatedDepartmentRecipient[];
     readonly isHiddenTask: boolean;
     readonly idByUser: ReadonlyMap<string, string>;
+    readonly now: Date;
   }): Promise<void> {
     for (const recipient of params.recipients) {
-      const rendered = buildDepartmentAssignedEmail({
-        locale: recipient.locale,
-        recipientName: recipient.fullName,
-        actorName: params.context.actor.fullName,
-        boardName: params.context.board.name,
-        departmentNames: recipient.departmentNames,
-        taskTitle: params.isHiddenTask ? null : params.context.task.title,
+      const rendered = renderAssignmentEmail({
+        context: params.context,
+        recipient,
         isHiddenTask: params.isHiddenTask,
+        now: params.now,
         appUrl: this.deps.config.appUrl,
-        boardId: params.context.board.id,
-        taskId: params.context.task.id,
       });
       try {
         await this.deps.mailer.send({

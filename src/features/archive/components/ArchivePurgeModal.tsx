@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useId } from 'react';
+import { useId } from 'react';
 import { useTranslations } from 'next-intl';
+import { useEscapeClose } from '@/features/shared/hooks/useEscapeClose';
 import { describeArchiveError, resolveArchiveErrorMessage } from '../error-mapping';
 import type { ArchiveTab } from '../hooks/useArchive';
 
@@ -17,16 +18,6 @@ export interface ArchivePurgeModalProps {
   readonly error: unknown;
   readonly onClose: () => void;
   readonly onConfirm: () => void;
-}
-
-function useModalEscapeClose(onClose: () => void): void {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 }
 
 function PurgeErrorBanner({ error }: { readonly error: unknown }) {
@@ -83,7 +74,7 @@ export function ArchivePurgeModal({
   const t = useTranslations('archive');
   const tCommon = useTranslations('common');
   const titleId = useId();
-  useModalEscapeClose(onClose);
+  useEscapeClose(true, onClose);
 
   const entityLabel = t(`entityTypes.${target.entityType}`);
 

@@ -29,14 +29,7 @@ export function TaskHistoryRow({
 }: TaskHistoryRowProps) {
   const locale = useLocale();
   const tHistory = useTranslations('taskHistory');
-  const tPrio = useTranslations('priority');
-  const summary = formatTaskEventSummary({
-    event,
-    locale,
-    lookup,
-    tHistory,
-    tPrio,
-  });
+  const summary = formatTaskEventSummary({ event, locale, lookup, tHistory });
 
   return (
     <li className="task-history-row">

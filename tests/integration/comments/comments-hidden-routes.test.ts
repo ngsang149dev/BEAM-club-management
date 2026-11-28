@@ -128,13 +128,10 @@ describe('Comments & Task Hidden Toggle Route Handlers integration', () => {
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `comments-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'comments-cron-secret',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -311,6 +308,8 @@ describe('Comments & Task Hidden Toggle Route Handlers integration', () => {
             boardId,
             columnId: todoColId,
             title: `Task For Comments ${suffix}`,
+            startAt: '2026-11-26T00:00:00.000Z',
+            dueAt: '2026-11-28T00:00:00.000Z',
             assigneeIds: [assigneeId],
             isHidden: false,
           }),

@@ -11,17 +11,7 @@ import {
   TaskDepartmentChips,
 } from './TaskPriorityBadge';
 
-export type DrawerTab = 'details' | 'comments' | 'history';
 export type ModalSubTab = 'comments' | 'history';
-
-export function formatModalDateRange(startAt: string | null, dueAt: string | null): string | null {
-  const start = formatShortVnDate(startAt);
-  const due = formatShortVnDate(dueAt);
-  if (start && due) return `${start} → ${due}`;
-  if (start) return start;
-  if (due) return due;
-  return null;
-}
 
 export function TaskModalHeader({
   titleId,
@@ -35,7 +25,9 @@ export function TaskModalHeader({
   const locale = useLocale();
   const tTasks = useTranslations('tasks');
   const tCommon = useTranslations('common');
-  const rangeText = task ? formatModalDateRange(task.startAt, task.dueAt) : null;
+  const rangeText = task
+    ? [formatShortVnDate(task.startAt), formatShortVnDate(task.dueAt)].filter(Boolean).join(' → ')
+    : null;
 
   return (
     <div className="task-modal-header">
@@ -106,7 +98,6 @@ export function TaskDrawerReadOnlyBody({ task }: { task: TaskDto }) {
       <div className="ui-banner" role="status">
         <div className="ui-banner-body"><span className="ui-banner-text">{tTasks('readOnlyNotice')}</span></div>
       </div>
-      <h3 className="task-detail-title">{task.title}</h3>
       <p className="task-detail-desc">{task.description || '—'}</p>
     </div>
   );
@@ -122,69 +113,6 @@ export function TaskDrawerHiddenBanner({ isHidden }: { isHidden: boolean }) {
         <span className="ui-banner-title">{tTasks('hiddenBannerTitle')}</span>
         <span className="ui-banner-text">{tTasks('hiddenBannerBody')}</span>
       </div>
-    </div>
-  );
-}
-
-function DrawerTabButton({
-  id,
-  panelId,
-  active,
-  label,
-  count,
-  onSelect,
-}: {
-  readonly id: string;
-  readonly panelId: string;
-  readonly active: boolean;
-  readonly label: string;
-  readonly count?: number;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <button
-      id={id}
-      type="button"
-      role="tab"
-      aria-selected={active}
-      aria-controls={panelId}
-      className={active ? 'task-drawer-tab is-active' : 'task-drawer-tab'}
-      onClick={onSelect}
-    >
-      <span>{label}</span>
-      {count !== undefined ? <span className="task-drawer-tab-count">{count}</span> : null}
-    </button>
-  );
-}
-
-export function TaskDrawerTabBar({
-  activeTab,
-  commentCount,
-  detailsTabId,
-  commentsTabId,
-  historyTabId,
-  detailsPanelId,
-  commentsPanelId,
-  historyPanelId,
-  onSelect,
-}: {
-  activeTab: DrawerTab;
-  commentCount: number;
-  detailsTabId: string;
-  commentsTabId: string;
-  historyTabId: string;
-  detailsPanelId: string;
-  commentsPanelId: string;
-  historyPanelId: string;
-  onSelect: (tab: DrawerTab) => void;
-}) {
-  const tTasks = useTranslations('tasks');
-
-  return (
-    <div className="task-drawer-tabs" role="tablist" aria-label={tTasks('tabsAriaLabel')}>
-      <DrawerTabButton id={detailsTabId} panelId={detailsPanelId} active={activeTab === 'details'} label={tTasks('tabDetails')} onSelect={() => onSelect('details')} />
-      <DrawerTabButton id={commentsTabId} panelId={commentsPanelId} active={activeTab === 'comments'} label={tTasks('tabComments')} count={commentCount} onSelect={() => onSelect('comments')} />
-      <DrawerTabButton id={historyTabId} panelId={historyPanelId} active={activeTab === 'history'} label={tTasks('tabHistory')} onSelect={() => onSelect('history')} />
     </div>
   );
 }

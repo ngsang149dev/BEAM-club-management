@@ -28,6 +28,7 @@ class InMemoryAuthRepository implements AuthRepository {
     success: boolean;
     createdAt: Date;
   }> = [];
+  touchCalls = 0;
   private seq = 0;
 
   async countRecentFailedLoginAttempts(ip: string, since: Date): Promise<number> {
@@ -132,6 +133,7 @@ class InMemoryAuthRepository implements AuthRepository {
     lastSeenAt: Date;
     expiresAt: Date;
   }): Promise<void> {
+    this.touchCalls += 1;
     const existing = this.sessions.get(input.sessionId);
     if (!existing) return;
     this.sessions.set(input.sessionId, {
@@ -260,14 +262,11 @@ const TEST_CONFIG: Config = {
   databaseUrl: 'postgresql://unused:unused@localhost:5432/unused',
   sessionSecret: 'unit-test-session-secret-0123456789',
   sessionTtlMinutes: 30,
-  sessionTtlDefaultHours: 24,
-  sessionTtlRememberDays: 30,
   allowedEmailDomain: 'eiu.edu.vn',
   defaultInitialPassword: DEV_SEED_PASSWORD,
   cronSecret: 'unit-test-cron-secret',
   smtp: {},
   appUrl: 'http://localhost:3000',
-  undoToastSeconds: 10,
 };
 
 let seedPasswordHash = '';
@@ -973,5 +972,26 @@ describe('AuthService', () => {
     expect(serializedLogs).not.toContain(pngDataUrl);
     expect(serializedLogs).not.toContain('MSSV-UNIT-001');
     expect(serializedLogs).not.toContain('unit001@eiu.edu.vn');
+  });
+
+  it('throttles touchSession writes within 30 seconds and skips touching on logout', async () => {
+    const { repo, clock, service } = createTestHarness();
+    const login = await service.login({
+      studentId: 'MSSV-UNIT-001',
+      password: DEV_SEED_PASSWORD,
+      ip: '127.0.0.1',
+    });
+
+    clock.advanceByMs(15_000);
+    await service.authenticateSession(login.rawToken);
+    expect(repo.touchCalls).toBe(0);
+
+    clock.advanceByMs(15_000);
+    await service.authenticateSession(login.rawToken);
+    expect(repo.touchCalls).toBe(1);
+
+    clock.advanceByMs(60_000);
+    await service.logout(login.rawToken);
+    expect(repo.touchCalls).toBe(1);
   });
 });

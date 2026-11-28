@@ -56,20 +56,18 @@ export {
 } from './positioning';
 export {
   DrizzleTasksRepository,
+  hydrateTaskRecords,
   notDoneColumnSqlCondition,
   taskAccessSqlCondition,
   visibleTaskSqlCondition,
 } from './repository';
 export {
   assembleTaskRecords,
-  buildUserSummariesMap,
   computeAssigneeSyncPlan,
-  type RawMemberDepartmentRow,
   type RawTaskAssigneeRow,
   type RawTaskDeliverableRow,
   type RawTaskDepartmentRow,
   type RawTaskRow,
-  type RawUserProfileRow,
 } from './repository-helpers';
 export { TasksService, type TasksServiceDeps } from './service';
 export { type RunTaskAssigneesResult, toTaskVisibilitySubject } from './service-helpers';

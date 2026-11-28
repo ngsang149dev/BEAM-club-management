@@ -272,3 +272,52 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
      - **`deploy-vercel`**: cài cố định `vercel@54`, truyền `VERCEL_TOKEN` qua env (cấm cờ `--token`), chạy `vercel pull --yes --environment=production`, `vercel build --prod`, `vercel deploy --prebuilt --prod --yes`, và smoke check `GET /api/v1/branding`; bỏ qua an toàn khi chưa cấu hình `VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID`.
 - **Ảnh hưởng (`workflows`, tài liệu):** `.github/workflows/{ci,deploy}.yml`, `tests/unit/shared/cicd-workflows.test.ts`, `docs/{OPERATIONS,BACKLOG,STATUS,DECISIONS}.md`. (Không sửa schema CSDL hay `openapi.yaml`).
 - **Trạng thái:** `Done` (đã duyệt & merge `main`).
+
+---
+
+## CR-12 (`[RỦI RO CAO]`): Thiết kế lại toàn bộ Email gửi đi (Auto Light / Soft Dark Card) & Bỏ chú thích thừa (2026-11-27)
+- **Người quyết định:** Chủ dự án (`Sang`) trực tiếp xem và duyệt mẫu tương tác `beam-email-templates-preview.html`.
+- **Quyết định:**
+  1. Dựng helper dùng chung `src/server/shared/email-layout.ts` (`renderBeamEmailHtml`) cho toàn bộ 4 email hệ thống (`task.assigned`, `task.department_assigned`, `task.accepted`, `task.deliverable_submitted`, và digest nhắc hạn `reminders`):
+     - Header gradient Hồng → Cam (`#be185d → #db2777 → #ea580c`, fallback `#db2777`).
+     - Hỗ trợ tự động theo giao diện máy người nhận (`<meta name="color-scheme" content="light dark">` + `<meta name="supported-color-schemes" content="light dark">` + `@media (prefers-color-scheme: dark)`): Light Mode là **White Card** (`#ffffff`, viền `1.5px solid #d4d4d8`, chữ `#18181b`); Dark Mode là **Soft Dark Card dịu mắt giảm tương phản** (`#23252f` trên nền `#181920`, viền `#353846`, chữ `#e4e6eb`).
+     - Bảng chi tiết 2 cột `<table role="presentation">` hiển thị thêm trích đoạn mô tả (`<= 240` ký tự), thời gian bắt đầu, tình trạng hạn pill và `Deadline` (`Asia/Ho_Chi_Minh`) bằng cách nạp `description`, `startAt`, `dueAt`, `isCompleted` trong `NotificationsRepository`.
+     - **Xóa bỏ toàn bộ dòng giải thích dưới nút CTA** trong cả email gửi đi và khung xem trước `/admin/reminders` (`ReminderEmailPreviewParts.tsx`).
+     - **Loại bỏ hoàn toàn cột/nhãn Priority (`[Thấp/Trung bình/Cao/Khẩn]`)** khỏi email nhắc hạn và xem trước `/admin/reminders` (đồng bộ `CR-10`).
+     - Bảo toàn nguyên tắc bảo mật `WQ-27` (che tiêu đề, mô tả, deadline và tên/link sản phẩm khi `isHiddenTask = true`) và `0` PII (`studentId`/`email` của người giao/nhận).
+- **Ảnh hưởng:** `src/server/shared/email-layout.ts`, `src/server/modules/{notifications,reminders}/*`, `src/features/reminders/components/ReminderEmailPreviewParts.tsx`, `src/app/globals.css`, `tests/*`. (`0` migration, `0` đổi `docs/openapi.yaml`).
+- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).
+
+---
+
+## CR-13 (`[RỦI RO CAO]`): Trang Tiến độ cá nhân `/progress` dạng Master–Detail (2026-11-27)
+- **Người quyết định:** Chủ dự án (`Sang`) trực tiếp chốt nghiệp vụ và duyệt wireframe v4 `beam-member-progress-wireframe.html`.
+- **Quyết định:**
+  1. Tạo trang độc lập **`/progress`** ("Tiến độ cá nhân" / "Member Progress", mục điều hướng `WORKSPACE_NAV` ngay dưới `myTasks`); giữ nguyên hoàn toàn `/my-tasks` (`MyTasksView.tsx`) để tránh hồi quy luồng cũ.
+  2. **Phạm vi công việc trên `/progress` (`A4`):** Chỉ hiển thị các công việc được **giao trực tiếp cho cá nhân đó** (`GET /api/v1/tasks?assigneeId=<memberId>&sortBy=dueAt&sortOrder=asc&limit=200` + kiểm tra lại `assignees.some(a => a.id === selectedMemberId)` ở frontend), **không** gộp task chỉ giao cho Ban mà cá nhân chưa được gắn trực tiếp.
+  3. **Phân quyền & Bảo vệ PII (`AGENTS.md §0 #6, §7`):** Mọi tài khoản active đều dùng được tab `Của tôi`; tab `Thành viên CLB` (`GET /api/v1/members?isActive=true&limit=100` + Ban select + Combobox tìm kiếm + lọc `Có việc trễ hạn` + nút `◀ k/N ▶`) **chỉ hiển thị khi có quyền `member.view` hoặc Admin**; `MSSV` & `email` chỉ hiện khi đang xem chính chủ (`/me`) hoặc có quyền `member.view_detail`; công việc ẩn (`isHidden = true`) tự động bị lọc bởi `visibleTaskSqlCondition`.
+  4. **Bố cục Master–Detail v4 đã duyệt:**
+     - Cột trái (`7/12`): Banner thành viên + tab lọc (`Đang làm`, `Quá hạn`, `Chưa nhận`, `Đã xong`, `Tất cả`) + tìm nhanh + danh sách gọn 1 hàng kèm thanh deadline mini.
+     - Cột phải (`5/12`) tách làm **2 card xếp dọc độc lập**: Card trên gồm chi tiết tóm tắt, **thanh Deadline đổi màu động theo thời hạn** (`Xanh lá` → `Vàng` → `Cam` → `Đỏ` → `Xanh ngọc` Hoàn thành), thao tác `Nhận việc` / `Hoàn thành` và nút mở **Modal Bình luận riêng** (`TaskCommentsSection`); Card dưới dành riêng cho **`Link nộp sản phẩm (N)`** (`+ Nộp link`, danh sách link mở tab mới, xóa link).
+- **Ảnh hưởng:** `src/components/AppShellNav.tsx`, `src/app/progress/page.tsx`, `src/features/progress/*`, `src/app/globals.css`, `messages/{vi,en}.json`, `tests/*`. (`0` migration, `0` đổi `docs/openapi.yaml`).
+- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).
+
+---
+
+## CR-14 (`[RỦI RO CAO]`): Ràng buộc ngày bắt buộc trên Task, Nhật ký hoạt động Task, Tinh giản Preview Reminder, Gộp `/my-tasks` -> `/progress` & Dọn mã dư thừa (`A1`–`A4`) (2026-11-28)
+- **Người quyết định:** Chủ dự án (`Sang`) trực tiếp chốt 4 quyết định (`A1`–`A4`) và yêu cầu rà soát/xóa mã dư thừa + tối ưu toàn bộ codebase sau khi chạy kiểm tra thực tế nhánh `CR-12`/`CR-13`.
+- **Quyết định:**
+  1. **Ràng buộc `startAt` & `dueAt` bắt buộc (`A1`, sửa lỗi tạo task bị mất trên Lịch):**
+     - Migration cộng thêm `db/migrations/0009_require_task_dates.sql` (backfill các dòng thiếu `start_at`/`due_at` từ `created_at` & mốc còn lại, đặt `NOT NULL` + `DEFAULT now()`, siết `CHECK (start_at <= due_at)`, kèm trigger `BEFORE INSERT` tự chuẩn hóa fixture SQL thô thiếu cột ngày mà vẫn chặn `NULL` khi `UPDATE`).
+     - Cập nhật cộng thêm `docs/openapi.yaml`: `TaskDto.startAt`/`dueAt`, `CreateTaskRequest` (`required: [title, startAt, dueAt]`), `UpdateTaskRequest.startAt`/`dueAt` đều là `type: string` (`format: date-time`, không còn `null`).
+     - UI `CreateTaskModal` mặc định `Ngày bắt đầu = Hôm nay` (`Asia/Ho_Chi_Minh`), bắt buộc nhập cả `Ngày bắt đầu` & `Hạn chót` (`startAt <= dueAt`), gỡ nút `Xóa ngày` và xóa khay `Chưa đặt hạn` (`CalendarUnscheduledTray`).
+  2. **Theo dõi hoạt động Công việc & Sản phẩm trong Nhật ký hệ thống `/admin/audit` (`A2`):**
+     - `TasksService`, `TaskEventsService` và `ArchiveService.restoreTask` ghi thêm 12 mã `task.*` (`task.created`, `task.updated`, `task.completed`, `task.reopened`, `task.assignees_changed`, `task.accepted`, `task.deliverable_added`, `task.deliverable_removed`, `task.hidden_changed`, `task.deleted`, `task.restored`, `task.reverted`) vào `audit_logs` (không ghi `auth.login`/`logout` hay `comments` để giữ nhật ký gọn).
+     - Bảo toàn `WQ-27`: khi `isHidden = true`, **không lưu tiêu đề task / tên / URL sản phẩm vào `audit_logs.detail`**, đồng thời `DrizzleAuditRepository.listAuditLogs` lọc bổ sung điều kiện `taskAccessSqlCondition` cho người xem không phải Admin. Giao diện `/admin/audit` đổi mặc định phạm vi ngày sang `'all'` và sửa hiển thị metadata còn thiếu.
+  3. **Tinh giản Xem trước Email `/admin/reminders` (Bug #3):** Gỡ bỏ 2 nút thừa trên góc phải (`Xem mẫu minh họa` + `[VI | EN]`), bỏ badge `(VI)` trong card email, bỏ nút minh họa trùng ở empty state và không gọi `GET /me/tasks`; khung xem trước dùng ngôn ngữ hiện tại (`useLocale()`) và lọc động trực tiếp theo cấu hình mốc ngày đang chỉnh (`daysBefore`, `remindOverdue`). CTA trong email & preview trỏ về `/progress`.
+  4. **Gộp `/my-tasks` vào `/progress` (`A3`):** Bỏ `myTasks` khỏi `WORKSPACE_NAV`, `/my-tasks` tự redirect sang `/progress`, xóa `MyTasksView.tsx`, và bổ sung tab lọc **`Việc của Ban`** cùng danh sách việc cá nhân trực tiếp trong `/progress` (`Của tôi` lấy từ `GET /me/tasks?includeDone=true&limit=100`).
+  5. **Dọn dẹp toàn diện & Tối ưu (`A4` + Mục 4):**
+     - Gỡ 4 gói npm không còn dùng (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`, `drizzle-kit`) và xóa `drizzle.config.ts`, 18 file Kanban cũ trong `src/features/boards/*` (tách `WorkspaceTrashModal` sạch sang `src/features/tasks/components/`), `optimistic-move.ts`, `ArchiveBoardsTable.tsx`, `src/server/modules/auth/schemas.ts`, cùng CSS/i18n/export thừa.
+     - Ẩn tab `Board lưu trữ` & cột `Độ ưu tiên` / `Bảng · Cột` ở `/archive`, bỏ chip `X board` ở `/admin/departments`, tối ưu `AuthGuard`, gộp cache TanStack Query, bỏ `Promise.all` đồng thời trên cùng client `tx` (`pg@8.23`), và cắt giảm số truy vấn lặp/N+1 trong `AuthService` & các repository.
+- **Ảnh hưởng (`openapi`, `schema`, `package.json`, codebase):** `docs/openapi.yaml`, `src/features/shared/api/schema.d.ts`, `package.json`, `package-lock.json`, `db/migrations/0009_require_task_dates.sql`, `db/schema/tasks.ts`, `db/seed.sql`, `docs/ERD.md`, `src/lib/*`, `src/server/**`, `src/app/**`, `src/features/**`, `messages/{vi,en}.json`, `tests/**`.
+- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).

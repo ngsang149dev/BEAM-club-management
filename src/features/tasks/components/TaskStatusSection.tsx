@@ -30,7 +30,6 @@ function useTaskStatusController(task: TaskDto) {
           showUndoToast({
             message: tTasks('updatedToast'),
             taskId: data.task.id,
-            boardId: data.task.boardId,
             eventId: data.eventId,
           }),
       }

@@ -3979,9 +3979,9 @@ export interface components {
             title: string;
             description: string | null;
             /** Format: date-time */
-            startAt: string | null;
+            startAt: string;
             /** Format: date-time */
-            dueAt: string | null;
+            dueAt: string;
             isCompleted: boolean;
             /** Format: date-time */
             completedAt: string | null;
@@ -4036,9 +4036,9 @@ export interface components {
             title: string;
             description?: string | null;
             /** Format: date-time */
-            startAt?: string | null;
+            startAt: string;
             /** Format: date-time */
-            dueAt?: string | null;
+            dueAt: string;
             /**
              * @deprecated
              * @default 2
@@ -4061,9 +4061,9 @@ export interface components {
             title?: string;
             description?: string | null;
             /** Format: date-time */
-            startAt?: string | null;
+            startAt?: string;
             /** Format: date-time */
-            dueAt?: string | null;
+            dueAt?: string;
             isCompleted?: boolean;
             /** @deprecated */
             priority?: number;

@@ -10,6 +10,7 @@ export const PASSWORD_CHANGE_ATTEMPT_PREFIX = 'pwd:';
 export const LOGIN_ATTEMPT_ESCAPE_PREFIX = 'login:';
 export const FIRST_LOGIN_PASSWORD_CHANGE_REDIRECT = '/profile?changePassword=1';
 export const DEFAULT_SESSION_TTL_MINUTES = 30;
+export const SESSION_TOUCH_THROTTLE_MS = 30_000;
 
 const MS_PER_MINUTE = 60 * 1000;
 
@@ -59,11 +60,14 @@ export function isSessionExpired(
   return session.expiresAt.getTime() <= now.getTime();
 }
 
-export function computeSlidingExpiry(
+export const computeSlidingExpiry = computeSessionExpiry;
+
+export function shouldThrottleSessionTouch(
+  session: { readonly lastSeenAt: Date },
   now: Date,
-  config: SessionTtlConfig,
-): Date {
-  return new Date(now.getTime() + config.sessionTtlMinutes * MS_PER_MINUTE);
+): boolean {
+  const elapsedMs = now.getTime() - session.lastSeenAt.getTime();
+  return elapsedMs >= 0 && elapsedMs < SESSION_TOUCH_THROTTLE_MS;
 }
 
 export function generateOpaqueSessionToken(): string {

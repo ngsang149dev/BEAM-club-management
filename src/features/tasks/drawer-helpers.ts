@@ -8,8 +8,8 @@ export const editTaskSchema = z
   .object({
     title: taskTitleSchema,
     description: z.string().max(10000),
-    startAtInput: z.string(),
-    dueAtInput: z.string(),
+    startAtInput: z.string().trim().min(1, 'required'),
+    dueAtInput: z.string().trim().min(1, 'required'),
   })
   .refine((d) => !(d.startAtInput && d.dueAtInput && d.startAtInput > d.dueAtInput), {
     message: 'invalidDateRange',

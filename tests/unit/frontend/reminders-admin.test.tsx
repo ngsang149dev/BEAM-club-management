@@ -18,7 +18,6 @@ const reminderHooksMock = vi.hoisted(() => ({
     isPending: false,
     error: null as unknown,
   })),
-  useReminderPreviewTasksQuery: vi.fn(),
 }));
 
 const authHooksMock = vi.hoisted(() => ({
@@ -117,7 +116,7 @@ function makeTask(overrides: Partial<TaskDto>): TaskDto {
     columnId: '33333333-3333-4333-8333-333333333333',
     title: 'Sample open task',
     description: null,
-    startAt: null,
+    startAt: '2026-11-20T00:00:00.000Z',
     dueAt: '2026-11-27T00:00:00.000Z',
     isCompleted: false,
     completedAt: null,
@@ -216,30 +215,6 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
         permissions: ['reminder.configure'],
       },
     });
-    reminderHooksMock.useReminderPreviewTasksQuery.mockReturnValue({
-      isPending: false,
-      isError: false,
-      refetch: vi.fn(),
-      data: {
-        items: [
-          makeTask({
-            id: '11111111-1111-4111-8111-111111111001',
-            title: 'Public overdue task',
-            dueAt: '2026-11-25T00:00:00.000Z',
-            priority: 4,
-          }),
-          makeTask({
-            id: '11111111-1111-4111-8111-111111111002',
-            title: 'SECRET_HIDDEN_BUDGET_TITLE',
-            dueAt: '2026-11-28T00:00:00.000Z',
-            priority: 3,
-            isHidden: true,
-            assignedDepartments: [{ id: 'dept-sec', name: 'SecretBoardDept' }],
-          }),
-        ],
-        meta: { nextCursor: null, limit: 100 },
-      },
-    });
   });
 
   it('renders 403 ErrorState and disables all queries when missing reminder.configure', () => {
@@ -247,14 +222,12 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(html).toContain('403');
     expect(html).toContain('Bạn không cấu hình được nhắc deadline');
     expect(reminderHooksMock.useReminderSettingsQuery).toHaveBeenCalledWith(false);
-    expect(reminderHooksMock.useReminderPreviewTasksQuery).toHaveBeenCalledWith(false);
     expect(authHooksMock.useMeQuery).toHaveBeenCalledWith(false);
   });
 
-  it('allows reminder.configure non-admin, shows 07:00 schedule, redacts WQ-27 hidden tasks, and leaks zero PII/UUID', () => {
+  it('allows reminder.configure non-admin, shows 07:00 schedule, live preview matching milestones, and leaks zero PII/UUID', () => {
     const html = renderRemindersView({ permissions: ['reminder.configure'], isAdmin: false });
     expect(reminderHooksMock.useReminderSettingsQuery).toHaveBeenCalledWith(true);
-    expect(reminderHooksMock.useReminderPreviewTasksQuery).toHaveBeenCalledWith(true);
     expect(authHooksMock.useMeQuery).toHaveBeenCalledWith(true);
 
     expect(html).toContain('Còn 2 ngày');
@@ -269,11 +242,16 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(html).not.toContain('rem-email-kicker');
     expect(html).not.toContain('rem-preview-note');
     expect(html).not.toContain('rem-sample-banner');
+    expect(html).not.toContain('rem-sample-chip');
+    expect(html).not.toContain('rem-email-lang');
+    expect(html).not.toContain('Xem mẫu minh họa');
+    expect(html).not.toContain('rem-email-task-prio');
+    expect(html).not.toContain('ui-prio');
+    expect(html).not.toContain('rem-email-foot');
+    expect(html).not.toContain('Mỗi người một email, mỗi ngày.');
     expect(html).toContain('Nguyễn Văn A');
-    expect(html).toContain('Public overdue task');
-    expect(html).toContain('Công việc ẩn (mở ứng dụng để xem chi tiết)');
-    expect(html).not.toContain('SECRET_HIDDEN_BUDGET_TITLE');
-    expect(html).not.toContain('SecretBoardDept');
+    expect(html).toContain('Chuẩn bị slide giới thiệu CLB');
+    expect(html).toContain('href="/progress"');
     expect(html).not.toContain('21110001');
     expect(html).not.toContain('a.nguyen@eiu.edu.vn');
     expect(html).not.toContain('Le Van Khac');
@@ -365,25 +343,22 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(customHtml).not.toContain('reminders-custom-chip-1');
   });
 
-  it('builds E01 preview matching milestones, priority DESC (WQ-34), WQ-27 redaction, and renders EN/empty states', () => {
+  it('builds E01 preview matching milestones, dueAt ordering, WQ-27 redaction, and renders live locale & empty states', () => {
     const tasks: TaskDto[] = [
       makeTask({
-        id: 't-over-low',
-        title: 'Overdue low',
+        id: 't-over-earlier',
+        title: 'Overdue earlier',
         dueAt: '2026-11-24T00:00:00.000Z',
-        priority: 1,
       }),
       makeTask({
-        id: 't-over-urgent',
-        title: 'Overdue urgent',
+        id: 't-over-recent',
+        title: 'Overdue recent',
         dueAt: '2026-11-25T00:00:00.000Z',
-        priority: 4,
       }),
       makeTask({
         id: 't-today-hidden',
         title: 'CONFIDENTIAL_TODAY_TASK',
         dueAt: '2026-11-26T00:00:00.000Z',
-        priority: 3,
         isHidden: true,
         assignedDepartments: [{ id: 'd-1', name: 'HiddenDept' }],
       }),
@@ -391,19 +366,16 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
         id: 't-soon-1',
         title: 'Due in 1 day',
         dueAt: '2026-11-27T00:00:00.000Z',
-        priority: 2,
       }),
       makeTask({
         id: 't-soon-2',
-        title: 'Due in 2 days high',
+        title: 'Due in 2 days',
         dueAt: '2026-11-28T00:00:00.000Z',
-        priority: 4,
       }),
       makeTask({
         id: 't-unmatched-5d',
         title: 'Unmatched 5 days task',
         dueAt: '2026-12-01T00:00:00.000Z',
-        priority: 4,
       }),
       makeTask({
         id: 't-deleted',
@@ -423,8 +395,8 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
     expect(preview.totalCount).toBe(5);
     expect(preview.groups.map((g) => g.key)).toEqual(['overdue', 'today', 'upcoming']);
     expect(preview.groups[0]?.items.map((i) => i.title)).toEqual([
-      'Overdue urgent',
-      'Overdue low',
+      'Overdue earlier',
+      'Overdue recent',
     ]);
     expect(preview.groups[1]?.items[0]).toMatchObject({
       isHidden: true,
@@ -432,80 +404,54 @@ describe('RemindersAdminView (S12), ReminderEmailPreview (E01) & helpers', () =>
       departmentNames: [],
     });
     expect(preview.groups[2]?.items.map((i) => i.title)).toEqual([
-      'Due in 2 days high',
       'Due in 1 day',
+      'Due in 2 days',
     ]);
 
     const enPreviewHtml = renderWithIntl(
       <ReminderEmailPreview
         recipientName="Nguyễn Văn A"
-        defaultLocale="en"
         sendHourVn={7}
         daysBefore={[2, 1, 0]}
         remindOverdue
-        tasks={tasks}
-        isLoadingTasks={false}
-        isTasksError={false}
-        onRetryTasks={vi.fn()}
         nowMs={NOW_FIXED_MS}
       />,
-      'vi'
+      'en'
     );
-    expect(enPreviewHtml).toContain('aria-pressed="true">EN</button>');
     expect(enPreviewHtml).toContain('Tasks need your attention');
     expect(enPreviewHtml).toContain('Hi Nguyễn Văn A,');
     expect(enPreviewHtml).toContain('Overdue');
     expect(enPreviewHtml).toContain('Due today');
     expect(enPreviewHtml).toContain('Coming up');
-    expect(enPreviewHtml).toContain('Hidden task (open the app to view details)');
-    expect(enPreviewHtml).not.toContain('rem-email-kicker');
-    expect(enPreviewHtml).not.toContain('rem-preview-note');
-    expect(enPreviewHtml).not.toContain('rem-sample-banner');
-    expect(enPreviewHtml).not.toContain('CONFIDENTIAL_TODAY_TASK');
-    expect(enPreviewHtml).not.toContain('HiddenDept');
-    expect(enPreviewHtml).not.toContain('Unmatched 5 days task');
+    expect(enPreviewHtml).toContain('Prepare club intro slides');
+    expect(enPreviewHtml).toContain('Draft MC script');
+    expect(enPreviewHtml).toContain('Finalize sponsor list');
+    expect(enPreviewHtml).toContain('Design year-end banner');
+    expect(enPreviewHtml).toContain('href="/progress"');
+    expect(enPreviewHtml).not.toContain('rem-email-lang');
+    expect(enPreviewHtml).not.toContain('rem-sample-chip');
+    expect(enPreviewHtml).not.toContain('rem-email-task-prio');
+    expect(enPreviewHtml).not.toContain('ui-prio');
+    expect(enPreviewHtml).not.toContain('rem-email-foot');
 
-    const sampleHeaderVi = renderWithIntl(
-      <PreviewHeader
-        previewLocale="vi"
-        showSample
-        onSelectLocale={vi.fn()}
-        onToggleSample={vi.fn()}
-      />,
-      'vi'
-    );
-    expect(sampleHeaderVi).toContain('rem-sample-chip');
-    expect(sampleHeaderVi).toContain('Dữ liệu minh họa');
-
-    const sampleHeaderEn = renderWithIntl(
-      <PreviewHeader
-        previewLocale="en"
-        showSample
-        onSelectLocale={vi.fn()}
-        onToggleSample={vi.fn()}
-      />,
-      'en'
-    );
-    expect(sampleHeaderEn).toContain('rem-sample-chip');
-    expect(sampleHeaderEn).toContain('Sample preview');
+    const headerVi = renderWithIntl(<PreviewHeader />, 'vi');
+    expect(headerVi).toContain('Xem trước email');
+    expect(headerVi).not.toContain('rem-sample-chip');
+    expect(headerVi).not.toContain('rem-preview-controls');
 
     const emptyHtml = renderWithIntl(
       <ReminderEmailPreview
         recipientName="Nguyễn Văn A"
-        defaultLocale="vi"
         sendHourVn={7}
         daysBefore={[]}
         remindOverdue={false}
-        tasks={tasks}
-        isLoadingTasks={false}
-        isTasksError={false}
-        onRetryTasks={vi.fn()}
         nowMs={NOW_FIXED_MS}
       />,
       'vi'
     );
     expect(emptyHtml).toContain('Không có gì để nhắc — không gửi email rỗng');
-    expect(emptyHtml).toContain('Xem mẫu minh họa');
+    expect(emptyHtml).not.toContain('<button');
+    expect(emptyHtml).not.toContain('Xem mẫu minh họa');
   });
 
   it('executes PUT /settings/reminders mutation, invalidates reminderSettings & auditLogs, and maps errors', async () => {

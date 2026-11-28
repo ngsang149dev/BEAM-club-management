@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { useMeQuery } from '@/features/auth/hooks/useAuth';
+import { useSessionQuery } from '@/features/auth/hooks/useAuth';
 import { usePermissions } from '@/features/shared/permissions/can';
 import { TaskErrorBanner } from '@/features/tasks/components/TaskFormFields';
 import {
@@ -118,7 +118,6 @@ function CommentsPanelHeader({
   return (
     <div className="task-comments-header">
       <div className="task-comments-title-group">
-        <h3 className="task-section-title">{tComments('title')}</h3>
         <span className="ui-chip">{commentCount}</span>
       </div>
       <div className="task-comments-meta">
@@ -141,14 +140,13 @@ function CommentsPanelHeader({
 
 function useCommentsController(
   taskId: string,
-  boardId: string,
   onCreated?: () => void,
 ) {
   const tComments = useTranslations('comments');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const commentsQuery = useTaskCommentsInfiniteQuery(taskId, true);
-  const createMutation = useCreateCommentMutation(taskId, boardId);
-  const deleteMutation = useDeleteCommentMutation(taskId, boardId);
+  const createMutation = useCreateCommentMutation(taskId);
+  const deleteMutation = useDeleteCommentMutation(taskId);
 
   const submitBody = (body: string, resetForm: () => void) => {
     createMutation.mutate(
@@ -174,18 +172,16 @@ function useCommentsController(
 
 export function TaskCommentsSection({
   taskId,
-  boardId,
   commentCount,
 }: {
   readonly taskId: string;
-  readonly boardId: string;
   readonly commentCount: number;
 }) {
   const locale = useLocale();
   const { isAdmin, can } = usePermissions();
-  const meQuery = useMeQuery(true);
+  const sessionQuery = useSessionQuery(true);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const ctrl = useCommentsController(taskId, boardId, () => {
+  const ctrl = useCommentsController(taskId, () => {
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   });
   const canCreate = isAdmin || can('comment.create');
@@ -217,7 +213,7 @@ export function TaskCommentsSection({
           locale={locale}
           isAdmin={isAdmin}
           canDeleteAny={can('comment.delete_any')}
-          currentUserId={meQuery.data?.profile.id}
+          currentUserId={sessionQuery.data?.userId}
           confirmingId={ctrl.confirmingId}
           isDeleting={ctrl.deleteMutation.isPending}
           onRequestDelete={ctrl.setConfirmingId}

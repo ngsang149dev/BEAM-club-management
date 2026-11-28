@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { optionalCursorQuerySchema, parseIntegerInput } from './tasks';
+import {
+  defaultQueryLimitSchema,
+  optionalCursorQuerySchema,
+} from './query-params';
 
 export const REVERTABLE_TASK_EVENT_TYPES = [
   'task.updated',
@@ -31,21 +34,16 @@ export function isRevertableTaskEventType(type: string): type is RevertableTaskE
   return REVERTABLE_EVENT_TYPE_SET.has(type);
 }
 
-const taskEventsLimitSchema = z.preprocess(
-  parseIntegerInput,
-  z.number().int().min(1).max(100).default(20),
-);
-
 export const listTaskEventsQuerySchema = z.object({
   cursor: optionalCursorQuerySchema,
-  limit: taskEventsLimitSchema,
+  limit: defaultQueryLimitSchema,
 });
 
 export type ListTaskEventsQueryInput = z.infer<typeof listTaskEventsQuerySchema>;
 
 export const listBoardTrashQuerySchema = z.object({
   cursor: optionalCursorQuerySchema,
-  limit: taskEventsLimitSchema,
+  limit: defaultQueryLimitSchema,
 });
 
 export type ListBoardTrashQueryInput = z.infer<typeof listBoardTrashQuerySchema>;

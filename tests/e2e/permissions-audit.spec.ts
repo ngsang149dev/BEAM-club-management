@@ -1,14 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
-import { and, eq, inArray, ne, or } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import {
+  boards,
   clubAssets,
   departments,
   loginAttempts,
   permissions,
   profiles,
   sessions,
+  taskAssignees,
+  taskDeliverables,
+  taskDepartments,
+  tasks,
   userPermissions,
 } from '@db/schema';
 import { DEFAULT_MEMBER_PERMISSIONS } from '@/lib/permissions';
@@ -90,6 +95,8 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
   const inactiveFullName = `E4 Departed ${suffix}`;
 
   const tempDeptName = `Ban E4 Temp ${suffix}`;
+  const trackedBoardIds: string[] = [];
+  const trackedTaskIds: string[] = [];
 
   test.beforeAll(async () => {
     const testDatabaseUrl = process.env.TEST_DATABASE_URL?.trim();
@@ -208,7 +215,41 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
 
   test.afterAll(async () => {
     if (db) {
+      const now = new Date();
       const cleanupIds = [adminUserId, hrUpdaterUserId, targetUserId, auditViewerUserId, inactiveUserId];
+      if (trackedBoardIds.length > 0) {
+        const boardTasks = await db
+          .select({ id: tasks.id })
+          .from(tasks)
+          .where(inArray(tasks.boardId, trackedBoardIds));
+        for (const row of boardTasks) {
+          if (!trackedTaskIds.includes(row.id)) trackedTaskIds.push(row.id);
+        }
+      }
+      if (trackedTaskIds.length > 0) {
+        await db.delete(taskDeliverables).where(inArray(taskDeliverables.taskId, trackedTaskIds));
+        await db.delete(taskDepartments).where(inArray(taskDepartments.taskId, trackedTaskIds));
+        await db.delete(taskAssignees).where(inArray(taskAssignees.taskId, trackedTaskIds));
+        await db
+          .update(tasks)
+          .set({
+            deletedAt: sql`COALESCE(${tasks.deletedAt}, ${now.toISOString()}::timestamptz)`,
+            purgedAt: sql`COALESCE(${tasks.purgedAt}, ${now.toISOString()}::timestamptz)`,
+            updatedAt: now,
+          })
+          .where(inArray(tasks.id, trackedTaskIds));
+      }
+      if (trackedBoardIds.length > 0) {
+        await db
+          .update(boards)
+          .set({
+            archivedAt: sql`COALESCE(${boards.archivedAt}, ${now.toISOString()}::timestamptz)`,
+            purgedAt: sql`COALESCE(${boards.purgedAt}, ${now.toISOString()}::timestamptz)`,
+            departmentId: null,
+            updatedAt: now,
+          })
+          .where(inArray(boards.id, trackedBoardIds));
+      }
       await db.delete(clubAssets).where(eq(clubAssets.key, 'club_logo'));
       await db.delete(sessions).where(inArray(sessions.userId, cleanupIds));
       await db.delete(userPermissions).where(inArray(userPermissions.userId, cleanupIds));
@@ -326,11 +367,8 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
       await expect(targetBtn).toBeVisible();
       await targetBtn.click();
 
-      // CR-02B: header shows active member without redundant editingBanner, multi-column .perm-groups, compact count bar
+      // CR-02B: header shows active member with multi-column .perm-groups and compact count bar
       await expect(page.locator('.perm-who')).toContainText(targetFullName);
-      await expect(
-        page.getByText(viMessages.permissionsAdmin.editingBanner.replace('{name}', targetFullName)),
-      ).toHaveCount(0);
 
       const permGroupsLayout = await page.locator('.perm-groups').evaluate((grid) => {
         const computedCols = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/);
@@ -442,7 +480,9 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
     );
     await page.getByRole('button', { name: viMessages.permissionsAdmin.grantAdminButton }).click();
     expect((await grantAdminPromise).status()).toBe(200);
-    await expect(page.getByText(viMessages.permissionsAdmin.adminAccessNotice)).toBeVisible();
+    await expect(page.locator('.perm-admin-panel')).toContainText(
+      viMessages.permissionsAdmin.adminSectionOnDesc,
+    );
 
     const adminPanel = page.locator('.perm-admin-panel');
     const removeAdminBtn = adminPanel.getByRole('button', {
@@ -788,6 +828,215 @@ test.describe('Permissions & Audit Log E2E (S10, S13)', () => {
       expect(body).not.toContain('"email"');
       expect(body).not.toContain('passwordHash');
       expect(body).not.toContain('password_hash');
+    }
+
+    await tracker.assertClean();
+  });
+
+  test('defaults /admin/audit dateRange to all, tracks task lifecycle & deliverables, redacts hidden titles (WQ-27) for Admin, and filters hidden task logs from non-admin audit.view holders (CR-14 A2)', async ({
+    browser,
+    page,
+  }) => {
+    const tracker = await attachRuntimeErrorTracker(page);
+    const boardName = `E4 Audit Board ${suffix}`;
+    const publicTaskTitle = `E4 Audit Public Task ${suffix}`;
+    const publicDelivTitle = `E4 Public Deliverable ${suffix}`;
+    const publicDelivUrl = `https://example.com/public-audit-${suffix}`;
+    const hiddenSecretTitle = `E4_TOP_SECRET_AUDIT_TASK_${suffix}`;
+    const hiddenSecretDelivTitle = `E4_SECRET_DELIV_${suffix}`;
+    const hiddenSecretDelivUrl = `https://secret.example.com/audit-hidden-${suffix}`;
+
+    const startIso = new Date().toISOString();
+    const dueIso = new Date(Date.now() + 86_400_000).toISOString();
+
+    await signInAs(page, adminStudentId, '/admin/audit');
+
+    const boardRes = await page.request.post('/api/v1/boards', { data: { name: boardName } });
+    expect(boardRes.status()).toBe(201);
+    const boardJson = (await boardRes.json()) as {
+      board: { id: string; columns: Array<{ id: string; name: string }> };
+    };
+    const boardId = boardJson.board.id;
+    const todoColId = boardJson.board.columns[0]!.id;
+    trackedBoardIds.push(boardId);
+
+    const createPublicRes = await page.request.post('/api/v1/tasks', {
+      data: {
+        boardId,
+        columnId: todoColId,
+        title: publicTaskTitle,
+        startAt: startIso,
+        dueAt: dueIso,
+        assigneeIds: [targetUserId],
+        notifyInApp: false,
+        notifyEmail: false,
+      },
+    });
+    expect(createPublicRes.status()).toBe(201);
+    const publicTaskId = ((await createPublicRes.json()) as { task: { id: string } }).task.id;
+    trackedTaskIds.push(publicTaskId);
+
+    expect(
+      (
+        await page.request.patch(`/api/v1/tasks/${publicTaskId}`, {
+          data: { isCompleted: true, version: 1 },
+        })
+      ).status(),
+    ).toBe(200);
+    expect(
+      (
+        await page.request.post(`/api/v1/tasks/${publicTaskId}/deliverables`, {
+          data: { title: publicDelivTitle, url: publicDelivUrl },
+        })
+      ).status(),
+    ).toBe(201);
+
+    const createHiddenRes = await page.request.post('/api/v1/tasks', {
+      data: {
+        boardId,
+        columnId: todoColId,
+        title: hiddenSecretTitle,
+        startAt: startIso,
+        dueAt: dueIso,
+        assigneeIds: [targetUserId],
+        isHidden: true,
+        notifyInApp: false,
+        notifyEmail: false,
+      },
+    });
+    expect(createHiddenRes.status()).toBe(201);
+    const hiddenTaskId = ((await createHiddenRes.json()) as { task: { id: string } }).task.id;
+    trackedTaskIds.push(hiddenTaskId);
+
+    expect(
+      (
+        await page.request.patch(`/api/v1/tasks/${hiddenTaskId}`, {
+          data: { isCompleted: true, version: 1 },
+        })
+      ).status(),
+    ).toBe(200);
+    expect(
+      (
+        await page.request.post(`/api/v1/tasks/${hiddenTaskId}/deliverables`, {
+          data: { title: hiddenSecretDelivTitle, url: hiddenSecretDelivUrl },
+        })
+      ).status(),
+    ).toBe(201);
+
+    // 1. Admin reloads /admin/audit -> dateRange defaults to 'all', sees task.created/completed/deliverable_added + (Công việc ẩn)
+    const adminBodies: string[] = [];
+    page.on('response', async (res) => {
+      if (res.url().includes('/api/v1/audit-logs') && res.status() === 200) {
+        adminBodies.push(await res.text().catch(() => ''));
+      }
+    });
+    const adminInitialAuditPromise = page.waitForResponse(
+      (res) => res.url().includes('/api/v1/audit-logs') && res.request().method() === 'GET',
+    );
+    await page.reload();
+    const adminInitialRes = await adminInitialAuditPromise;
+    expect(adminInitialRes.status()).toBe(200);
+    expect(new URL(adminInitialRes.url()).searchParams.has('from')).toBe(false);
+
+    const dateRangeSelect = page.getByLabel(viMessages.auditLogs.dateRangeLabel);
+    await expect(dateRangeSelect).toHaveValue('all');
+
+    const actionFilter = page.getByLabel(viMessages.auditLogs.actionFilterLabel);
+    const detailPane = page.locator('aside.audit-side');
+    for (const [action, label] of [
+      ['task.created', viMessages.auditLogs.actions.taskCreated],
+      ['task.completed', viMessages.auditLogs.actions.taskCompleted],
+      ['task.deliverable_added', viMessages.auditLogs.actions.taskDeliverableAdded],
+    ] as const) {
+      const filterPromise = page.waitForResponse(
+        (res) =>
+          res.url().includes('/api/v1/audit-logs') &&
+          res.url().includes(`action=${action}`) &&
+          res.status() === 200,
+      );
+      await actionFilter.selectOption(action);
+      const resJson = (await (await filterPromise).json()) as {
+        items: Array<{ id: string; detail: Record<string, unknown> }>;
+      };
+      expect(resJson.items.some((item) => item.detail.taskId === publicTaskId)).toBe(true);
+      expect(resJson.items.some((item) => item.detail.taskId === hiddenTaskId)).toBe(true);
+
+      await expect(
+        page.locator('.audit-table tbody tr', { hasText: publicTaskTitle }).first(),
+      ).toContainText(label);
+      const hiddenRow = page
+        .locator('.audit-table tbody tr', { hasText: viMessages.auditLogs.hiddenTaskLabel })
+        .first();
+      await expect(hiddenRow).toContainText(label);
+      await hiddenRow.click();
+      await expect(detailPane).toContainText(viMessages.auditLogs.hiddenTaskLabel);
+    }
+
+    const adminMainText = await page.locator('main').innerText();
+    for (const secret of [hiddenSecretTitle, hiddenSecretDelivTitle, hiddenSecretDelivUrl]) {
+      expect(adminMainText).not.toContain(secret);
+      for (const body of adminBodies) {
+        expect(body).not.toContain(secret);
+      }
+    }
+
+    // 2. Non-admin holding audit.view (NOT assignee/creator of hidden task): defaults to 'all',
+    //    sees public task audit entries, and inaccessible hidden task entries are completely filtered out
+    const viewerCtx = await browser.newContext();
+    const viewerPage = await viewerCtx.newPage();
+    const viewerTracker = await attachRuntimeErrorTracker(viewerPage);
+    const viewerBodies: string[] = [];
+    viewerPage.on('response', async (res) => {
+      if (res.url().includes('/api/v1/audit-logs') && res.status() === 200) {
+        viewerBodies.push(await res.text().catch(() => ''));
+      }
+    });
+
+    try {
+      await signInAs(viewerPage, auditViewerStudentId, '/admin/audit');
+      await expect(viewerPage.locator('.audit-table tbody tr').first()).toBeVisible();
+      await expect(viewerPage.getByLabel(viMessages.auditLogs.dateRangeLabel)).toHaveValue('all');
+
+      const viewerActionFilter = viewerPage.getByLabel(viMessages.auditLogs.actionFilterLabel);
+      for (const action of ['task.created', 'task.completed', 'task.deliverable_added'] as const) {
+        const filterPromise = viewerPage.waitForResponse(
+          (res) =>
+            res.url().includes('/api/v1/audit-logs') &&
+            res.url().includes(`action=${action}`) &&
+            res.status() === 200,
+        );
+        await viewerActionFilter.selectOption(action);
+        const bodyText = await (await filterPromise).text();
+        viewerBodies.push(bodyText);
+        const parsed = JSON.parse(bodyText) as {
+          items: Array<{ detail: Record<string, unknown> }>;
+        };
+        expect(parsed.items.some((item) => item.detail.taskId === publicTaskId)).toBe(true);
+        expect(parsed.items.some((item) => item.detail.taskId === hiddenTaskId)).toBe(false);
+        await expect(
+          viewerPage.locator('.audit-table tbody tr', { hasText: publicTaskTitle }).first(),
+        ).toBeVisible();
+      }
+
+      const viewerMainText = await viewerPage.locator('main').innerText();
+      for (const secret of [
+        hiddenTaskId,
+        hiddenSecretTitle,
+        hiddenSecretDelivTitle,
+        hiddenSecretDelivUrl,
+        adminStudentId,
+        targetStudentId,
+        adminEmail,
+        targetEmail,
+      ]) {
+        expect(viewerMainText).not.toContain(secret);
+        for (const body of viewerBodies) {
+          expect(body).not.toContain(secret);
+        }
+      }
+      await viewerTracker.assertClean();
+    } finally {
+      await viewerCtx.close();
     }
 
     await tracker.assertClean();

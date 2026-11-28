@@ -1,17 +1,17 @@
-import { and, asc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import {
-  appSettings, boards, columns, departments, memberDepartments,
+  appSettings, boards, columns, memberDepartments,
   profiles, reminders, taskAssignees, taskDepartments, tasks,
 } from '@db/schema';
 import { REMINDERS_APP_SETTING_KEY } from '@/lib/reminders';
 import type { TaskPriority } from '@/lib/tasks';
 import {
-  buildUserSummariesMap,
   notDoneColumnSqlCondition,
   type TaskMemberSummaryRecord,
 } from '@/server/modules/tasks';
-import type { DbExecutor } from '@/server/shared/db';
+import { type DbExecutor, runExecutorQueries } from '@/server/shared/db';
 import type { TransactionContext } from '@/server/shared/transaction';
+import { loadUserSummariesMap } from '@/server/shared/user-summaries';
 import { parseStoredReminderSettings } from './policy';
 import type {
   RecordReminderSentInput, ReminderCandidateTaskRecord, ReminderLocale,
@@ -26,7 +26,7 @@ interface RawCandidateTaskRow {
   readonly columnId: string | null;
   readonly columnName: string | null;
   readonly title: string;
-  readonly dueAt: Date | null;
+  readonly dueAt: Date;
   readonly priority: number;
   readonly isHidden: boolean;
   readonly createdBy: string;
@@ -186,9 +186,9 @@ export class DrizzleRemindersRepository implements RemindersRepository {
     const taskRows = await this.loadActiveCandidateTaskRows();
     if (taskRows.length === 0) return [];
     const taskIds = taskRows.map((row) => row.id);
-    const [directRows, taskDeptRows] = await Promise.all([
-      this.loadDirectAssignees(taskIds),
-      this.loadTaskDepartments(taskIds),
+    const [directRows, taskDeptRows] = await runExecutorQueries(this.db, [
+      () => this.loadDirectAssignees(taskIds),
+      () => this.loadTaskDepartments(taskIds),
     ]);
     const uniqueDeptIds = Array.from(new Set(taskDeptRows.map((row) => row.departmentId)));
     const deptMemberRows = await this.loadDepartmentMembers(uniqueDeptIds);
@@ -213,16 +213,7 @@ export class DrizzleRemindersRepository implements RemindersRepository {
   }
 
   private async loadUserSummary(executor: DbExecutor, userId: string): Promise<TaskMemberSummaryRecord | null> {
-    const [profileRows, deptRows] = await Promise.all([
-      executor.select({
-        id: profiles.id, fullName: profiles.fullName, avatarUpdatedAt: profiles.avatarUpdatedAt,
-        isActive: profiles.isActive, leftAt: profiles.leftAt,
-      }).from(profiles).where(eq(profiles.id, userId)).limit(1),
-      executor.select({ userId: memberDepartments.userId, id: departments.id, name: departments.name })
-        .from(memberDepartments).innerJoin(departments, eq(memberDepartments.departmentId, departments.id))
-        .where(eq(memberDepartments.userId, userId)).orderBy(asc(departments.name), asc(departments.id)),
-    ]);
-    return buildUserSummariesMap(profileRows, deptRows).get(userId) ?? null;
+    return (await loadUserSummariesMap(executor, [userId])).get(userId) ?? null;
   }
 
   private loadActiveCandidateTaskRows(): Promise<RawCandidateTaskRow[]> {

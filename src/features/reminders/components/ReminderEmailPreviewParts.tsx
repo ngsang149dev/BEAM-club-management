@@ -3,7 +3,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import type { TaskPriority } from '@/lib/tasks';
 import {
   REMINDER_GROUP_MSG_KEYS,
   formatPreviewDate,
@@ -14,26 +13,6 @@ import {
 } from '../preview-helpers';
 
 export type EmailTranslator = ReturnType<typeof useTranslations<'reminders.emailContent.vi'>>;
-
-export function PreviewPriorityPill({
-  priority,
-  tEmail,
-}: {
-  readonly priority: TaskPriority;
-  readonly tEmail: EmailTranslator;
-}) {
-  const key = `prio${priority}` as const;
-  return (
-    <span className={`ui-prio p${priority}`}>
-      <span className="ui-prio-bars" aria-hidden="true">
-        {[1, 2, 3, 4].map((bar) => (
-          <i key={bar} className={bar <= priority ? 'on' : undefined} />
-        ))}
-      </span>
-      <span>{tEmail(key)}</span>
-    </span>
-  );
-}
 
 export function PreviewDuePill({
   item,
@@ -83,81 +62,28 @@ export function PreviewTaskRow({
 
   return (
     <div className="rem-email-task">
-      <span className="rem-email-task-prio"><PreviewPriorityPill priority={item.priority} tEmail={tEmail} /></span>
       <span className="rem-email-task-main"><b>{title}</b><span>{subtitle}</span></span>
       <span className="rem-email-task-due"><PreviewDuePill item={item} previewLocale={previewLocale} tEmail={tEmail} /></span>
     </div>
   );
 }
 
-export function PreviewHeader({
-  previewLocale,
-  showSample,
-  onSelectLocale,
-  onToggleSample,
-}: {
-  readonly previewLocale: 'vi' | 'en';
-  readonly showSample: boolean;
-  readonly onSelectLocale: (locale: 'vi' | 'en') => void;
-  readonly onToggleSample: () => void;
-}) {
+export function PreviewHeader() {
   const t = useTranslations('reminders');
   return (
     <div className="rem-preview-head">
       <div className="rem-preview-title">
         <h2>{t('previewHeading')}</h2>
-        {showSample ? (
-          <span className="ui-chip rem-sample-chip" data-testid="reminders-sample-chip">
-            {t('previewSampleChip')}
-          </span>
-        ) : null}
-      </div>
-      <div className="rem-preview-controls">
-        <button type="button" className="ui-btn ghost is-sm" aria-pressed={showSample} onClick={onToggleSample}>
-          {showSample ? t('previewSampleToggleOff') : t('previewSampleToggleOn')}
-        </button>
-        <div className="lang-switch" role="group" aria-label={t('previewLangAria')}>
-          <button type="button" className="lang-switch-btn" aria-pressed={previewLocale === 'vi'} onClick={() => onSelectLocale('vi')}>VI</button>
-          <button type="button" className="lang-switch-btn" aria-pressed={previewLocale === 'en'} onClick={() => onSelectLocale('en')}>EN</button>
-        </div>
       </div>
     </div>
   );
 }
 
-export function PreviewEmailEmptyOrError({
-  isLoadingTasks,
-  isTasksError,
-  tEmail,
-  onRetryTasks,
-  onEnableSample,
-}: {
-  readonly isLoadingTasks: boolean;
-  readonly isTasksError: boolean;
-  readonly tEmail: EmailTranslator;
-  readonly onRetryTasks: () => void;
-  readonly onEnableSample: () => void;
-}) {
-  const t = useTranslations('reminders');
-  const tCommon = useTranslations('common');
-
-  if (isLoadingTasks) return <p className="rem-email-state">{t('previewLoading')}</p>;
-  if (isTasksError) {
-    return (
-      <div className="rem-email-empty">
-        <p className="rem-email-state">{t('previewTasksError')}</p>
-        <div className="rem-email-empty-actions">
-          <button type="button" className="ui-btn is-sm" onClick={onRetryTasks}>{tCommon('retry')}</button>
-          <button type="button" className="ui-btn ghost is-sm" onClick={onEnableSample}>{t('previewSampleToggleOn')}</button>
-        </div>
-      </div>
-    );
-  }
+export function PreviewEmailEmptyState({ tEmail }: { readonly tEmail: EmailTranslator }) {
   return (
     <div className="rem-email-empty">
       <b>{tEmail('emptyTitle')}</b>
       <p>{tEmail('emptyBody')}</p>
-      <button type="button" className="ui-btn is-sm" onClick={onEnableSample}>{t('previewSampleToggleOn')}</button>
     </div>
   );
 }
@@ -186,8 +112,7 @@ export function PreviewEmailTasksContent({
           ))}
         </section>
       ))}
-      <Link href="/my-tasks" className="ui-btn primary is-sm rem-email-cta">{tEmail('cta')}</Link>
-      <p className="rem-email-foot">{tEmail('foot')}</p>
+      <Link href="/progress" className="ui-btn primary is-sm rem-email-cta">{tEmail('cta')}</Link>
     </>
   );
 }
@@ -210,7 +135,6 @@ export function PreviewEmailCard({
       <article className="rem-email" data-component="ReminderEmail">
         <div className="rem-email-top">
           <span className="rem-email-brand"><b>BEAM</b><span>{tEmail('workspace')}</span></span>
-          <span className="rem-email-lang">{tEmail('langCode')}</span>
         </div>
         <div className="rem-email-subject">
           <h3>{tEmail('subject')}</h3>

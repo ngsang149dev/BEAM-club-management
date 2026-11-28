@@ -16,8 +16,8 @@ export interface RawTaskRow {
   readonly columnId: string | null;
   readonly title: string;
   readonly description: string | null;
-  readonly startAt: Date | null;
-  readonly dueAt: Date | null;
+  readonly startAt: Date;
+  readonly dueAt: Date;
   readonly isCompleted: boolean;
   readonly completedAt: Date | null;
   readonly priority: number;
@@ -43,20 +43,6 @@ export interface RawTaskDeliverableRow {
   readonly url: string;
   readonly submittedBy: string;
   readonly createdAt: Date;
-}
-
-export interface RawUserProfileRow {
-  readonly id: string;
-  readonly fullName: string;
-  readonly avatarUpdatedAt: Date | null;
-  readonly isActive: boolean;
-  readonly leftAt: Date | null;
-}
-
-export interface RawMemberDepartmentRow {
-  readonly userId: string;
-  readonly id: string;
-  readonly name: string;
 }
 
 export interface RawTaskDepartmentRow {
@@ -125,24 +111,6 @@ export function groupTaskIdStrings(
     const list = map.get(row.taskId);
     if (list) list.push(row.value);
     else map.set(row.taskId, [row.value]);
-  }
-  return map;
-}
-
-export function buildUserSummariesMap(
-  profileRows: readonly RawUserProfileRow[],
-  deptRows: readonly RawMemberDepartmentRow[],
-): Map<string, TaskMemberSummaryRecord> {
-  const deptMap = new Map<string, TaskDepartmentSummaryRecord[]>();
-  for (const row of deptRows) {
-    const list = deptMap.get(row.userId);
-    const dept = { id: row.id, name: row.name };
-    if (list) list.push(dept);
-    else deptMap.set(row.userId, [dept]);
-  }
-  const map = new Map<string, TaskMemberSummaryRecord>();
-  for (const row of profileRows) {
-    map.set(row.id, { ...row, departments: deptMap.get(row.id) ?? [] });
   }
   return map;
 }
@@ -237,8 +205,8 @@ export function buildTaskUpdatePatch(input: UpdateTaskRepoParams): {
   updatedAt: Date;
   title?: string;
   description?: string | null;
-  startAt?: Date | null;
-  dueAt?: Date | null;
+  startAt?: Date;
+  dueAt?: Date;
   isCompleted?: boolean;
   completedAt?: Date | null;
   priority?: TaskPriority;
@@ -247,8 +215,8 @@ export function buildTaskUpdatePatch(input: UpdateTaskRepoParams): {
     updatedAt: Date;
     title?: string;
     description?: string | null;
-    startAt?: Date | null;
-    dueAt?: Date | null;
+    startAt?: Date;
+    dueAt?: Date;
     isCompleted?: boolean;
     completedAt?: Date | null;
     priority?: TaskPriority;
@@ -271,6 +239,8 @@ export function buildCreateTaskEventChanges(
 ): Record<string, unknown> {
   return {
     column_id: resolvedColumnId,
+    start_at: input.startAt.toISOString(),
+    due_at: input.dueAt.toISOString(),
     priority: input.priority,
     is_hidden: input.isHidden,
     assignee_ids: input.assigneeIds,

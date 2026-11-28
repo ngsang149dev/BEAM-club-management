@@ -86,7 +86,7 @@ function AuditTableRow({
       <td><AuditMemberCell member={entry.actor} showAvatar /></td>
       <td>{actionLabel}</td>
       <td><AuditMemberCell member={entry.targetUser} /></td>
-      <td className="mono">{formatAuditDetailPreview(entry.detail)}</td>
+      <td className="mono">{formatAuditDetailPreview(entry.detail, t('hiddenTaskLabel'))}</td>
     </tr>
   );
 }
@@ -277,7 +277,6 @@ export function AuditLogsView() {
 
   return (
     <div className="admin-page-stack">
-      <p className="page-subtitle">{t('subtitle')}</p>
       <AuditToolbar
         filters={filters}
         members={membersQuery.data?.items ?? []}

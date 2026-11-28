@@ -24,6 +24,15 @@ import viMessages from '../../messages/vi.json';
 
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const VN_OFFSET_MS = 7 * 3_600_000;
+
+function vnMidnightUtc(offsetDays: number): Date {
+  const vnNow = new Date(Date.now() + VN_OFFSET_MS);
+  const shifted = new Date(
+    Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate() + offsetDays),
+  );
+  return new Date(`${shifted.toISOString().slice(0, 10)}T00:00:00.000+07:00`);
+}
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -100,21 +109,8 @@ async function openSignedInContext(
   return { context, page, tracker };
 }
 
-async function ensureUnscheduledTrayOpen(page: Page): Promise<void> {
-  const toggle = page.locator('.hcal-unscheduled-toggle');
-  await expect(toggle).toBeVisible();
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-    await toggle.click();
-  }
-  await expect(page.locator('.hcal-unscheduled-list')).toBeVisible();
-}
-
-function getUnscheduledTaskChip(page: Page, title: string): Locator {
-  return page.locator('.hcal-unscheduled-chip', {
-    has: page.locator('.hcal-unscheduled-title', {
-      hasText: new RegExp(`^${escapeRegex(title)}$`),
-    }),
-  });
+function getTaskBar(page: Page, taskId: string): Locator {
+  return page.locator(`.hcal-task-bar[data-task-id="${taskId}"]`);
 }
 
 function getTaskDrawer(page: Page): Locator {
@@ -418,6 +414,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     ]);
 
     const tBase = new Date('2026-11-24T00:00:00.000Z').getTime();
+    const seedStartAt = vnMidnightUtc(0);
+    const seedDueAt = vnMidnightUtc(2);
     await db.insert(tasks).values([
       {
         id: primaryTaskId,
@@ -425,6 +423,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         columnId: histTodoColId,
         title: primaryTaskTitle,
         description: 'legacy desc',
+        startAt: seedStartAt,
+        dueAt: seedDueAt,
         priority: 2,
         position: '1000',
         isHidden: false,
@@ -436,6 +436,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         columnId: histTodoColId,
         title: conflictTaskTitle,
         description: 'Conflict detection target',
+        startAt: seedStartAt,
+        dueAt: seedDueAt,
         priority: 2,
         position: '2000',
         isHidden: false,
@@ -447,6 +449,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         columnId: histTodoColId,
         title: rbacPublicTaskTitle,
         description: 'RBAC revert check target',
+        startAt: seedStartAt,
+        dueAt: seedDueAt,
         priority: 2,
         position: '3000',
         isHidden: false,
@@ -458,6 +462,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         columnId: histTodoColId,
         title: rbacHiddenTaskTitle,
         description: 'Hidden RBAC target',
+        startAt: seedStartAt,
+        dueAt: seedDueAt,
         priority: 2,
         position: '4000',
         isHidden: true,
@@ -469,6 +475,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         columnId: trashTodoColId,
         title: trashPublicTaskTitle,
         description: 'Public task for trash & 10s delete undo',
+        startAt: seedStartAt,
+        dueAt: seedDueAt,
         priority: 2,
         position: '1000',
         isHidden: false,
@@ -480,6 +488,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         columnId: trashTodoColId,
         title: trashHiddenTaskTitle,
         description: 'Hidden soft-deleted task invisible to deleter (WQ-17)',
+        startAt: seedStartAt,
+        dueAt: seedDueAt,
         priority: 3,
         position: '2000',
         isHidden: true,
@@ -756,8 +766,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     });
 
     await signInAs(page, creatorEditorStudentId, `/boards/${historyBoardId}`);
-    await ensureUnscheduledTrayOpen(page);
-    await expect(getUnscheduledTaskChip(page, primaryTaskTitle)).toBeVisible();
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    await expect(getTaskBar(page, primaryTaskId)).toBeVisible();
 
     // 1. Move task via API -> revert via compensating task_event -> verify DB columnId & append-only task_events
     const moveRes = await page.request.post(`/api/v1/tasks/${primaryTaskId}/move`, {
@@ -801,7 +811,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     const primaryTitleV1 = `${primaryTaskTitle} V1`;
     const primaryTitleV2 = `${primaryTaskTitle} V2`;
 
-    await getUnscheduledTaskChip(page, primaryTaskTitle).click();
+    await getTaskBar(page, primaryTaskId).click();
     const drawer = getTaskDrawer(page);
     await expect(drawer).toBeVisible();
 
@@ -902,8 +912,9 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       }),
     ).toHaveCount(0);
 
-    await expect(drawer.locator('.task-history-foot')).toHaveText(
-      viMessages.taskHistory.appendOnlyNotice,
+    await expect(drawer.locator('.task-history-foot')).toHaveCount(0);
+    await expect(drawer.locator('.task-history-section')).not.toContainText(
+      viMessages.taskHistory.unknownColumn,
     );
 
     const historyDomText = await drawer.locator('.task-history-section').innerText();
@@ -1141,12 +1152,15 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       await eventsResPromise;
 
       const updatedSummary = formatPriorityChangedSummary(
-        viMessages.priority.high,
-        viMessages.priority.medium,
+        viMessages.taskHistory.priorityLevels.high,
+        viMessages.taskHistory.priorityLevels.medium,
       );
       const movedSummary = viMessages.taskHistory.events.taskMoved
         .replace('{from}', 'Doing')
         .replace('{to}', 'Todo');
+      await expect(basicDrawer.locator('.task-history-section')).not.toContainText(
+        viMessages.taskHistory.unknownColumn,
+      );
       const assignSummary = viMessages.taskHistory.events.assignedTo.replace(
         '{to}',
         assigneeBasicFullName,
@@ -1296,10 +1310,10 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
     try {
       const deleterPage = deleterSession.page;
 
-      // Deleter sees public task in unscheduled tray and Trash button, never sees hidden task
-      await ensureUnscheduledTrayOpen(deleterPage);
-      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
-      await expect(getUnscheduledTaskChip(deleterPage, trashHiddenTaskTitle)).toHaveCount(0);
+      // Deleter sees public task bar on /tasks timeline (no unscheduled tray) and Trash button, never sees hidden task
+      await expect(deleterPage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      await expect(getTaskBar(deleterPage, trashPublicTaskId)).toBeVisible();
+      await expect(getTaskBar(deleterPage, trashHiddenTaskId)).toHaveCount(0);
       const openTrashBtn = deleterPage.getByRole('button', {
         name: viMessages.calendar.openTrash,
         exact: true,
@@ -1307,7 +1321,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       await expect(openTrashBtn).toBeVisible();
 
       // 1. Delete public task in S05 modal -> closes + 10s Undo toast appears -> click Undo restores task immediately
-      await getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle).click();
+      await getTaskBar(deleterPage, trashPublicTaskId).click();
       const drawer1 = getTaskDrawer(deleterPage);
       await expect(drawer1).toBeVisible();
 
@@ -1325,7 +1339,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       const delete1EventId = ((await delete1Res.json()) as { eventId: string }).eventId;
 
       await expect(drawer1).toHaveCount(0);
-      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toHaveCount(0);
+      await expect(getTaskBar(deleterPage, trashPublicTaskId)).toHaveCount(0);
 
       const deleteToast = deleterPage
         .locator('[data-sonner-toast]', { hasText: viMessages.tasks.deletedToast })
@@ -1345,11 +1359,10 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
       await deleteUndoBtn.click();
       expect((await undoDeletePromise).status()).toBe(200);
 
-      await ensureUnscheduledTrayOpen(deleterPage);
-      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
+      await expect(getTaskBar(deleterPage, trashPublicTaskId)).toBeVisible();
 
       // 2. Delete public task again -> open Trash modal ("Thùng rác") on /tasks -> verify public shown, hidden NOT shown (WQ-17), restore via "Khôi phục"
-      await getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle).click();
+      await getTaskBar(deleterPage, trashPublicTaskId).click();
       const drawer2 = getTaskDrawer(deleterPage);
       await expect(drawer2).toBeVisible();
       await drawer2.getByRole('button', { name: viMessages.tasks.deleteTask, exact: true }).click();
@@ -1363,7 +1376,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         .click();
       expect((await delete2Promise).status()).toBe(200);
       await expect(drawer2).toHaveCount(0);
-      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toHaveCount(0);
+      await expect(getTaskBar(deleterPage, trashPublicTaskId)).toHaveCount(0);
 
       // Confirm admin DOES see hidden deleted task in /trash API (proving hidden deleted task exists)
       const adminTrashRes = await adminSession.page.request.get(
@@ -1406,7 +1419,7 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
           res.request().method() === 'POST',
       );
       await publicTrashRow
-        .getByRole('button', { name: viMessages.boards.trashRestoreButton, exact: true })
+        .getByRole('button', { name: viMessages.tasks.trashRestoreButton, exact: true })
         .click();
       expect((await restorePromise).status()).toBe(200);
 
@@ -1419,11 +1432,9 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
         .click();
       await expect(trashModal).toHaveCount(0);
 
-      await ensureUnscheduledTrayOpen(deleterPage);
-      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
+      await expect(getTaskBar(deleterPage, trashPublicTaskId)).toBeVisible();
       await deleterPage.reload();
-      await ensureUnscheduledTrayOpen(deleterPage);
-      await expect(getUnscheduledTaskChip(deleterPage, trashPublicTaskTitle)).toBeVisible();
+      await expect(getTaskBar(deleterPage, trashPublicTaskId)).toBeVisible();
 
       // WQ-17: non-viewer holding task.delete receives 404 NOT_FOUND when attempting to restore a hidden deleted task
       const hiddenRestoreProbeRes = await deleterPage.request.post(
@@ -1450,8 +1461,8 @@ test.describe('E7A Task History, Quick Undo, Conflict Force-Revert & Board Trash
 
       // 3. Basic member WITHOUT task.delete sees NO "Thùng rác" button and gets 403 FORBIDDEN on GET /trash
       const basicPage = basicSession.page;
-      await ensureUnscheduledTrayOpen(basicPage);
-      await expect(getUnscheduledTaskChip(basicPage, trashPublicTaskTitle)).toBeVisible();
+      await expect(basicPage.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+      await expect(getTaskBar(basicPage, trashPublicTaskId)).toBeVisible();
       await expect(
         basicPage.getByRole('button', { name: viMessages.calendar.openTrash, exact: true }),
       ).toHaveCount(0);

@@ -933,3 +933,108 @@
 - **Ngoài phạm vi:** Chạy migration/deploy trực tiếp lên Neon/Vercel thật từ máy agent (`AGENTS.md §0 #4`).
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
 - **Trạng thái:** `Done` (`qa-reviewer` `VERDICT: PASS`)
+
+---
+
+## Epic CR-12 — Thiết kế lại Email gửi đi (Auto Light / Soft Dark) & Đồng bộ Xem trước `[RỦI RO CAO]` *(In Progress)*
+
+### CR-12-01
+- **ID:** `CR-12-01`
+- **Tiêu đề:** Helper HTML Email dùng chung (`color-scheme: light dark`, Soft Dark `#23252f`), làm giàu ngữ cảnh Thông báo & chuẩn hóa 4 mẫu email (`email-template`, `lead-email-template`, `reminders`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-backend-db`
+- **Liên quan:** `CR-03`, `CR-09`, `CR-10`, `E8`, `WQ-27`, `docs/DECISIONS.md` (`CR-12`)
+- **Phụ thuộc:** `CR-11` (`Done`), `docs/openapi.yaml` đã khóa (`0` migration, `0` đổi OpenAPI)
+- **Mục tài liệu cần đọc:** `AGENTS.md` (§6A, §7, §8), `beam-email-templates-preview.html`, `src/server/modules/notifications/*`, `src/server/modules/reminders/email-template.ts`
+- **Phạm vi file được sửa:** `src/server/shared/email-layout.ts`, `src/server/modules/notifications/{types,repository,repository-helpers,service,lead-notifications,email-template,lead-email-template}.ts`, `src/server/modules/reminders/email-template.ts`, `tests/unit/{notifications,reminders}/*`
+- **Tiêu chí chấp nhận:**
+  1. HTML email chứa `<meta name="color-scheme" content="light dark">`, `<meta name="supported-color-schemes" content="light dark">`, `@media (prefers-color-scheme: dark)` dùng Soft Dark Card (`#23252f` / `#181920` / `#e4e6eb`) và mặc định White Card (`#ffffff` / `#d4d4d8` / `#18181b`), header gradient Hồng → Cam, bảng 2 cột `<table role="presentation">`, CTA `#db2777`, và **không có** dòng giải thích dưới nút CTA.
+  2. Email giao việc / Lead activity hiển thị thêm mô tả rút gọn (`<= 240` ký tự), thời gian bắt đầu, tình trạng hạn pill và `Deadline` (`Asia/Ho_Chi_Minh`); khi `isHiddenTask = true`, che hoàn toàn `title`, `description`, `startAt`, `dueAt`, `deliverableTitle`, `deliverableUrl` (`WQ-27`) và không rò rỉ PII.
+  3. Email nhắc hạn (`reminders/email-template.ts`) bỏ hoàn toàn nhãn Priority và dòng footer dưới nút CTA, giữ gộp 1 email/người (`vi`/`en`) và `WQ-27`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(đã xong `CR-12-01` — xanh `typecheck`, `eslint`, `arch:check`, `10/10` unit test notifications/reminders & `3/3` integration test PostgreSQL)*
+
+### CR-12-02
+- **ID:** `CR-12-02`
+- **Tiêu đề:** Đồng bộ khung Xem trước Email `/admin/reminders` (bỏ Priority pills, bỏ giải thích dưới nút CTA, cập nhật gradient header)
+- **Sub-agent phụ trách:** `beam-frontend`
+- **Liên quan:** `E8`, `CR-10`, `WQ-27`, `docs/DECISIONS.md` (`CR-12`)
+- **Phụ thuộc:** `CR-11` (`Done`)
+- **Phạm vi file được sửa:** `src/features/reminders/components/ReminderEmailPreviewParts.tsx`, `src/app/globals.css`, `tests/unit/frontend/reminders-admin.test.tsx`
+- **Tiêu chí chấp nhận:** Khung xem trước `/admin/reminders` không còn `PreviewPriorityPill`, không còn dòng footer dưới nút CTA, header mang gradient Hồng → Cam, giữ `WQ-27` che task ẩn & 0 PII.
+- **Mức rủi ro:** Trung bình
+- **Trạng thái:** `Ready for PR` *(đã xong `CR-12-02` — xanh `typecheck`, `lint`, `arch:check`, `reminders-admin.test.tsx` & E2E `reminders.spec.ts` / `member-progress-and-emails.spec.ts`)*
+
+---
+
+## Epic CR-13 — Bảng Tiến độ công việc cá nhân `/progress` (Master–Detail) `[RỦI RO CAO]` *(Ready for PR — chờ duyệt PR)*
+
+### CR-13-01
+- **ID:** `CR-13-01`
+- **Tiêu đề:** Xây dựng trang `/progress` ("Tiến độ cá nhân") giữ nguyên `/my-tasks`, phân quyền `member.view` / `member.view_detail`, 2 card phải tách riêng, thanh Deadline đổi màu, Modal Bình luận riêng `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-frontend`
+- **Liên quan:** `FR-20`–`FR-26`, `FR-42`, `WQ-27`, `beam-member-progress-wireframe.html`, `docs/DECISIONS.md` (`CR-13`)
+- **Phụ thuộc:** `CR-11` (`Done`), `docs/openapi.yaml` đã khóa (`0` migration, `0` đổi OpenAPI)
+- **Phạm vi file được sửa:** `src/components/AppShellNav.tsx`, `src/app/progress/page.tsx`, `src/features/progress/**`, `src/features/tasks/hooks/task-query-keys.ts`, `src/features/comments/hooks/useComments.ts`, `src/app/globals.css`, `messages/{vi,en}.json`, `tests/unit/frontend/{app-shell,member-progress}.test.tsx`
+- **Tiêu chí chấp nhận:**
+  1. Mục điều hướng `/progress` thêm vào `WORKSPACE_NAV` ngay dưới `/my-tasks`; `/my-tasks` giữ nguyên 100%.
+  2. Chỉ hiển thị công việc giao trực tiếp cho cá nhân đang xem (`assigneeId` + guard `assignees.some`); task ẩn không được xem bị loại bỏ hoàn toàn.
+  3. Tab `Thành viên CLB` (`dept` filter + Combobox tìm kiếm & lọc trễ hạn + `◀ k/N ▶`) chỉ mở khi có `member.view`/Admin; `MSSV`/`email` chỉ hiển thị cho chính chủ hoặc `member.view_detail`.
+  4. Cột trái 7/12 danh sách 1 dòng gọn + lọc `Đang làm | Quá hạn | Chưa nhận | Đã xong | Tất cả` + tìm nhanh; cột phải 5/12 gồm **Card 1** (chi tiết + thanh Deadline đổi màu + `Nhận việc`/`Hoàn thành` + mở Modal Bình luận) và **Card 2** riêng cho `Link nộp sản phẩm` (`+ Nộp link`, link mở tab mới, xóa link); Modal Bình luận tái sử dụng `TaskCommentsSection`.
+  5. Tuân thủ ngưỡng 6A.6 (`<= 300` dòng/file, `<= 40` dòng/hàm, `complexity <= 10`) và 100% khóa `messages/{vi,en}.json`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(đã xong `CR-13-01` — xanh `typecheck`, `lint`, `arch:check` `392/1928`, `37/37` tệp unit frontend / `207` test)*
+
+### CR-13-02
+- **ID:** `CR-13-02`
+- **Tiêu đề:** Kiểm thử E2E Chrome & Audit độc lập ngữ cảnh sạch cho `CR-12` & `CR-13` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `AGENTS.md` (§6A.8, §7, §8), `CR-12`, `CR-13`
+- **Phụ thuộc:** `CR-12-01`, `CR-12-02`, `CR-13-01`
+- **Phạm vi file được sửa:** `tests/e2e/member-progress-and-emails.spec.ts`
+- **Tiêu chí chấp nhận:** Đủ 9 cổng CI (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`, full Playwright E2E) + Audit `6A.8` (`13/13`), `§7` (PII & `WQ-27`), `§8` đạt `VERDICT: PASS`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Done (qa-reviewer ngữ cảnh sạch VERDICT: PASS — 9/9 cổng CI, 67/67 unit / 375 test, 22/22 integration / 43 test, db:restore:verify 24 bảng, next build 44/44 route, 54/54 Chrome E2E, 13/13 mục 6A.8, 0 Blocker, 0 Major)`
+
+---
+
+## Epic CR-14 — Ràng buộc ngày Task, Nhật ký Task, Gộp `/my-tasks` -> `/progress` & Dọn mã dư thừa (`A1`–`A4`, `[RỦI RO CAO]`) *(Ready for PR — chờ duyệt PR)*
+
+### CR-14-01
+- **ID:** `CR-14-01`
+- **Tiêu đề:** Migration `0009_require_task_dates.sql`, bắt buộc `startAt`/`dueAt` (`A1`), ghi 12 sự kiện `task.*` vào `audit_logs` kèm `WQ-27` (`A2`), dọn trùng lặp backend & tối ưu DB/tx (`pg@8.23`) `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-backend-db`
+- **Liên quan:** `A1`, `A2`, `A3`, `A4`, `WQ-27`, `docs/DECISIONS.md` (`CR-14`), `docs/openapi.yaml`
+- **Phụ thuộc:** `CR-12` & `CR-13` trên nhánh `feat/CR12-CR13-emails-and-progress`, `docs/openapi.yaml` & `schema.d.ts` `CR-14` đã khóa
+- **Phạm vi file được sửa:** `db/migrations/0009_require_task_dates.sql`, `db/schema/tasks.ts`, `db/seed.sql`, `docs/ERD.md`, `scripts/{db-restore-verify,doctor,db-ensure}.mjs`, `src/lib/*`, `src/server/**`, `src/app/api/v1/**`, `tests/unit/{tasks,task-events,archive,audit,auth,reminders,shared}/**`, `tests/integration/**`
+- **Tiêu chí chấp nhận:**
+  1. `0009_require_task_dates.sql` backfill sạch & chạy lại idempotent trên `beam_dev`/`beam_test`; `tasks.start_at` & `tasks.due_at` là `NOT NULL`, `start_at <= due_at`; `createTaskRequestSchema`/`updateTaskRequestSchema` từ chối `null`; `db:restore:verify -- --test` đạt.
+  2. 12 hành động task/sản phẩm ghi `audit_logs` với che `WQ-27` ở cả lúc ghi & lúc đọc `GET /audit-logs`; email nhắc hạn trỏ CTA `/progress`.
+  3. Loại bỏ toàn bộ `Promise.all` đồng thời trên cùng client `tx`, gộp `hydrateTaskRecords` & `loadUserSummariesMap`, tối ưu `AuthService.authenticateSession` (`Promise.all` + throttle `touchSession`), xóa `auth-http` `refreshSessionCookieIfRemembered` & `auth/schemas.ts`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(đã xong `CR-14-01` — `0009` idempotent dev/test, `22/22` integration / `44` test không cảnh báo `pg`, `db:restore:verify -- --test` `24` bảng)*
+
+### CR-14-02
+- **ID:** `CR-14-02`
+- **Tiêu đề:** Bắt buộc Ngày bắt đầu/Hạn chót trên form & bỏ `Chưa đặt hạn`, tinh giản preview `/admin/reminders`, gộp `/my-tasks` -> `/progress` (thêm tab `Việc của Ban`), xóa Kanban/CSS/i18n thừa & tối ưu Frontend `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-frontend`
+- **Liên quan:** `A1`, `A2`, `A3`, `A4`, `docs/DECISIONS.md` (`CR-14`)
+- **Phụ thuộc:** `docs/openapi.yaml` & `schema.d.ts` `CR-14` đã khóa
+- **Phạm vi file được sửa:** `src/app/{globals.css,not-found.tsx,my-tasks/page.tsx}`, `src/components/*`, `src/features/**` (xóa `src/features/boards/**`, `optimistic-move.ts`, `CalendarUnscheduledTray.tsx`, `MyTasksView.tsx`, `ArchiveBoardsTable.tsx`), `messages/{vi,en}.json`, `tests/unit/frontend/**`
+- **Tiêu chí chấp nhận:**
+  1. `CreateTaskModal` mặc định `Ngày bắt đầu = Hôm nay`, bắt buộc cả 2 ngày, bỏ nút xóa ngày & bỏ `CalendarUnscheduledTray`.
+  2. `/admin/reminders` bỏ 2 nút góc phải + badge `(VI)` + button thừa, preview lọc trực tiếp theo milestone và trỏ CTA `/progress`.
+  3. `/my-tasks` redirect `/progress`; bỏ `myTasks` khỏi `WORKSPACE_NAV`; `/progress` (`Của tôi`) bổ sung tab `Việc của Ban` + dữ liệu `/me/tasks`.
+  4. `/admin/audit` mặc định `all` + format đủ 12 mã `task.*` & `member.*`; `/archive` ẩn tab Board & bỏ Độ ưu tiên/Bảng·Cột; xóa sạch Kanban/CSS/i18n thừa; đủ ngưỡng 6A.6 & `i18n-parity` 100%.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Ready for PR` *(đã xong `CR-14-02` — xanh `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `373/1805`, `63/63` unit / `356` test)*
+
+### CR-14-03
+- **ID:** `CR-14-03`
+- **Tiêu đề:** Đồng bộ E2E Playwright, kiểm định 9 cổng CI & Audit độc lập ngữ cảnh sạch `CR-14` `[RỦI RO CAO]`
+- **Sub-agent phụ trách:** `beam-qa-reviewer` (ngữ cảnh sạch)
+- **Liên quan:** `AGENTS.md` (§6A.8, §7, §8), `CR-14-01`, `CR-14-02`
+- **Phụ thuộc:** `CR-14-01`, `CR-14-02`
+- **Phạm vi file được sửa:** `playwright.config.ts`, `tests/e2e/*.spec.ts`
+- **Tiêu chí chấp nhận:** Đủ 9 cổng CI (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`, full Playwright E2E không cảnh báo `pg`), `6A.8` `13/13`, `WQ-27` `audit_logs` an toàn, đạt `VERDICT: PASS`.
+- **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
+- **Trạng thái:** `Done (qa-reviewer ngữ cảnh sạch VERDICT: PASS — 9/9 cổng CI, 63/63 unit / 356 test, npm test 85/400, 22/22 integration / 44 test, db:restore:verify 24 bảng, next build 44/44 route, 55/55 Chrome E2E 3.8m, 13/13 mục 6A.8, 0 Blocker, 0 Major)`

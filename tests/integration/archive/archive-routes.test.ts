@@ -166,13 +166,10 @@ describe('Archive Center & Purge Route Handlers integration', () => {
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `archive-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: `archive-cron-secret-${suffix}`,
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {

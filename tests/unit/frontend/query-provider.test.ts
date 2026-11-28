@@ -62,10 +62,10 @@ describe('QueryProvider createQueryClient auto-logout 401 handler (CR-08-02)', (
 
     for (const [queryKey, err] of [
       [['auth', 'me'], makeApiError(401, 'INVALID_CREDENTIALS')],
-      [['boards'], makeApiError(403, 'FORBIDDEN')],
-      [['boards', 'b-1'], makeApiError(404, 'NOT_FOUND')],
+      [['tasks'], makeApiError(403, 'FORBIDDEN')],
+      [['tasks', 'calendar'], makeApiError(404, 'NOT_FOUND')],
       [['members'], makeApiError(500, 'INTERNAL_ERROR')],
-      [['myTasks'], makeApiError(0, 'NETWORK_ERROR')],
+      [['progress'], makeApiError(0, 'NETWORK_ERROR')],
     ] as const) {
       await expect(
         queryClient.fetchQuery({

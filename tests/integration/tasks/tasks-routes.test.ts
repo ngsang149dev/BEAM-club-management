@@ -117,13 +117,10 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
       testDatabaseUrl: process.env.TEST_DATABASE_URL!,
       sessionSecret: `tasks-test-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: 'tasks-cron-secret',
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     await withRolledBackDb(db, async (tx) => {
@@ -207,17 +204,17 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
       expect((await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: assignedCookie },
-        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Deny' }),
+        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Deny', startAt: '2026-11-27T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z' }),
       }))).status).toBe(403);
       expect((await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: creatorCookie },
-        body: JSON.stringify({ boardId, columnId: todoColId, title: 'AC06 Deny', assigneeIds: [assignedOnlyId] }),
+        body: JSON.stringify({ boardId, columnId: todoColId, title: 'AC06 Deny', startAt: '2026-11-27T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z', assigneeIds: [assignedOnlyId] }),
       }))).status).toBe(403);
       const mismatchRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ boardId, columnId: otherColId, title: 'Mismatch' }),
+        body: JSON.stringify({ boardId, columnId: otherColId, title: 'Mismatch', startAt: '2026-11-27T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z' }),
       }));
       expect(mismatchRes.status).toBe(400);
       expect(((await mismatchRes.json()) as { error: { code: string; messageKey: string } }).error).toMatchObject({
@@ -228,7 +225,7 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
       const inactiveCreateRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Inactive Assignee', assigneeIds: [inactiveUserId] }),
+        body: JSON.stringify({ boardId, columnId: todoColId, title: 'Inactive Assignee', startAt: '2026-11-27T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z', assigneeIds: [inactiveUserId] }),
       }));
       expect(inactiveCreateRes.status).toBe(400);
       expect(((await inactiveCreateRes.json()) as { error: { code: string; messageKey: string } }).error).toMatchObject({
@@ -240,7 +237,7 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
       const tPublicRes = await tasksPost(new Request('http://localhost:3000/api/v1/tasks', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: creatorCookie },
-        body: JSON.stringify({ boardId, columnId: todoColId, title: `Public ${suffix}`, dueAt: '2026-11-28T00:00:00.000Z', priority: 2 }),
+        body: JSON.stringify({ boardId, columnId: todoColId, title: `Public ${suffix}`, startAt: '2026-11-26T00:00:00.000Z', dueAt: '2026-11-28T00:00:00.000Z', priority: 2 }),
       }));
       expect(tPublicRes.status).toBe(201);
       const tPublicBody = (await tPublicRes.json()) as { task: { id: string; position: number; version: number }; eventId: string };
@@ -255,6 +252,7 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
           boardId,
           columnId: todoColId,
           title: `Hidden ${suffix}`,
+          startAt: '2026-11-18T00:00:00.000Z',
           dueAt: '2026-11-20T00:00:00.000Z',
           priority: 4,
           assigneeIds: [assignedOnlyId],
@@ -271,7 +269,8 @@ describe('Tasks, Assignees & My Tasks Route Handlers integration', () => {
           boardId,
           columnId: doneColId,
           title: `Done ${suffix}`,
-          dueAt: null,
+          startAt: '2026-12-01T00:00:00.000Z',
+          dueAt: '2026-12-05T00:00:00.000Z',
           priority: 1,
           assigneeIds: [assignedOnlyId],
         }),

@@ -392,8 +392,25 @@ describe('reminders schema, policy, email template & RemindersService', () => {
     expect(viEmail.html).not.toContain('LEAKED_SECRET_TITLE');
     expect(viEmail.html).not.toContain('<script>');
     expect(viEmail.html).toContain('&lt;script&gt;');
-    expect(viEmail.text).toContain('https://beam.example.org/my-tasks');
-    expect(viEmail.html).toContain('href="https://beam.example.org/my-tasks"');
+    expect(viEmail.text).toContain('https://beam.example.org/progress');
+    expect(viEmail.html).toContain('href="https://beam.example.org/progress"');
+    // CR-12-01: dark-card layout, colored digest accents, no priority badges, no footer below CTA
+    expect(viEmail.html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(viEmail.html).toContain('@media (prefers-color-scheme: dark)');
+    expect(viEmail.html).toContain('.beam-email-bucket-item { background-color: #2a2d3a !important;');
+    expect(viEmail.html).toContain('#e11d48');
+    expect(viEmail.html).toContain('#ca8a04');
+    expect(viEmail.html).not.toContain('#ea580c;margin-bottom:6px');
+    for (const priorityBadge of ['[Thấp]', '[Trung bình]', '[Cao]', '[Khẩn]', 'Thấp', 'Trung bình', 'Khẩn']) {
+      expect(viEmail.text).not.toContain(priorityBadge);
+      expect(viEmail.html).not.toContain(priorityBadge);
+    }
+    expect(viEmail.text).not.toContain('Bạn nhận email vì được giao task');
+    expect(viEmail.html).not.toContain('Bạn nhận email vì được giao task');
+    expect(viEmail.text.trimEnd().endsWith('https://beam.example.org/progress')).toBe(true);
+    expect(viEmail.html).toMatch(
+      /Mở Việc của tôi<\/a><\/div>\s*<\/div><\/div><\/div><\/td><\/tr><\/table><\/body><\/html>$/,
+    );
 
     const enEmail = buildReminderDigestEmail({
       locale: 'en',
@@ -426,7 +443,18 @@ describe('reminders schema, policy, email template & RemindersService', () => {
     expect(enEmail.text).toContain('(Hidden task — sign in to view details)');
     expect(enEmail.text).not.toContain('SECRET_HIDDEN_EN');
     expect(enEmail.html).not.toContain('SECRET_HIDDEN_EN');
-    expect(enEmail.text).toContain('https://beam.example.org/my-tasks');
+    expect(enEmail.text).toContain('https://beam.example.org/progress');
+    expect(enEmail.html).toContain('#ea580c');
+    for (const priorityBadge of ['[Low]', '[Medium]', '[High]', '[Urgent]', 'Medium', 'High', 'Urgent']) {
+      expect(enEmail.text).not.toContain(priorityBadge);
+      expect(enEmail.html).not.toContain(priorityBadge);
+    }
+    expect(enEmail.text).not.toContain('You receive this because');
+    expect(enEmail.html).not.toContain('You receive this because');
+    expect(enEmail.text.trimEnd().endsWith('https://beam.example.org/progress')).toBe(true);
+    expect(enEmail.html).toMatch(
+      /Open My Tasks<\/a><\/div>\s*<\/div><\/div><\/div><\/td><\/tr><\/table><\/body><\/html>$/,
+    );
   });
 
   it('enforces reminder.configure authorization, writes audit log on update, and only persists reminders after mailer.send succeeds', async () => {

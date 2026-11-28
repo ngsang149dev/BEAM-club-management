@@ -1,35 +1,16 @@
-import type { TaskPriority } from '@/lib/tasks';
-
 const VN_OFFSET_MS = 7 * 3_600_000;
 const DAY_MS = 86_400_000;
-
-export type TaskDueUrgency = 'none' | 'overdue' | 'today' | 'soon' | 'upcoming';
 
 export type CalendarDeadlineTier =
   | 'overdue'
   | 'urgent'
   | 'soon'
   | 'safe'
-  | 'done'
-  | 'unscheduled';
+  | 'done';
 
 export interface CalendarDeadlineInfo {
   readonly tier: CalendarDeadlineTier;
   readonly daysDiff: number | null;
-}
-
-export const PRIORITY_MESSAGE_KEY: Record<TaskPriority, 'low' | 'medium' | 'high' | 'urgent'> = {
-  1: 'low',
-  2: 'medium',
-  3: 'high',
-  4: 'urgent',
-};
-
-export function normalizeTaskPriority(value: number): TaskPriority {
-  if (value === 1 || value === 2 || value === 3 || value === 4) {
-    return value;
-  }
-  return 2;
 }
 
 export function getTodayVnIso(nowMs = Date.now()): string {
@@ -90,31 +71,13 @@ export function formatShortVnDate(isoOrDate: string | null): string {
   return `${dateStr.slice(8, 10)}/${dateStr.slice(5, 7)}`;
 }
 
-export function isTaskOverdue(dueAt: string | null, nowMs = Date.now()): boolean {
-  if (!dueAt) return false;
-  const dueMs = Date.parse(dueAt);
-  return Number.isFinite(dueMs) && dueMs < nowMs;
-}
-
-export function getTaskDueUrgency(dueAt: string | null, nowMs = Date.now()): TaskDueUrgency {
-  if (!dueAt) return 'none';
-  const dueMs = Date.parse(dueAt);
-  if (!Number.isFinite(dueMs)) return 'none';
-  if (dueMs < nowMs) return 'overdue';
-  const dueVnDay = Math.floor((dueMs + VN_OFFSET_MS) / DAY_MS);
-  const nowVnDay = Math.floor((nowMs + VN_OFFSET_MS) / DAY_MS);
-  if (dueVnDay === nowVnDay || dueMs - nowMs <= DAY_MS) return 'today';
-  if (dueMs - nowMs <= 2 * DAY_MS) return 'soon';
-  return 'upcoming';
-}
-
 export function getCalendarDeadlineInfo(
   task: { readonly isCompleted: boolean; readonly dueAt: string | null },
   todayIso = getTodayVnIso()
 ): CalendarDeadlineInfo {
   if (task.isCompleted) return { tier: 'done', daysDiff: null };
   const dueVnIso = utcIsoToHoChiMinhInput(task.dueAt);
-  if (!dueVnIso) return { tier: 'unscheduled', daysDiff: null };
+  if (!dueVnIso) return { tier: 'safe', daysDiff: 4 };
   const diff = diffIsoDays(todayIso, dueVnIso);
   if (diff < 0) return { tier: 'overdue', daysDiff: diff };
   if (diff <= 1) return { tier: 'urgent', daysDiff: diff };
@@ -149,4 +112,12 @@ export function hoChiMinhInputToUtcIso(value: string): string | null {
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
+}
+
+export function requireHoChiMinhInputToUtcIso(value: string): string {
+  const iso = hoChiMinhInputToUtcIso(value);
+  if (!iso) {
+    throw new Error('Invalid date input');
+  }
+  return iso;
 }

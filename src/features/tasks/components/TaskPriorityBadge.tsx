@@ -1,90 +1,12 @@
 'use client';
 
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import {
-  PRIORITY_MESSAGE_KEY,
-  formatTaskDueDate,
   getCalendarDeadlineInfo,
-  getTaskDueUrgency,
-  normalizeTaskPriority,
   type CalendarDeadlineTier,
-  type TaskDueUrgency,
 } from '../formatters';
 import type { DepartmentSummaryDto, MemberPublicSummary } from '../hooks/useTasks';
-
-export function TaskPriorityBadge({ priority }: { priority: number }) {
-  const tPrio = useTranslations('priority');
-  const level = normalizeTaskPriority(priority);
-  const label = tPrio(PRIORITY_MESSAGE_KEY[level]);
-
-  return (
-    <span className={`ui-prio p${level}`}>
-      <span className="ui-prio-bars" aria-hidden="true">
-        {[1, 2, 3, 4].map((bar) => (
-          <i key={bar} className={bar <= level ? 'on' : undefined} />
-        ))}
-      </span>
-      <span>{label}</span>
-    </span>
-  );
-}
-
-function DueCalendarIcon() {
-  return (
-    <svg className="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="11" rx="2" />
-      <path d="M5 1.8v2.4M11 1.8v2.4M2 6.5h12" />
-    </svg>
-  );
-}
-
-function resolveDueBadgeLabel(
-  urgency: Exclude<TaskDueUrgency, 'none'>,
-  dateText: string,
-  tTasks: ReturnType<typeof useTranslations<'tasks'>>
-): string {
-  if (urgency === 'overdue') return `${tTasks('overdueBadge')} · ${dateText}`;
-  if (urgency === 'today') return `${tTasks('dueTodayBadge')} · ${dateText}`;
-  if (urgency === 'soon') return `${tTasks('dueSoonBadge')} · ${dateText}`;
-  return dateText;
-}
-
-export function TaskDueBadge({
-  dueAt,
-  suppressOverdue = false,
-}: {
-  dueAt: string | null;
-  suppressOverdue?: boolean;
-}) {
-  const locale = useLocale();
-  const tTasks = useTranslations('tasks');
-  const urgency = getTaskDueUrgency(dueAt);
-
-  if (urgency === 'none' || !dueAt) {
-    return <span className="ui-due is-empty">{tTasks('noDueDate')}</span>;
-  }
-
-  const dateText = formatTaskDueDate(dueAt, locale);
-  if (suppressOverdue) {
-    return (
-      <span className="ui-due is-done">
-        <DueCalendarIcon />
-        <span>{dateText}</span>
-      </span>
-    );
-  }
-
-  const showDot = urgency === 'overdue' || urgency === 'today';
-
-  return (
-    <span className={`ui-due is-${urgency}`}>
-      <DueCalendarIcon />
-      {showDot ? <span className="ui-due-dot" aria-hidden="true" /> : null}
-      <span>{resolveDueBadgeLabel(urgency, dateText, tTasks)}</span>
-    </span>
-  );
-}
 
 export function resolveDeadlineBadgeText(
   tier: CalendarDeadlineTier,
@@ -92,7 +14,7 @@ export function resolveDeadlineBadgeText(
   tTasks: ReturnType<typeof useTranslations<'tasks'>>
 ): string {
   if (tier === 'done') return tTasks('deadlineBadgeDone');
-  if (tier === 'unscheduled' || daysDiff === null) return tTasks('noDueDate');
+  if (daysDiff === null) return tTasks('deadlineBadgeDone');
   if (tier === 'overdue') return tTasks('deadlineBadgeOverdue', { days: Math.abs(daysDiff) });
   if (daysDiff === 0) return tTasks('dueTodayBadge');
   return tTasks('deadlineBadgeDaysLeft', { days: daysDiff });

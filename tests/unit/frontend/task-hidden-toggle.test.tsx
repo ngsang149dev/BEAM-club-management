@@ -16,7 +16,7 @@ const taskEventsHooksMock = vi.hoisted(() => ({
 }));
 
 const authHooksMock = vi.hoisted(() => ({
-  useMeQuery: vi.fn(),
+  useSessionQuery: vi.fn(),
 }));
 
 vi.mock('@/features/tasks/hooks/useTasks', async () => {
@@ -48,8 +48,8 @@ const BASE_TASK: TaskDto = {
   columnId: 'c-1',
   title: 'Chuẩn bị tài liệu nội bộ',
   description: null,
-  startAt: null,
-  dueAt: null,
+  startAt: '2026-11-20T02:00:00Z',
+  dueAt: '2026-11-28T17:00:00Z',
   isCompleted: false,
   completedAt: null,
   priority: 2,
@@ -89,7 +89,7 @@ describe('TaskHiddenSection (E7-02)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     taskEventsHooksMock.useUndoTaskActionToast.mockReturnValue(vi.fn());
-    authHooksMock.useMeQuery.mockReturnValue({ data: { profile: { id: 'u-other', departments: [] } } });
+    authHooksMock.useSessionQuery.mockReturnValue({ data: { userId: 'u-other' } });
     tasksHooksMock.useUpdateTaskHiddenMutation.mockReturnValue({
       mutate: vi.fn(),
       reset: vi.fn(),
@@ -108,17 +108,17 @@ describe('TaskHiddenSection (E7-02)', () => {
       assignees: [{ id: 'u-assignee', fullName: 'Nguyễn Văn A', isActive: true, leftAt: null, avatarUrl: null, departments: [], acceptedAt: null }],
     };
 
-    authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-assignee', departments: [] } } });
+    authHooksMock.useSessionQuery.mockReturnValueOnce({ data: { userId: 'u-assignee' } });
     const assigneeHtml = renderWithIntl(<TaskHiddenSection task={assignedTask} onReload={vi.fn()} />, {
       permissions: ['task.update_assigned', 'task.update_any'],
     });
     expect(assigneeHtml).toBe('');
 
-    authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-creator', departments: [] } } });
+    authHooksMock.useSessionQuery.mockReturnValueOnce({ data: { userId: 'u-creator' } });
     const creatorHtml = renderWithIntl(<TaskHiddenSection task={assignedTask} onReload={vi.fn()} />);
     expect(creatorHtml).toContain('task-hidden-section');
     expect(creatorHtml).toContain('Công khai');
-    expect(creatorHtml).toContain('Ẩn task');
+    expect(creatorHtml).toContain('Ẩn công việc');
     expect(creatorHtml).toContain('aria-checked="false"');
 
     const adminHiddenHtml = renderWithIntl(
@@ -131,12 +131,12 @@ describe('TaskHiddenSection (E7-02)', () => {
   });
 
   it('displays WQ-27 warning when task has no assignees or departments, and omits when assigned', () => {
-    authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-creator', departments: [] } } });
+    authHooksMock.useSessionQuery.mockReturnValueOnce({ data: { userId: 'u-creator' } });
     const unassignedHtml = renderWithIntl(<TaskHiddenSection task={BASE_TASK} onReload={vi.fn()} />);
     expect(unassignedHtml).toContain('Chưa có người hoặc ban được giao');
-    expect(unassignedHtml).toContain('chỉ bạn (người tạo) và admin mới xem được task này');
+    expect(unassignedHtml).toContain('chỉ bạn (người tạo) và admin mới xem được công việc này');
 
-    authHooksMock.useMeQuery.mockReturnValueOnce({ data: { profile: { id: 'u-creator', departments: [] } } });
+    authHooksMock.useSessionQuery.mockReturnValueOnce({ data: { userId: 'u-creator' } });
     const deptAssignedHtml = renderWithIntl(
       <TaskHiddenSection
         task={{ ...BASE_TASK, assignedDepartments: [{ id: 'd-1', name: 'Truyền thông' }] }}

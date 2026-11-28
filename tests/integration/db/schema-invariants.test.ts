@@ -620,9 +620,10 @@ describe('PostgreSQL schema & trigger invariants', () => {
         `SELECT version FROM schema_migrations ORDER BY version ASC`,
       );
       const versions = migRes.rows.map((row) => row.version);
-      expect(versions.length).toBeGreaterThanOrEqual(8);
+      expect(versions.length).toBeGreaterThanOrEqual(9);
       expect(versions).toContain('0007_system_catalog_defaults');
       expect(versions).toContain('0008_calendar_tasks_leads_deliverables');
+      expect(versions).toContain('0009_require_task_dates');
 
       const permCountRes = await client.query<{ cnt: number }>(
         `SELECT count(*)::int AS cnt FROM permissions`,
@@ -745,6 +746,68 @@ describe('PostgreSQL schema & trigger invariants', () => {
         [taskId],
       );
       expect(delivCount.rows[0]?.cnt).toBe(0);
+
+      // 0009 DDL constraints: NOT NULL start_at/due_at, BEFORE INSERT normalization trigger, NOT NULL on UPDATE, CHECK start_at <= due_at
+      const taskColsRes = await client.query<{ column_name: string; is_nullable: string }>(
+        `SELECT column_name, is_nullable
+         FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'tasks' AND column_name IN ('start_at', 'due_at')
+         ORDER BY column_name ASC`,
+      );
+      expect(taskColsRes.rows).toEqual([
+        { column_name: 'due_at', is_nullable: 'NO' },
+        { column_name: 'start_at', is_nullable: 'NO' },
+      ]);
+
+      const triggerTaskBothNullId = '98000000-0000-4000-8000-000000000006';
+      const triggerTaskStartNullId = '98000000-0000-4000-8000-000000000007';
+      const normalizedBothNull = await client.query<{ start_at: Date; due_at: Date }>(
+        `INSERT INTO tasks (id, board_id, column_id, title, position, start_at, due_at, created_by)
+         VALUES ($1, $2, $3, 'Normalized Both Null', '2000', NULL, NULL, $4)
+         RETURNING start_at, due_at`,
+        [triggerTaskBothNullId, boardId, colId, leadId],
+      );
+      expect(normalizedBothNull.rows[0]?.start_at).toBeInstanceOf(Date);
+      expect(normalizedBothNull.rows[0]?.due_at).toBeInstanceOf(Date);
+      expect(normalizedBothNull.rows[0]!.start_at.getTime()).toBeLessThanOrEqual(
+        normalizedBothNull.rows[0]!.due_at.getTime(),
+      );
+
+      const normalizedStartNull = await client.query<{ start_at: Date; due_at: Date }>(
+        `INSERT INTO tasks (id, board_id, column_id, title, position, start_at, due_at, created_at, created_by)
+         VALUES ($1, $2, $3, 'Normalized Start Null', '3000', NULL, '2026-12-01T00:00:00Z', '2026-11-25T00:00:00Z', $4)
+         RETURNING start_at, due_at`,
+        [triggerTaskStartNullId, boardId, colId, leadId],
+      );
+      expect(normalizedStartNull.rows[0]!.start_at.toISOString()).toBe('2026-11-25T00:00:00.000Z');
+      expect(normalizedStartNull.rows[0]!.due_at.toISOString()).toBe('2026-12-01T00:00:00.000Z');
+
+      await expectPgError(
+        client,
+        'sp_0009_update_start_null',
+        () => client.query(`UPDATE tasks SET start_at = NULL WHERE id = $1`, [triggerTaskBothNullId]),
+        { code: '23502' },
+      );
+      await expectPgError(
+        client,
+        'sp_0009_update_due_null',
+        () => client.query(`UPDATE tasks SET due_at = NULL WHERE id = $1`, [triggerTaskBothNullId]),
+        { code: '23502' },
+      );
+      await expectPgError(
+        client,
+        'sp_0009_update_range_chk',
+        () =>
+          client.query(
+            `UPDATE tasks SET start_at = '2026-12-10T00:00:00Z', due_at = '2026-12-01T00:00:00Z' WHERE id = $1`,
+            [triggerTaskBothNullId],
+          ),
+        { code: '23514' },
+      );
+      await client.query(`DELETE FROM tasks WHERE id IN ($1, $2)`, [
+        triggerTaskBothNullId,
+        triggerTaskStartNullId,
+      ]);
 
       await client.query(`DELETE FROM boards WHERE id = $1`, [boardId]);
       await client.query(`DELETE FROM profiles WHERE id = $1`, [leadId]);

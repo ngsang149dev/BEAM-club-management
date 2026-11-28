@@ -62,37 +62,18 @@ function PermissionsHeaderBar({
   );
 }
 
-function PermissionsBanners({
-  isMemberAdmin,
-  saveError,
-}: {
-  isMemberAdmin: boolean;
-  saveError: unknown;
-}) {
-  const t = useTranslations('permissionsAdmin');
+function PermissionsErrorBanner({ saveError }: { saveError: unknown }) {
   const tErr = useTranslations('errors');
   const err = describePermissionsError(saveError);
-
-  if (!isMemberAdmin && !err) {
-    return null;
-  }
+  if (!err) return null;
 
   return (
-    <>
-      {isMemberAdmin ? (
-        <div className="ui-banner" role="status">
-          <div className="ui-banner-body"><span className="ui-banner-text">{t('adminAccessNotice')}</span></div>
-        </div>
-      ) : null}
-      {err ? (
-        <div className="ui-banner is-danger" role="alert">
-          <div className="ui-banner-body">
-            <span className="ui-banner-text">{tErr(err.key)}</span>
-            {err.requestId ? <span className="ui-banner-meta">{tErr('requestIdLabel')}: {err.requestId}</span> : null}
-          </div>
-        </div>
-      ) : null}
-    </>
+    <div className="ui-banner is-danger" role="alert">
+      <div className="ui-banner-body">
+        <span className="ui-banner-text">{tErr(err.key)}</span>
+        {err.requestId ? <span className="ui-banner-meta">{tErr('requestIdLabel')}: {err.requestId}</span> : null}
+      </div>
+    </div>
   );
 }
 
@@ -193,7 +174,7 @@ function PermissionsMainColumn({
   return (
     <section className="perm-main">
       <PermissionsHeaderBar member={member} isAdminFlag={isMemberAdmin} presets={presets} onPickPreset={(p) => { state.presetMutation.reset(); state.setPendingPreset(p); }} />
-      <PermissionsBanners isMemberAdmin={isMemberAdmin} saveError={state.replaceMutation.error} />
+      <PermissionsErrorBanner saveError={state.replaceMutation.error} />
       <AdminFlagPanel memberName={member.fullName} isAdmin={isMemberAdmin} isSelf={member.id === currentUserId} isUpdating={state.adminMutation.isPending} error={state.adminMutation.error} onToggleAdmin={state.toggleAdminFlag} />
       <PermissionMatrixGroups catalogItems={state.catalogQuery.data?.items} selectedCodes={state.effectiveCodes} disabled={state.memberPermQuery.isPending || state.replaceMutation.isPending} isLoading={state.memberPermQuery.isPending} onTogglePermission={state.togglePermission} />
       <PermissionsSaveBar effectiveCount={state.effectiveCodes.length} isDirty={state.isDirty} isSaving={state.replaceMutation.isPending} onDiscard={state.discardDraft} onSave={state.savePermissions} />

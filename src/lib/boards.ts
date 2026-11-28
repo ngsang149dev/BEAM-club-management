@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  defaultQueryLimitSchema,
+  emptyToUndefined,
+  optionalCursorQuerySchema,
+  optionalUuidQuerySchema,
+  parseStrictBooleanInput,
+} from './query-params';
 
 export const DEFAULT_BOARD_COLUMN_NAMES = [
   'Todo',
@@ -29,42 +36,8 @@ export const updateBoardRequestSchema = z
 
 export type UpdateBoardRequestInput = z.infer<typeof updateBoardRequestSchema>;
 
-function emptyToUndefined(value: unknown): unknown {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value === 'string' && value.trim() === '') {
-    return undefined;
-  }
-  return value;
-}
-
-function parseStrictBooleanInput(raw: unknown): unknown {
-  const value = emptyToUndefined(raw);
-  if (value === undefined || typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true') return true;
-    if (normalized === 'false') return false;
-  }
-  return raw;
-}
-
-function parseLimitInput(raw: unknown): unknown {
-  const value = emptyToUndefined(raw);
-  if (value === undefined || typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return Number(value.trim());
-  }
-  return Number.NaN;
-}
-
 export const listBoardsQuerySchema = z.object({
-  departmentId: z.preprocess(emptyToUndefined, z.uuid().optional()),
+  departmentId: optionalUuidQuerySchema,
   includeArchived: z.preprocess(
     parseStrictBooleanInput,
     z.boolean().default(false),
@@ -73,14 +46,8 @@ export const listBoardsQuerySchema = z.object({
     emptyToUndefined,
     z.string().trim().min(1).max(200).optional(),
   ),
-  cursor: z.preprocess(
-    emptyToUndefined,
-    z.string().trim().min(1).max(512).optional(),
-  ),
-  limit: z.preprocess(
-    parseLimitInput,
-    z.number().int().min(1).max(100).default(20),
-  ),
+  cursor: optionalCursorQuerySchema,
+  limit: defaultQueryLimitSchema,
 });
 
 export type ListBoardsQueryInput = z.infer<typeof listBoardsQuerySchema>;

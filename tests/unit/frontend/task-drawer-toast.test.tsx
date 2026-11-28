@@ -1,4 +1,4 @@
-import { createElement, type ReactElement, type ReactNode } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { MutationObserver, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -37,8 +37,8 @@ vi.mock('@/features/tasks/hooks/useTasks', async () => {
     ...actual,
     useUpdateTaskMutation: () => mutationOverrides.update ?? actual.useUpdateTaskMutation(),
     useReplaceTaskAssigneesMutation: () => mutationOverrides.assignees ?? actual.useReplaceTaskAssigneesMutation(),
-    useUpdateTaskHiddenMutation: (boardId: string) =>
-      mutationOverrides.hidden ?? actual.useUpdateTaskHiddenMutation(boardId),
+    useUpdateTaskHiddenMutation: () =>
+      mutationOverrides.hidden ?? actual.useUpdateTaskHiddenMutation(),
   };
 });
 
@@ -57,7 +57,7 @@ vi.mock('@/features/tasks/components/TaskFormFields', async () => {
   };
 });
 
-import { TaskDrawerActiveTabPanel } from '@/features/tasks/components/TaskDetailDrawer';
+import { TaskDetailDrawer, TaskDrawerLoaded } from '@/features/tasks/components/TaskDetailDrawer';
 import { TaskAssigneesSection, TaskEditFormSection } from '@/features/tasks/components/TaskDrawerSections';
 import { TaskHiddenSection } from '@/features/tasks/components/TaskHiddenSection';
 import {
@@ -77,7 +77,7 @@ function makeTask(version: number, priority: 1 | 2 | 3 | 4, deptIds: string[] = 
     columnId: '33333333-3333-4333-8333-333333333333',
     title: `Task v${version}`,
     description: `Desc v${version}`,
-    startAt: null,
+    startAt: '2026-11-20T02:00:00Z',
     dueAt: '2026-11-28T17:00:00Z',
     isCompleted: false,
     completedAt: null,
@@ -133,33 +133,27 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
     capturedReloadCallbacks.length = 0;
   });
 
-  it('keys TaskDrawerLoaded strictly by task.id (not task.version) so updates never unmount mutation observers', () => {
+  it('renders TaskDetailDrawer with TaskDrawerLoaded directly without subtab chrome across v4 -> v5', () => {
     const taskV4 = makeTask(4, 2);
-    const taskV5 = makeTask(5, 4);
+    const taskV5 = makeTask(5, 4, ['d-1', 'd-2']);
+    const qc = new QueryClient();
+    qc.setQueryData(TASKS_QUERY_KEYS.detail(taskV4.id), { task: taskV4 });
+    const htmlV4 = renderWithProviders(createElement(TaskDetailDrawer, { taskId: taskV4.id, onClose: vi.fn() }), qc);
+    expect(htmlV4).toContain('Task v4');
+    expect(htmlV4).not.toContain('task-drawer-tabs');
+    expect(htmlV4).not.toContain('task-detail-title');
 
-    const treeV4 = TaskDrawerActiveTabPanel({
-      activeTab: 'details',
-      task: taskV4,
-      tabIds: { details: 't-d', comments: 't-c', history: 't-h' },
-      panelIds: { details: 'p-d', comments: 'p-c', history: 'p-h' },
-      onReload: vi.fn(),
-      onClose: vi.fn(),
-      onOpenComments: vi.fn(),
-    }) as ReactElement<{ children: ReactElement }>;
+    qc.setQueryData(TASKS_QUERY_KEYS.detail(taskV5.id), { task: taskV5 });
+    const htmlV5 = renderWithProviders(createElement(TaskDetailDrawer, { taskId: taskV5.id, onClose: vi.fn() }), qc);
+    expect(htmlV5).toContain('Task v5');
 
-    const treeV5 = TaskDrawerActiveTabPanel({
-      activeTab: 'details',
-      task: taskV5,
-      tabIds: { details: 't-d', comments: 't-c', history: 't-h' },
-      panelIds: { details: 'p-d', comments: 'p-c', history: 'p-h' },
-      onReload: vi.fn(),
-      onClose: vi.fn(),
-      onOpenComments: vi.fn(),
-    }) as ReactElement<{ children: ReactElement }>;
-
-    expect(treeV4.props.children.key).toBe(taskV4.id);
-    expect(treeV5.props.children.key).toBe(taskV5.id);
-    expect(treeV4.props.children.key).toBe(treeV5.props.children.key);
+    const loadedHtmlV5 = renderWithProviders(
+      createElement(TaskDrawerLoaded, { task: taskV5, onReload: vi.fn(), onClose: vi.fn() }),
+      qc
+    );
+    expect(loadedHtmlV5).toContain('task-modal-grid');
+    expect(loadedHtmlV5).toContain('Dept d-2');
+    expect(loadedHtmlV5).not.toContain('task-drawer-tabs');
   });
 
   it('syncs edit form values, assignee selection state, and version change guard when task.version increments', () => {
@@ -174,7 +168,7 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
     expect(toEditTaskValues(taskV4)).toEqual({
       title: 'Task v4',
       description: 'Desc v4',
-      startAtInput: '',
+      startAtInput: '2026-11-20',
       dueAtInput: '2026-11-29',
     });
     expect(toEditTaskValues(taskV5).title).toBe('Task v5');
@@ -266,7 +260,7 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
         queryClient.setQueryData(TASKS_QUERY_KEYS.detail(taskV4.id), { task: taskV5 });
         return Promise.resolve();
       }
-      if (Array.isArray(key) && key[0] === 'boardDetail') {
+      if (Array.isArray(key) && key[0] === 'tasks') {
         return new Promise<void>((resolve) => {
           resolveBoardInvalidation = resolve;
         });
@@ -302,7 +296,7 @@ describe('TaskDetailDrawer mount stability, form sync & conflict reload (Major-1
         apiFetchMock('/tasks/{id}', { method: 'patch', params: { id }, body: payload }) as Promise<TaskMutationResponse>,
       onSuccess: async (data) => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['boardDetail', data.task.boardId] }),
+          queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.calendarRoot }),
           queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEYS.detail(data.task.id) }),
         ]);
       },

@@ -11,12 +11,11 @@ export type DepartmentLeadCandidate = components['schemas']['MemberListItem'];
 
 export const DEPARTMENT_QUERY_KEYS = {
   all: ['departments'] as const,
-  leadCandidates: ['departments', 'leadCandidates'] as const,
+  leadCandidates: ['members', 'activeCatalog'] as const,
 };
 
 const MEMBER_LIST_KEY_PREFIX = ['members'] as const;
 const TASKS_KEY_PREFIX = ['tasks'] as const;
-const BOARDS_KEY_PREFIX = ['boards'] as const;
 
 export function useDepartmentsQuery(enabled = true) {
   return useQuery({
@@ -61,7 +60,6 @@ export function useUpdateDepartmentMutation() {
         queryClient.invalidateQueries({ queryKey: DEPARTMENT_QUERY_KEYS.all }),
         queryClient.invalidateQueries({ queryKey: MEMBER_LIST_KEY_PREFIX }),
         queryClient.invalidateQueries({ queryKey: TASKS_KEY_PREFIX }),
-        queryClient.invalidateQueries({ queryKey: BOARDS_KEY_PREFIX }),
       ]);
     },
   });

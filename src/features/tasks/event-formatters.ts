@@ -1,12 +1,13 @@
 import type { useTranslations } from 'next-intl';
 import type { components } from '@/features/shared/api/client';
 import type { PermissionCode } from '@/features/shared/permissions/can';
-import { PRIORITY_MESSAGE_KEY, formatTaskDueDate, normalizeTaskPriority } from './formatters';
+import { formatTaskDueDate } from './formatters';
 
 export type TaskDto = components['schemas']['TaskDto'];
 export type TaskEventDto = components['schemas']['TaskEventDto'];
 export type TaskHistoryTranslator = ReturnType<typeof useTranslations<'taskHistory'>>;
-export type PriorityTranslator = ReturnType<typeof useTranslations<'priority'>>;
+
+const LEGACY_PRIORITY_KEYS = { 1: 'low', 2: 'medium', 3: 'high', 4: 'urgent' } as const;
 
 export interface TaskHistoryLookup {
   readonly columnsById: ReadonlyMap<string, string>;
@@ -18,7 +19,6 @@ interface EventFormatContext {
   readonly locale: string;
   readonly lookup: TaskHistoryLookup;
   readonly tHistory: TaskHistoryTranslator;
-  readonly tPrio: PriorityTranslator;
 }
 
 export interface CanRevertEventParams {
@@ -162,6 +162,11 @@ function formatDescriptionDiff(diff: { from: unknown; to: unknown }, ctx: EventF
   return ctx.tHistory('events.descriptionUpdated');
 }
 
+function formatLegacyPriorityLabel(level: number, tHistory: TaskHistoryTranslator): string {
+  const key = level === 1 || level === 3 || level === 4 ? LEGACY_PRIORITY_KEYS[level] : 'medium';
+  return tHistory(`priorityLevels.${key}`);
+}
+
 function formatPriorityAndTitle(changes: Record<string, unknown>, ctx: EventFormatContext, parts: string[]): void {
   const prioDiff = readDiffPair(changes, 'priority');
   const fromPrio = prioDiff ? readPriority(prioDiff.from) : null;
@@ -169,8 +174,8 @@ function formatPriorityAndTitle(changes: Record<string, unknown>, ctx: EventForm
   if (fromPrio !== null && toPrio !== null) {
     parts.push(
       ctx.tHistory('events.priorityChanged', {
-        from: ctx.tPrio(PRIORITY_MESSAGE_KEY[normalizeTaskPriority(fromPrio)]),
-        to: ctx.tPrio(PRIORITY_MESSAGE_KEY[normalizeTaskPriority(toPrio)]),
+        from: formatLegacyPriorityLabel(fromPrio, ctx.tHistory),
+        to: formatLegacyPriorityLabel(toPrio, ctx.tHistory),
       })
     );
   }
@@ -198,38 +203,22 @@ function formatTaskUpdatedEvent(changes: Record<string, unknown>, ctx: EventForm
 
 const ENTITY_DIFF_META = {
   member: {
-    countKey: 'memberCountValue',
-    namedPlusMoreKey: 'namedPlusMoreMembers',
-    addedKey: 'events.assignedTo',
-    clearedKey: 'events.assigneesCleared',
-    changedKey: 'events.assigneesChanged',
+    countKey: 'memberCountValue', namedPlusMoreKey: 'namedPlusMoreMembers',
+    addedKey: 'events.assignedTo', clearedKey: 'events.assigneesCleared', changedKey: 'events.assigneesChanged',
   },
   department: {
-    countKey: 'departmentCountValue',
-    namedPlusMoreKey: 'namedPlusMoreDepartments',
-    addedKey: 'events.departmentsAssigned',
-    clearedKey: 'events.departmentsCleared',
-    changedKey: 'events.departmentsChanged',
+    countKey: 'departmentCountValue', namedPlusMoreKey: 'namedPlusMoreDepartments',
+    addedKey: 'events.departmentsAssigned', clearedKey: 'events.departmentsCleared', changedKey: 'events.departmentsChanged',
   },
 } as const;
 
-function formatIdListChange(
-  diff: { from: unknown; to: unknown },
-  kind: 'member' | 'department',
-  ctx: EventFormatContext
-): string {
+function formatIdListChange(diff: { from: unknown; to: unknown }, kind: 'member' | 'department', ctx: EventFormatContext): string {
   const meta = ENTITY_DIFF_META[kind];
   const namesById = kind === 'member' ? ctx.lookup.membersById : ctx.lookup.departmentsById;
   const fromIds = readStringArray(diff.from);
   const toIds = readStringArray(diff.to);
   const formatIds = (ids: readonly string[]) =>
-    resolveEntityListLabel({
-      ids,
-      namesById,
-      countKey: meta.countKey,
-      namedPlusMoreKey: meta.namedPlusMoreKey,
-      tHistory: ctx.tHistory,
-    });
+    resolveEntityListLabel({ ids, namesById, countKey: meta.countKey, namedPlusMoreKey: meta.namedPlusMoreKey, tHistory: ctx.tHistory });
   if (fromIds.length === 0 && toIds.length > 0) return ctx.tHistory(meta.addedKey, { to: formatIds(toIds) });
   if (fromIds.length > 0 && toIds.length === 0) return ctx.tHistory(meta.clearedKey, { from: formatIds(fromIds) });
   return ctx.tHistory(meta.changedKey, { from: formatIds(fromIds), to: formatIds(toIds) });
@@ -268,24 +257,19 @@ const EVENT_SUMMARY_BUILDERS: Record<string, (changes: Record<string, unknown>, 
   'task.moved': formatTaskMovedEvent,
   'task.assignees_changed': formatTaskAssigneesEvent,
   'task.hidden_changed': (changes, ctx) =>
-    readDiffPair(changes, 'is_hidden')?.to === true
-      ? ctx.tHistory('events.hiddenEnabled')
-      : ctx.tHistory('events.hiddenDisabled'),
-  'task.deleted': (_changes, ctx) => ctx.tHistory('events.taskDeleted'),
+    ctx.tHistory(readDiffPair(changes, 'is_hidden')?.to === true ? 'events.hiddenEnabled' : 'events.hiddenDisabled'),
+  'task.deleted': (_c, ctx) => ctx.tHistory('events.taskDeleted'),
   'task.restored': (changes, ctx) => {
-    const colDiff = readDiffPair(changes, 'column_id');
-    const colId = colDiff ? readString(colDiff.to) : null;
+    const colId = readString(readDiffPair(changes, 'column_id')?.to);
     const colName = colId ? ctx.lookup.columnsById.get(colId) : undefined;
     return colName ? ctx.tHistory('events.taskRestoredToColumn', { column: colName }) : ctx.tHistory('events.taskRestored');
   },
-  'task.accepted': (changes, ctx) => {
-    const accepted = readDiffPair(changes, 'accepted')?.to ?? changes.accepted;
-    return ctx.tHistory(accepted === false ? 'events.taskUnaccepted' : 'events.taskAccepted');
-  },
-  'task.deliverable_added': (_changes, ctx) => ctx.tHistory('events.deliverableAdded'),
-  'task.deliverable_removed': (_changes, ctx) => ctx.tHistory('events.deliverableRemoved'),
-  'comment.added': (_changes, ctx) => ctx.tHistory('events.commentAdded'),
-  'comment.deleted': (_changes, ctx) => ctx.tHistory('events.commentDeleted'),
+  'task.accepted': (changes, ctx) =>
+    ctx.tHistory((readDiffPair(changes, 'accepted')?.to ?? changes.accepted) === false ? 'events.taskUnaccepted' : 'events.taskAccepted'),
+  'task.deliverable_added': (_c, ctx) => ctx.tHistory('events.deliverableAdded'),
+  'task.deliverable_removed': (_c, ctx) => ctx.tHistory('events.deliverableRemoved'),
+  'comment.added': (_c, ctx) => ctx.tHistory('events.commentAdded'),
+  'comment.deleted': (_c, ctx) => ctx.tHistory('events.commentDeleted'),
 };
 
 export function formatTaskEventSummary(params: {
@@ -293,32 +277,18 @@ export function formatTaskEventSummary(params: {
   readonly locale: string;
   readonly lookup: TaskHistoryLookup;
   readonly tHistory: TaskHistoryTranslator;
-  readonly tPrio: PriorityTranslator;
 }): string {
   const changes = isPlainRecord(params.event.changes) ? params.event.changes : {};
   const builder = EVENT_SUMMARY_BUILDERS[params.event.type];
-  if (!builder) return params.tHistory('events.unknownActivity');
-  return builder(changes, {
-    locale: params.locale,
-    lookup: params.lookup,
-    tHistory: params.tHistory,
-    tPrio: params.tPrio,
-  });
+  return builder
+    ? builder(changes, { locale: params.locale, lookup: params.lookup, tHistory: params.tHistory })
+    : params.tHistory('events.unknownActivity');
 }
 
 const CONFLICT_FIELD_KEYS = {
-  title: 'title',
-  description: 'description',
-  priority: 'priority',
-  start_at: 'start_at',
-  due_at: 'due_at',
-  is_completed: 'is_completed',
-  column_id: 'column_id',
-  position: 'position',
-  assignee_ids: 'assignee_ids',
-  department_ids: 'department_ids',
-  is_hidden: 'is_hidden',
-  deleted_at: 'deleted_at',
+  title: 'title', description: 'description', priority: 'priority', start_at: 'start_at',
+  due_at: 'due_at', is_completed: 'is_completed', column_id: 'column_id', position: 'position',
+  assignee_ids: 'assignee_ids', department_ids: 'department_ids', is_hidden: 'is_hidden', deleted_at: 'deleted_at',
 } as const;
 
 type ConflictFieldKey = keyof typeof CONFLICT_FIELD_KEYS;

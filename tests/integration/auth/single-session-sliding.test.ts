@@ -78,13 +78,10 @@ describe('CR-08 Single Active Session, 30m Sliding TTL & Background-Poll Exempti
       testDatabaseUrl: testDbUrl,
       sessionSecret: `cr08-int-secret-${suffix}-0123456789`,
       sessionTtlMinutes: 30,
-      sessionTtlDefaultHours: 24,
-      sessionTtlRememberDays: 30,
       allowedEmailDomain: 'eiu.edu.vn',
       cronSecret: `cr08-cron-${suffix}`,
       smtp: {},
       appUrl: 'http://localhost:3000',
-      undoToastSeconds: 10,
     };
 
     container = createContainer({

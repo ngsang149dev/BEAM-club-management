@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useForm, type FieldErrors, type UseFormRegister, type UseFormRegisterReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
@@ -52,11 +52,9 @@ function resolveConfirmErrorText(
 function ChangePasswordStatusBanners({
   showForceAlert,
   serverErrorKey,
-  showSuccess,
 }: {
   showForceAlert: boolean;
   serverErrorKey: ChangePasswordErrorKey | null;
-  showSuccess: boolean;
 }) {
   const tProfile = useTranslations('profile');
   const tErrors = useTranslations('errors');
@@ -75,13 +73,6 @@ function ChangePasswordStatusBanners({
         <div className="ui-banner is-danger" role="alert">
           <div className="ui-banner-body">
             <span className="ui-banner-text">{tErrors(serverErrorKey)}</span>
-          </div>
-        </div>
-      ) : null}
-      {showSuccess ? (
-        <div className="ui-banner is-success" role="status">
-          <div className="ui-banner-body">
-            <span className="ui-banner-text">{tProfile('passwordChangedBanner')}</span>
           </div>
         </div>
       ) : null}
@@ -215,30 +206,24 @@ function useChangePasswordFormState({
   'passwordChanged' | 'onPasswordChanged' | 'onClearPasswordChanged'
 >) {
   const tProfile = useTranslations('profile');
-  const [internalSuccess, setInternalSuccess] = useState(false);
   const mutation = useChangeMyPasswordMutation();
   const form = useForm<ChangeMyPasswordFormInput>({
     resolver: zodResolver(changeMyPasswordFormSchema),
     defaultValues: { currentPassword: '', newPassword: '', confirmPassword: '' },
   });
-  const isSuccessControlled = passwordChanged !== undefined;
-  const showSuccess = isSuccessControlled ? passwordChanged : internalSuccess;
 
   const clearFeedback = () => {
     if (mutation.error) mutation.reset();
-    if (!isSuccessControlled && internalSuccess) setInternalSuccess(false);
-    if (isSuccessControlled && passwordChanged) onClearPasswordChanged?.();
+    if (passwordChanged) onClearPasswordChanged?.();
   };
 
   const handleValidSubmit = async (values: ChangeMyPasswordFormInput): Promise<void> => {
-    if (!isSuccessControlled) setInternalSuccess(false);
     try {
       await mutation.mutateAsync({
         currentPassword: values.currentPassword,
         newPassword: values.newPassword,
       });
       form.reset();
-      if (!isSuccessControlled) setInternalSuccess(true);
       toast.success(tProfile('passwordChangedToast'));
       onPasswordChanged?.();
     } catch {
@@ -246,7 +231,7 @@ function useChangePasswordFormState({
     }
   };
 
-  return { form, mutation, showSuccess, clearFeedback, handleValidSubmit };
+  return { form, mutation, clearFeedback, handleValidSubmit };
 }
 
 export function ChangePasswordCard({
@@ -258,7 +243,7 @@ export function ChangePasswordCard({
 }: ChangePasswordCardProps) {
   const baseId = useId();
   const tProfile = useTranslations('profile');
-  const { form, mutation, showSuccess, clearFeedback, handleValidSubmit } =
+  const { form, mutation, clearFeedback, handleValidSubmit } =
     useChangePasswordFormState({ passwordChanged, onPasswordChanged, onClearPasswordChanged });
 
   const isBusy = form.formState.isSubmitting || mutation.isPending;
@@ -271,7 +256,7 @@ export function ChangePasswordCard({
         <h3 id={`${baseId}-heading`}>{tProfile('changePasswordTitle')}</h3>
       </div>
       <form className="profile-password-form" method="post" onSubmit={form.handleSubmit(handleValidSubmit)} noValidate>
-        <ChangePasswordStatusBanners showForceAlert={showForceAlert} serverErrorKey={serverErrorKey} showSuccess={showSuccess} />
+        <ChangePasswordStatusBanners showForceAlert={showForceAlert} serverErrorKey={serverErrorKey} />
         <ChangePasswordFields
           baseId={baseId}
           isBusy={isBusy}

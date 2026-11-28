@@ -13,6 +13,7 @@ import {
   type UpdateTaskHiddenRequestInput,
   type UpdateTaskRequestInput,
 } from '@/lib/tasks';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { Clock } from '@/server/shared/clock';
 import type { Logger } from '@/server/shared/logger';
@@ -45,6 +46,7 @@ import {
 } from './policy';
 import {
   extractTaskCursorValue,
+  recordTaskLifecycleAudit,
   runTaskAssigneesInTx,
   runTaskHiddenInTx,
   runTaskMoveInTx,
@@ -55,6 +57,7 @@ import type { TaskAssignmentNotifier, TasksRepository } from './types';
 
 export interface TasksServiceDeps {
   readonly tasksRepo: TasksRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly transactionRunner: TransactionRunner;
   readonly clock: Clock;
   readonly logger: Logger;
@@ -119,13 +122,18 @@ export class TasksService {
     const departmentIds = dedupeSortedUuids(input.departmentIds);
     if (assigneeIds.length > 0 || departmentIds.length > 0) authorize(actor, 'task.assign');
     const now = this.deps.clock.now();
-    const result = await this.deps.transactionRunner.runInTransaction((tx) =>
-      this.deps.tasksRepo.createTaskWithEvent({
+    const result = await this.deps.transactionRunner.runInTransaction(async (tx) => {
+      const created = await this.deps.tasksRepo.createTaskWithEvent({
         boardId: input.boardId, columnId: input.columnId, title: input.title, description: input.description,
         startAt: input.startAt, dueAt: input.dueAt, priority: input.priority, assigneeIds, departmentIds,
         isHidden: input.isHidden, actorId: actor.id, now,
-      }, tx),
-    );
+      }, tx);
+      await recordTaskLifecycleAudit({
+        auditWriter: this.deps.auditWriter, actorId: actor.id, action: 'task.created', task: created.task,
+        extra: { assigneeCount: assigneeIds.length, departmentIds }, now, tx,
+      });
+      return created;
+    });
     this.deps.logger.info('Task created', { actorId: actor.id, taskId: result.task.id, boardId: result.task.boardId, isHidden: result.task.isHidden });
     await this.maybeNotifyAssignment(input, { taskId: result.task.id, boardId: result.task.boardId, actorId: actor.id, departmentIds, assigneeIds, isHiddenTask: result.task.isHidden, now });
     return toTaskMutationResponseDto(result);
@@ -135,7 +143,7 @@ export class TasksService {
     assertActorActive(actor);
     const now = this.deps.clock.now();
     const result = await this.deps.transactionRunner.runInTransaction((tx) =>
-      runTaskUpdateInTx({ tasksRepo: this.deps.tasksRepo, actor, taskId, input, now, tx }),
+      runTaskUpdateInTx({ tasksRepo: this.deps.tasksRepo, auditWriter: this.deps.auditWriter, actor, taskId, input, now, tx }),
     );
     if (result.eventId) this.deps.logger.info('Task updated', { actorId: actor.id, taskId, eventId: result.eventId });
     return toTaskMutationResponseDto(result);
@@ -157,7 +165,7 @@ export class TasksService {
     assertActorActive(actor);
     const now = this.deps.clock.now();
     const result = await this.deps.transactionRunner.runInTransaction((tx) =>
-      runTaskAssigneesInTx({ tasksRepo: this.deps.tasksRepo, actor, taskId, input, now, tx }),
+      runTaskAssigneesInTx({ tasksRepo: this.deps.tasksRepo, auditWriter: this.deps.auditWriter, actor, taskId, input, now, tx }),
     );
     if (result.eventId) this.deps.logger.info('Task assignees replaced', { actorId: actor.id, taskId, eventId: result.eventId });
     await this.maybeNotifyAssignment(input, {
@@ -175,7 +183,9 @@ export class TasksService {
       if (!target) throw notFound('errors.notFound', {}, 'NOT_FOUND');
       assertCanViewTask(actor, toTaskVisibilitySubject(target));
       authorize(actor, 'task.delete');
-      return this.deps.tasksRepo.softDeleteTaskWithEvent({ id: taskId, boardId: target.boardId, actorId: actor.id, version: target.version, now }, tx);
+      const deleted = await this.deps.tasksRepo.softDeleteTaskWithEvent({ id: taskId, boardId: target.boardId, actorId: actor.id, version: target.version, now }, tx);
+      await recordTaskLifecycleAudit({ auditWriter: this.deps.auditWriter, actorId: actor.id, action: 'task.deleted', task: target, now, tx });
+      return deleted;
     });
     this.deps.logger.info('Task soft-deleted', { actorId: actor.id, taskId, eventId: result.eventId });
     return toTaskMutationResponseDto(result);
@@ -185,7 +195,7 @@ export class TasksService {
     assertActorActive(actor);
     const now = this.deps.clock.now();
     const result = await this.deps.transactionRunner.runInTransaction((tx) =>
-      runTaskHiddenInTx({ tasksRepo: this.deps.tasksRepo, actor, taskId, input, now, tx }),
+      runTaskHiddenInTx({ tasksRepo: this.deps.tasksRepo, auditWriter: this.deps.auditWriter, actor, taskId, input, now, tx }),
     );
     if (result.eventId) {
       this.deps.logger.info('Task hidden flag updated', { actorId: actor.id, taskId, isHidden: result.task.isHidden, eventId: result.eventId });

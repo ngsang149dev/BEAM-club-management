@@ -70,6 +70,4 @@ export function decodeMemberCursor(raw: string): MemberCursor {
   }
 }
 
-export function escapeLikePattern(input: string): string {
-  return input.replace(/[\\%_]/g, '\\$&');
-}
+export { escapeLikePattern } from '@/lib/query-params';

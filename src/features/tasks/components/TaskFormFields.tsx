@@ -50,15 +50,15 @@ export function TaskErrorBanner({
 
 function TaskDateField({
   label,
-  clearLabel,
   value,
+  required = false,
   disabled = false,
   errorText,
   onChange,
 }: {
   readonly label: string;
-  readonly clearLabel: string;
   readonly value: string;
+  readonly required?: boolean;
   readonly disabled?: boolean;
   readonly errorText?: string | null;
   readonly onChange: (next: string) => void;
@@ -66,19 +66,13 @@ function TaskDateField({
   const id = useId();
   return (
     <div className="ui-field">
-      <div className="ui-field-label-row">
-        <label className="ui-label" htmlFor={id}>{label}</label>
-        {value && !disabled ? (
-          <button type="button" className="task-due-clear-btn" onClick={() => onChange('')}>
-            {clearLabel}
-          </button>
-        ) : null}
-      </div>
+      <label className="ui-label" htmlFor={id}>{label}</label>
       <input
         id={id}
         className="ui-input"
         type="date"
         value={value}
+        required={required}
         disabled={disabled}
         aria-invalid={Boolean(errorText)}
         onChange={(e) => onChange(e.target.value)}
@@ -90,20 +84,25 @@ function TaskDateField({
 
 export function TaskStartDateInput({
   value,
+  required = true,
   disabled = false,
+  errorText,
   onChange,
 }: {
   readonly value: string;
+  readonly required?: boolean;
   readonly disabled?: boolean;
+  readonly errorText?: string | null;
   readonly onChange: (next: string) => void;
 }) {
   const tTasks = useTranslations('tasks');
   return (
     <TaskDateField
       label={tTasks('startAtLabel')}
-      clearLabel={tTasks('clearStartAt')}
       value={value}
+      required={required}
       disabled={disabled}
+      errorText={errorText}
       onChange={onChange}
     />
   );
@@ -111,11 +110,13 @@ export function TaskStartDateInput({
 
 export function TaskDueDateInput({
   value,
+  required = true,
   disabled = false,
   errorText,
   onChange,
 }: {
   readonly value: string;
+  readonly required?: boolean;
   readonly disabled?: boolean;
   readonly errorText?: string | null;
   readonly onChange: (next: string) => void;
@@ -124,8 +125,8 @@ export function TaskDueDateInput({
   return (
     <TaskDateField
       label={tTasks('dueAtLabel')}
-      clearLabel={tTasks('clearDueAt')}
       value={value}
+      required={required}
       disabled={disabled}
       errorText={errorText}
       onChange={onChange}

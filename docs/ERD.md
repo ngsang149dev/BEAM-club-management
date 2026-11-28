@@ -182,7 +182,7 @@ erDiagram
         uuid column_id FK
         text title
         text description
-        timestamptz start_at "NULL"
+        timestamptz start_at
         timestamptz due_at
         boolean is_completed
         timestamptz completed_at "NULL"
@@ -507,8 +507,8 @@ Thẻ công việc trong board; hỗ trợ priority 1..4, vị trí `numeric`, t
 | `column_id` | `uuid` | YES | — | `FK -> columns(id) ON DELETE RESTRICT`; `CHECK (deleted_at IS NOT NULL OR column_id IS NOT NULL)` |
 | `title` | `text` | NO | — | Tiêu đề task (không đưa vào email nhắc nếu `is_hidden = true`) |
 | `description` | `text` | YES | `NULL` | Mô tả chi tiết |
-| `start_at` | `timestamptz` | YES | `NULL` | Ngày bắt đầu trên Lịch công việc (`CR-09`, `CHECK (start_at IS NULL OR due_at IS NULL OR start_at <= due_at)`) |
-| `due_at` | `timestamptz` | YES | `NULL` | Mốc `00:00 UTC+7` của ngày hạn (`WQ-12`) |
+| `start_at` | `timestamptz` | NO | `now()` | Ngày bắt đầu trên Tiến độ & Lịch (`CR-09`, bắt buộc từ `CR-14`, `CHECK (start_at <= due_at)`) |
+| `due_at` | `timestamptz` | NO | `now()` | Mốc hạn công việc (`WQ-12`, bắt buộc từ `CR-14`) |
 | `is_completed` | `boolean` | NO | `false` | Đánh dấu hoàn thành độc lập với cột Kanban (`CR-09`) |
 | `completed_at` | `timestamptz` | YES | `NULL` | Thời điểm đánh dấu hoàn thành (`CR-09`) |
 | `priority` | `smallint` | NO | `2` | `CHECK (priority BETWEEN 1 AND 4)` (giữ tương thích ngược) |
@@ -620,7 +620,7 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `departments_name_lower_uq`: `UNIQUE INDEX (lower(btrim(name)))` trên `departments` (chống trùng tên khác hoa/thường hoặc khoảng trắng đầu/cuối).
 - `permission_presets_code_uq`: `UNIQUE (code)` trên `permission_presets`.
 - `tasks_priority_chk`: `CHECK (priority BETWEEN 1 AND 4)` trên `tasks`.
-- `tasks_start_before_due_chk`: `CHECK (start_at IS NULL OR due_at IS NULL OR start_at <= due_at)` trên `tasks` (`CR-09`).
+- `tasks_start_before_due_chk`: `CHECK (start_at <= due_at)` trên `tasks` (`CR-09`, siết bắt buộc ở `CR-14`).
 - `tasks_version_chk`: `CHECK (version >= 1)` trên `tasks`.
 - `tasks_active_column_not_null_chk`: `CHECK (deleted_at IS NOT NULL OR column_id IS NOT NULL)` trên `tasks`.
 - `task_deliverables_title_chk`: `CHECK (char_length(btrim(title)) BETWEEN 1 AND 160)` trên `task_deliverables`.
@@ -653,7 +653,7 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 - `departments_lead_user_id_idx`: `ON departments (lead_user_id) WHERE lead_user_id IS NOT NULL`
 - `tasks_board_column_position_active_idx`: `ON tasks (board_id, column_id, position) WHERE deleted_at IS NULL`
 - `tasks_start_due_active_idx`: `ON tasks (start_at, due_at) WHERE deleted_at IS NULL AND purged_at IS NULL`
-- `tasks_due_at_active_idx`: `ON tasks (due_at) WHERE deleted_at IS NULL AND due_at IS NOT NULL`
+- `tasks_due_at_active_idx`: `ON tasks (due_at) WHERE deleted_at IS NULL`
 - `task_deliverables_task_created_idx`: `ON task_deliverables (task_id, created_at DESC, id DESC)`
 - `task_deliverables_submitted_by_idx`: `ON task_deliverables (submitted_by)`
 - `tasks_board_deleted_at_idx`: `ON tasks (board_id, deleted_at DESC) WHERE deleted_at IS NOT NULL`
@@ -693,3 +693,4 @@ Sổ cái chống gửi trùng email nhắc deadline; `kind` là `text` tự do 
 | `prevent_entity_unpurge` | `boards`, `tasks` (`BEFORE UPDATE FOR EACH ROW`) | Chặn đặt lại `purged_at = NULL` sau khi đối tượng đã bị purge | `HINT = 'ALREADY_PURGED'` — khóa xóa vĩnh viễn một chiều |
 | `prevent_append_only_mutation` | `task_events`, `audit_logs` (`BEFORE UPDATE OR DELETE OR TRUNCATE FOR EACH STATEMENT`) | Từ chối mọi thao tác `UPDATE`, `DELETE` hoặc `TRUNCATE` | `HINT = 'APPEND_ONLY_TABLE'` — đảm bảo nhật ký chỉ ghi thêm (`Q36`, `D35`) |
 | `set_updated_at` | `profiles`, `sessions`, `app_settings`, `club_assets`, `login_gallery_items`, `departments`, `permissions`, `permission_presets`, `boards`, `columns`, `tasks` (`BEFORE UPDATE FOR EACH ROW`) | Gán `NEW.updated_at := now()` | Đồng bộ thời điểm cập nhật UTC |
+| `tasks_normalize_dates_bi_trg` | `tasks` (`BEFORE INSERT FOR EACH ROW`) | Hàm `normalize_task_dates_before_insert()` tự điền `start_at` / `due_at` từ `created_at` / `now()` khi bị truyền `NULL` lúc `INSERT` (không chạy khi `UPDATE`) | Giữ an toàn tương thích `INSERT` trong khi ép `NOT NULL` & `start_at <= due_at` |

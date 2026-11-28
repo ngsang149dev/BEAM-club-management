@@ -25,6 +25,19 @@ import viMessages from '../../messages/vi.json';
 
 const BASE_ORIGIN = 'http://127.0.0.1:3001';
 const LOOPBACK_IPS = ['unknown', '127.0.0.1', '::1', '::ffff:127.0.0.1'];
+const VN_OFFSET_MS = 7 * 3_600_000;
+
+function vnDateIsoOffset(daysOffset: number): string {
+  const vnNow = new Date(Date.now() + VN_OFFSET_MS);
+  const shifted = new Date(
+    Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate() + daysOffset),
+  );
+  return shifted.toISOString().slice(0, 10);
+}
+
+function vnMidnightUtc(daysOffset: number): string {
+  return `${vnDateIsoOffset(daysOffset)}T00:00:00+07:00`;
+}
 
 async function attachRuntimeErrorTracker(page: Page): Promise<{
   assertClean: () => Promise<void>;
@@ -69,21 +82,8 @@ async function signInAs(
   await page.waitForURL(`${BASE_ORIGIN}${expectedPath}`);
 }
 
-async function ensureUnscheduledTrayOpen(page: Page): Promise<void> {
-  const toggle = page.locator('.hcal-unscheduled-toggle');
-  await expect(toggle).toBeVisible();
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-    await toggle.click();
-  }
-  await expect(page.locator('.hcal-unscheduled-list')).toBeVisible();
-}
-
-function getTaskChip(page: Page, title: string): Locator {
-  return page.locator('.hcal-unscheduled-chip', {
-    has: page.locator('.hcal-unscheduled-title', {
-      hasText: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
-    }),
-  });
+function getTaskBar(page: Page, taskId: string): Locator {
+  return page.locator(`.hcal-task-bar[data-task-id="${taskId}"]`);
 }
 
 function getTaskModal(page: Page): Locator {
@@ -539,6 +539,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
 
     // Create public task assigned to Dept A with both notification toggles checked
     await modal.getByLabel(viMessages.tasks.titleLabel).fill(notifiedTitle);
+    await modal.getByLabel(viMessages.tasks.dueAtLabel).fill(vnDateIsoOffset(2));
     await deptACheckbox.check();
 
     const createNotifiedPromise = page.waitForResponse(
@@ -550,11 +551,11 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     const notifiedTaskId = ((await createNotifiedRes.json()) as { task: { id: string } }).task.id;
     trackedTaskIds.push(notifiedTaskId);
 
-    // Open unscheduled chip on /tasks -> verify spacious near-fullscreen 2-column TaskDetailDrawer, dept summary, notification switches & saveAssignments button
-    await ensureUnscheduledTrayOpen(page);
-    const notifiedChip = getTaskChip(page, notifiedTitle);
-    await expect(notifiedChip).toBeVisible();
-    await notifiedChip.click();
+    // Open task bar on /tasks timeline -> verify spacious near-fullscreen 2-column TaskDetailDrawer, dept summary, notification switches & saveAssignments button
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    const notifiedBar = getTaskBar(page, notifiedTaskId);
+    await expect(notifiedBar).toBeVisible();
+    await notifiedBar.click();
 
     const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
@@ -596,37 +597,46 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     expect(notifiedRows.map((row) => row.userId)).not.toContain(outsiderUserId);
     expect(notifiedRows.map((row) => row.userId)).not.toContain(leadUserId);
 
-    // Verify Dept A member sees department badge & department filter on S06 /my-tasks
+    // Verify Dept A member sees department badge, pill, /my-tasks -> /progress redirect, and department filtering
     const memberAContext = await browser.newContext();
     const memberAPage = await memberAContext.newPage();
     const memberATracker = await attachRuntimeErrorTracker(memberAPage);
     try {
-      await signInAs(memberAPage, memberAStudentId, '/my-tasks');
-      const myTaskRow = memberAPage.locator('.my-task-row', { hasText: notifiedTitle });
-      await expect(myTaskRow).toBeVisible();
-      await expect(myTaskRow).toContainText(deptAName);
+      await signInAs(memberAPage, memberAStudentId, '/tasks');
+      await expect(memberAPage.locator('.app-side a[href="/my-tasks"]')).toHaveCount(0);
+      await memberAPage.goto('/my-tasks');
+      await memberAPage.waitForURL(`${BASE_ORIGIN}/progress`);
 
-      // Department filter on /my-tasks
-      const deptFilter = memberAPage.getByLabel(viMessages.myTasks.departmentFilterLabel);
-      const filterDeptAPromise = memberAPage.waitForResponse(
-        (res) =>
-          res.url().includes('/api/v1/me/tasks') &&
-          res.url().includes(`departmentId=${deptAId}`) &&
-          res.status() === 200,
+      const progRow = memberAPage.locator('.prog-row', { hasText: notifiedTitle });
+      await expect(progRow).toBeVisible();
+      await expect(progRow).toContainText(deptAName);
+      await expect(progRow.locator('.prog-dept-pill')).toContainText(
+        viMessages.progress.deptAssignedPill,
       );
-      await deptFilter.selectOption(deptAId);
-      await filterDeptAPromise;
-      await expect(memberAPage.locator('.my-task-row', { hasText: notifiedTitle })).toBeVisible();
 
-      const filterDeptBPromise = memberAPage.waitForResponse(
-        (res) =>
-          res.url().includes('/api/v1/me/tasks') &&
-          res.url().includes(`departmentId=${deptBId}`) &&
-          res.status() === 200,
+      // "Việc của Ban" tab on /progress ("Của tôi" mode) + API departmentId filter verification
+      await memberAPage
+        .getByRole('tab', { name: new RegExp(`^${viMessages.progress.filterDepartment}\\b`) })
+        .click();
+      await expect(memberAPage.locator('.prog-row', { hasText: notifiedTitle })).toBeVisible();
+
+      const filterDeptARes = await memberAPage.request.get(
+        `/api/v1/me/tasks?departmentId=${deptAId}`,
       );
-      await deptFilter.selectOption(deptBId);
-      await filterDeptBPromise;
-      await expect(memberAPage.locator('.my-task-row', { hasText: notifiedTitle })).toHaveCount(0);
+      expect(filterDeptARes.status()).toBe(200);
+      const filterDeptAJson = (await filterDeptARes.json()) as {
+        items: Array<{ id: string }>;
+      };
+      expect(filterDeptAJson.items.some((item) => item.id === notifiedTaskId)).toBe(true);
+
+      const filterDeptBRes = await memberAPage.request.get(
+        `/api/v1/me/tasks?departmentId=${deptBId}`,
+      );
+      expect(filterDeptBRes.status()).toBe(200);
+      const filterDeptBJson = (await filterDeptBRes.json()) as {
+        items: Array<{ id: string }>;
+      };
+      expect(filterDeptBJson.items.some((item) => item.id === notifiedTaskId)).toBe(false);
 
       await memberATracker.assertClean();
     } finally {
@@ -639,6 +649,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       .click();
     const silentModal = page.getByRole('dialog');
     await silentModal.getByLabel(viMessages.tasks.titleLabel).fill(silentTitle);
+    await silentModal.getByLabel(viMessages.tasks.dueAtLabel).fill(vnDateIsoOffset(2));
     await silentModal
       .locator('label', { hasText: deptAName })
       .locator('input[type="checkbox"]')
@@ -664,9 +675,9 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     const silentTaskId = ((await createSilentRes.json()) as { task: { id: string } }).task.id;
     trackedTaskIds.push(silentTaskId);
 
-    await ensureUnscheduledTrayOpen(page);
-    const silentChip = getTaskChip(page, silentTitle);
-    await expect(silentChip).toBeVisible();
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    const silentBar = getTaskBar(page, silentTaskId);
+    await expect(silentBar).toBeVisible();
 
     const silentNotifsAfterCreate = await db
       .select()
@@ -675,7 +686,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     expect(silentNotifsAfterCreate).toHaveLength(0);
 
     // Also update assignments in S05 modal adding Dept B with both toggles OFF -> 0 notifications
-    await silentChip.click();
+    await silentBar.click();
     const silentDrawer = getTaskModal(page);
     await expect(silentDrawer).toBeVisible();
     await expect(silentDrawer.locator('.task-modal-header-badges')).toContainText(deptAName);
@@ -705,8 +716,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await expect(page).not.toHaveURL(/task=/);
 
     await page.reload();
-    await ensureUnscheduledTrayOpen(page);
-    await getTaskChip(page, silentTitle).click();
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    await getTaskBar(page, silentTaskId).click();
     const reloadedSilentDrawer = getTaskModal(page);
     await expect(reloadedSilentDrawer).toBeVisible();
     await expect(reloadedSilentDrawer.locator('.task-modal-header-badges')).toContainText(deptAName);
@@ -760,6 +771,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
           columnId: todoColId,
           title: initialTitle,
           priority: 2,
+          startAt: vnMidnightUtc(0),
+          dueAt: vnMidnightUtc(2),
           departmentIds: [deptAId],
           notifyDepartmentMembers: false,
         },
@@ -773,13 +786,14 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     }
 
     // Sign in as memberA (holding ONLY member.view, task.update_assigned, comment.create)
-    await signInAs(page, memberAStudentId, '/my-tasks');
-    const myRow = page.locator('.my-task-row', { hasText: initialTitle });
+    await signInAs(page, memberAStudentId, '/progress');
+    const myRow = page.locator('.prog-row', { hasText: initialTitle });
     await expect(myRow).toBeVisible();
     await expect(myRow).toContainText(deptAName);
 
-    // Open S05 modal from /my-tasks and edit title & description
-    await myRow.click();
+    // Select row and expand S05 modal from /progress and edit title & description
+    await myRow.locator('.prog-row-btn').click();
+    await page.locator('.prog-expand-btn').click();
     const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText(viMessages.tasks.readOnlyNotice)).toHaveCount(0);
@@ -796,11 +810,13 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await drawer.getByRole('button', { name: viMessages.common.close }).click();
     await expect(drawer).toHaveCount(0);
 
-    // Navigate to legacy /boards/[id] -> redirects to /tasks -> verify edited task visible in unscheduled tray
+    // Navigate to legacy /boards/[id] -> redirects to /tasks -> verify edited task bar visible on /tasks timeline
     await page.goto(`/boards/${boardId}`);
     await page.waitForURL(`${BASE_ORIGIN}/tasks`);
-    await ensureUnscheduledTrayOpen(page);
-    await expect(getTaskChip(page, editedTitle)).toBeVisible();
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    const editedBar = getTaskBar(page, taskId);
+    await expect(editedBar).toBeVisible();
+    await expect(editedBar).toContainText(editedTitle);
 
     // Move task via /api/v1/tasks/{id}/move (Todo -> Doing) & persist UUID-only task_events
     const moveRes = await page.request.post(`/api/v1/tasks/${taskId}/move`, {
@@ -873,6 +889,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
         .click();
       const modal = leadPage.getByRole('dialog');
       await modal.getByLabel(viMessages.tasks.titleLabel).fill(hiddenTitle);
+      await modal.getByLabel(viMessages.tasks.dueAtLabel).fill(vnDateIsoOffset(2));
       await modal
         .locator('label', { hasText: deptAName })
         .locator('input[type="checkbox"]')
@@ -914,7 +931,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     expect(revokeNotif).toBeDefined();
     const revokeNotifId = revokeNotif!.id;
 
-    // 1. Outsider holding task.update_any gets 404 everywhere, sees nothing on /tasks or /my-tasks, 0 notifications
+    // 1. Outsider holding task.update_any gets 404 everywhere, sees nothing on /tasks or /progress, 0 notifications
     const outsiderContext = await browser.newContext();
     const outsiderPage = await outsiderContext.newPage();
     const outsiderTracker = await attachRuntimeErrorTracker(outsiderPage);
@@ -923,8 +940,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       await expect(outsiderPage.locator('.hcal-shell')).toBeVisible();
       await expect(outsiderPage.getByText(hiddenTitle)).toHaveCount(0);
 
-      await outsiderPage.goto('/my-tasks');
-      await expect(outsiderPage.locator('.my-task-row', { hasText: hiddenTitle })).toHaveCount(0);
+      await outsiderPage.goto('/progress');
+      await expect(outsiderPage.locator('.prog-row', { hasText: hiddenTitle })).toHaveCount(0);
 
       expect((await outsiderPage.request.get(`/api/v1/tasks/${hiddenTaskId}`)).status()).toBe(404);
       expect(
@@ -955,11 +972,11 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
 
     // 2. Dept A member (revokeUser) sees hidden task & redacted WQ-27 notification, then loses access immediately on leaving Dept A
     await signInAs(page, revokeStudentId, `/boards/${boardId}`);
-    await ensureUnscheduledTrayOpen(page);
-    await expect(getTaskChip(page, hiddenTitle)).toBeVisible();
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    await expect(getTaskBar(page, hiddenTaskId)).toBeVisible();
 
-    await page.goto('/my-tasks');
-    await expect(page.locator('.my-task-row', { hasText: hiddenTitle })).toBeVisible();
+    await page.goto('/progress');
+    await expect(page.locator('.prog-row', { hasText: hiddenTitle })).toBeVisible();
 
     const revokeNotifsRes = await page.request.get('/api/v1/notifications');
     expect(revokeNotifsRes.status()).toBe(200);
@@ -1020,8 +1037,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     await page.waitForURL(`${BASE_ORIGIN}/tasks`);
     await expect(page.getByText(hiddenTitle)).toHaveCount(0);
 
-    await page.goto('/my-tasks');
-    await expect(page.locator('.my-task-row', { hasText: hiddenTitle })).toHaveCount(0);
+    await page.goto('/progress');
+    await expect(page.locator('.prog-row', { hasText: hiddenTitle })).toHaveCount(0);
 
     await tracker.assertClean();
   });
@@ -1067,6 +1084,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
           columnId: todoColId,
           title: publicTitle,
           priority: 3,
+          startAt: vnMidnightUtc(0),
+          dueAt: vnMidnightUtc(2),
           departmentIds: [deptBellId],
           notifyDepartmentMembers: true,
         },
@@ -1081,6 +1100,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
           columnId: todoColId,
           title: hiddenTitle,
           priority: 2,
+          startAt: vnMidnightUtc(0),
+          dueAt: vnMidnightUtc(2),
           departmentIds: [deptBellId],
           isHidden: true,
           notifyDepartmentMembers: true,
@@ -1147,17 +1168,11 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       '{departmentName}',
       deptBellName,
     );
-    const expectedBoardHint = viMessages.notifications.openTaskHint.replace(
-      '{boardName}',
-      boardName,
-    );
-
     await expect(popover).toContainText(expectedPublicMsg);
     await expect(popover).toContainText(expectedHiddenMsg);
-    await expect(popover).toContainText(boardName);
     await expect(
       popover.getByRole('button', { name: new RegExp(publicTitle) }),
-    ).toHaveAttribute('title', expectedBoardHint);
+    ).toHaveAttribute('title', viMessages.notifications.openTaskHint);
 
     const popoverTextBeforeClick = await popover.innerText();
     expect(popoverTextBeforeClick).not.toContain(hiddenTitle);
@@ -1271,6 +1286,8 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
         boardId,
         columnId: todoColId,
         title: hiddenDirectSecretTitle,
+        startAt: vnMidnightUtc(0),
+        dueAt: vnMidnightUtc(2),
         isHidden: true,
         notifyInApp: false,
         notifyEmail: false,
@@ -1281,10 +1298,10 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     trackedTaskIds.push(hiddenDirectTaskId);
 
     await page.reload();
-    await ensureUnscheduledTrayOpen(page);
-    const hiddenChip = getTaskChip(page, hiddenDirectSecretTitle);
-    await expect(hiddenChip).toBeVisible();
-    await hiddenChip.click();
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    const hiddenBar = getTaskBar(page, hiddenDirectTaskId);
+    await expect(hiddenBar).toBeVisible();
+    await hiddenBar.click();
 
     const drawer = getTaskModal(page);
     await expect(drawer).toBeVisible();
@@ -1326,6 +1343,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       .click();
     const publicModal = page.getByRole('dialog');
     await publicModal.getByLabel(viMessages.tasks.titleLabel).fill(publicDirectTitle);
+    await publicModal.getByLabel(viMessages.tasks.dueAtLabel).fill(vnDateIsoOffset(2));
     await publicModal.locator('details.task-individual-details > summary').click();
     await publicModal
       .locator('details.task-individual-details label.dept-check-item', { hasText: directFullName })
@@ -1353,6 +1371,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
       .click();
     const silentModal = page.getByRole('dialog');
     await silentModal.getByLabel(viMessages.tasks.titleLabel).fill(silentDirectTitle);
+    await silentModal.getByLabel(viMessages.tasks.dueAtLabel).fill(vnDateIsoOffset(2));
     await silentModal.locator('details.task-individual-details > summary').click();
     await silentModal
       .locator('details.task-individual-details label.dept-check-item', { hasText: directFullName })
@@ -1379,9 +1398,9 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
     const silentDirectTaskId = ((await createSilentDirectRes.json()) as { task: { id: string } }).task.id;
     trackedTaskIds.push(silentDirectTaskId);
 
-    // Silent direct assignment still persists on /tasks unscheduled tray
-    await ensureUnscheduledTrayOpen(page);
-    await expect(getTaskChip(page, silentDirectTitle)).toBeVisible();
+    // Silent direct assignment still persists on /tasks timeline
+    await expect(page.locator('.hcal-unscheduled-tray')).toHaveCount(0);
+    await expect(getTaskBar(page, silentDirectTaskId)).toBeVisible();
 
     // Verify DB notifications: actor (leadUserId) excluded from self-notifications; directUserId has 2 task.assigned rows with WQ-27 redaction in DB payload
     const leadSelfRows = await db
@@ -1424,7 +1443,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
           res.request().method() === 'GET' &&
           res.status() === 200,
       );
-      await signInAs(directPage, directStudentId, '/my-tasks');
+      await signInAs(directPage, directStudentId, '/progress');
       await initialNotifPromise;
 
       const viBellBtn = directPage.getByRole('button', {
@@ -1468,7 +1487,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
         boardId: publicDirectBoardId,
         departmentId: null,
         departmentName: null,
-        boardName: viMessages.calendar.workspaceBoardName,
+        boardName: 'BEAM Workspace',
         taskTitle: publicDirectTitle,
         isHiddenTask: false,
       });
@@ -1498,7 +1517,7 @@ test.describe('Department Task Assignment & Notifications E2E (CR-03)', () => {
         .getByRole('button', { name: 'EN', exact: true })
         .click();
       expect((await enSwitchPromise).status()).toBe(200);
-      await expect(directPage.locator('.app-top-bread')).toContainText(enMessages.myTasks.title);
+      await expect(directPage.locator('.app-top-bread')).toContainText(enMessages.progress.title);
 
       const enBellBtn = directPage.getByRole('button', {
         name: new RegExp(enMessages.notifications.bellAriaLabel),

@@ -244,8 +244,8 @@ describe('boards policy & BoardsService', () => {
       columnId: COL_1,
       title: 'Secret',
       description: null,
-      startAt: null,
-      dueAt: null,
+      startAt: now,
+      dueAt: now,
       isCompleted: false,
       completedAt: null,
       priority: 3,
@@ -323,7 +323,7 @@ describe('boards policy & BoardsService', () => {
       columnId: COL_1,
       title: 'Task',
       description: null,
-      startAt: null,
+      startAt: new Date('2026-11-22T00:00:00.000Z'),
       dueAt: new Date('2026-11-23T00:00:00.000Z'),
       isCompleted: false,
       completedAt: null,
@@ -348,7 +348,7 @@ describe('boards policy & BoardsService', () => {
       makeTask({ id: '60000000-0000-4000-8000-000000000011', columnId: COL_1 }), // overdue public
       makeTask({ id: '60000000-0000-4000-8000-000000000012', columnId: COL_2, isHidden: true }), // overdue hidden (admin only)
       makeTask({ id: '60000000-0000-4000-8000-000000000013', columnId: COL_1, dueAt: new Date('2026-11-25T00:00:00.000Z') }), // upcoming
-      makeTask({ id: '60000000-0000-4000-8000-000000000014', columnId: COL_1, dueAt: null }), // no due
+      makeTask({ id: '60000000-0000-4000-8000-000000000014', columnId: COL_1, dueAt: new Date('2026-11-26T00:00:00.000Z') }), // upcoming (not overdue)
       makeTask({ id: '60000000-0000-4000-8000-000000000015', columnId: colDoneByName }), // overdue but in ' done ' col
       makeTask({ id: '60000000-0000-4000-8000-000000000016', columnId: colFinalCustom }), // overdue but in final orderIndex col
       makeTask({ id: '60000000-0000-4000-8000-000000000017', columnId: COL_1, isCompleted: true }), // overdue dueAt but isCompleted=true

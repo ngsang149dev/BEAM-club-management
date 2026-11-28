@@ -2,6 +2,7 @@ import type { ListArchiveQueryInput } from '@/lib/archive';
 import { conflict, notFound } from '@/lib/errors';
 import { canViewMemberDetail } from '@/server/modules/members';
 import { assertCanViewTask, toTaskVisibilitySubject } from '@/server/modules/tasks';
+import type { AuditLogWriter } from '@/server/shared/audit-writer';
 import { type AuthActor, authorize } from '@/server/shared/authorize';
 import type { TransactionContext } from '@/server/shared/transaction';
 import { type ArchivePageResponseDto, toArchivePageResponseDto } from './mapper';
@@ -102,6 +103,7 @@ function resolveRestoreColumn(
 
 export async function executeTaskRestoreTx(params: {
   readonly archiveRepo: ArchiveRepository;
+  readonly auditWriter?: AuditLogWriter;
   readonly actor: AuthActor;
   readonly taskId: string;
   readonly now: Date;
@@ -110,18 +112,25 @@ export async function executeTaskRestoreTx(params: {
   const target = await params.archiveRepo.findTaskForRestore(params.taskId, params.tx);
   if (!target) throw notFound('errors.notFound', {}, 'NOT_FOUND');
   const plan = resolveRestoreColumn(params.actor, target);
-  return params.archiveRepo.restoreTaskWithEvent(
+  const result = await params.archiveRepo.restoreTaskWithEvent(
     {
-      taskId: params.taskId,
-      boardId: target.task.boardId,
-      actorId: params.actor.id,
-      prevDeletedAt: plan.prevDeletedAt,
-      prevColumnId: target.task.columnId,
-      targetColumnId: plan.targetColumnId,
-      currentPosition: target.task.position,
-      useFallbackPosition: plan.useFallbackPosition,
-      now: params.now,
+      taskId: params.taskId, boardId: target.task.boardId, actorId: params.actor.id,
+      prevDeletedAt: plan.prevDeletedAt, prevColumnId: target.task.columnId,
+      targetColumnId: plan.targetColumnId, currentPosition: target.task.position,
+      useFallbackPosition: plan.useFallbackPosition, now: params.now,
     },
     params.tx,
   );
+  await params.auditWriter?.record(
+    {
+      actorId: params.actor.id, action: 'task.restored',
+      detail: {
+        taskId: result.task.id, boardId: result.task.boardId,
+        isHidden: result.task.isHidden, taskTitle: result.task.isHidden ? null : result.task.title,
+      },
+      createdAt: params.now,
+    },
+    params.tx,
+  );
+  return result;
 }

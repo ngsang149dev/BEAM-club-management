@@ -256,14 +256,11 @@ const TEST_CONFIG: Config = {
   databaseUrl: 'postgresql://unused:unused@localhost:5432/unused',
   sessionSecret: 'unit-test-secret-0123456789abcdef',
   sessionTtlMinutes: 30,
-  sessionTtlDefaultHours: 24,
-  sessionTtlRememberDays: 30,
   allowedEmailDomain: 'eiu.edu.vn',
   defaultInitialPassword: DEV_SEED_PASSWORD,
   cronSecret: 'unit-test-cron-secret',
   smtp: {},
   appUrl: 'http://localhost:3000',
-  undoToastSeconds: 10,
 };
 
 const MOCK_TX_RUNNER: TransactionRunner = {

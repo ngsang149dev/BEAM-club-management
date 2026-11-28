@@ -159,10 +159,8 @@ export async function invalidateMemberAvatarRelatedQueries(queryClient: QueryCli
     queryClient.invalidateQueries({ queryKey: MEMBERS_QUERY_KEYS.all }),
     queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me }),
     queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEYS.all }),
-    queryClient.invalidateQueries({ queryKey: ['boardDetail'] }),
     queryClient.invalidateQueries({ queryKey: ['taskDetail'] }),
-    queryClient.invalidateQueries({ queryKey: ['myTasks'] }),
-    queryClient.invalidateQueries({ queryKey: ['tasks', 'assigneeMembers'] }),
+    queryClient.invalidateQueries({ queryKey: ['tasks'] }),
   ]);
 }
 
