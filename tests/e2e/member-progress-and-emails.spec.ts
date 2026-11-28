@@ -657,8 +657,9 @@ test.describe('CR-12 & CR-13 Member Progress Master-Detail, PII/Hidden Isolation
     await expect(commentsModal).toHaveCount(0);
     await expect(summaryCard.locator('.prog-comments-trigger')).toContainText('(1)');
 
-    // Open via list row pill and close with ✕
-    await page.locator('.prog-row', { hasText: directSoonTitle }).locator('.prog-comment-pill').click();
+    // Ensure duplicate comment pill is removed from left-pane task rows, then open Comments Modal again from inspector and close with ✕
+    await expect(page.locator('.prog-row .prog-comment-pill')).toHaveCount(0);
+    await summaryCard.locator('.prog-comments-trigger').click();
     await expect(commentsModal).toBeVisible();
     await commentsModal.locator('.prog-modal-close').click();
     await expect(commentsModal).toHaveCount(0);

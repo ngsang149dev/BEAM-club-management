@@ -6699,7 +6699,7 @@ svg {
 
 .prog-list-cols {
   display: grid;
-  grid-template-columns: minmax(0, 6fr) minmax(0, 3fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 7fr) minmax(0, 2fr) minmax(0, 3fr);
   gap: 8px;
   padding: 7px 16px;
   border-bottom: 1px solid var(--line-2);
@@ -6742,7 +6742,7 @@ svg {
 .prog-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 6fr) minmax(0, 3fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 7fr) minmax(0, 2fr) minmax(0, 3fr);
   align-items: center;
   gap: 8px;
   padding: 11px 16px;
@@ -6874,25 +6874,6 @@ svg {
 .prog-accept-chip.is-pending {
   background: #fffbeb;
   color: #b45309;
-}
-
-.prog-comment-pill {
-  pointer-events: auto;
-  position: relative;
-  z-index: 2;
-  padding: 2px 7px;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.prog-comment-pill:hover {
-  border-color: var(--ink);
-  background: var(--paper-2);
 }
 
 .prog-row-due {

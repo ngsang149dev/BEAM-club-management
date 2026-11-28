@@ -980,7 +980,6 @@
     "reopenButton": "Reopen",
     "expandDetail": "Expand ⤢",
     "assignedByLabel": "Assigned by:",
-    "openCommentsAria": "Open comments ({count})",
     "commentsButton": "Comments ({count})",
     "commentsModalTitle": "Task comments",
     "deliverablesTitle": "Deliverable links ({count})",

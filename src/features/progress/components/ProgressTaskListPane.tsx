@@ -125,14 +125,12 @@ function ProgressTaskRow({
   selected,
   locale,
   onSelect,
-  onOpenComments,
 }: {
   readonly task: TaskDto;
   readonly targetMemberId: string;
   readonly selected: boolean;
   readonly locale: string;
   readonly onSelect: () => void;
-  readonly onOpenComments: () => void;
 }) {
   const t = useTranslations('progress');
   const tCalendar = useTranslations('calendar');
@@ -154,9 +152,6 @@ function ProgressTaskRow({
         <span className={`prog-accept-chip ${accepted ? 'is-accepted' : 'is-pending'}`}>
           {accepted ? t('acceptedShort') : t('unacceptedShort')}
         </span>
-        <button type="button" className="prog-comment-pill" aria-label={t('openCommentsAria', { count: task.commentCount })} onClick={onOpenComments}>
-          💬 {task.commentCount}
-        </button>
       </div>
       <div className="prog-row-due">
         <span className={`prog-due-text mono is-${metrics.tier}`}>{formatVnMonthDayTime(task.dueAt, locale)}</span>
@@ -196,7 +191,6 @@ function ProgressTaskListBody(props: {
   readonly error: unknown;
   readonly onRetry: () => void;
   readonly onSelectTask: (taskId: string) => void;
-  readonly onOpenComments: (taskId: string) => void;
 }) {
   const locale = useLocale();
   const t = useTranslations('progress');
@@ -216,7 +210,6 @@ function ProgressTaskListBody(props: {
           selected={task.id === props.selectedTaskId}
           locale={locale}
           onSelect={() => props.onSelectTask(task.id)}
-          onOpenComments={() => props.onOpenComments(task.id)}
         />
       ))}
     </ul>
@@ -238,7 +231,6 @@ export function ProgressTaskListPane(props: {
   readonly onSearchChange: (q: string) => void;
   readonly onRetry: () => void;
   readonly onSelectTask: (taskId: string) => void;
-  readonly onOpenComments: (taskId: string) => void;
 }) {
   const t = useTranslations('progress');
   return (

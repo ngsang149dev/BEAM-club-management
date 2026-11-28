@@ -66,7 +66,6 @@ function ProgressWorkspaceGrid({
         onSearchChange={progress.setSearchQuery}
         onRetry={() => void progress.memberTasksQuery.refetch()}
         onSelectTask={progress.selectTask}
-        onOpenComments={onOpenComments}
       />
       <ProgressInspectorPane
         task={progress.selectedTask}

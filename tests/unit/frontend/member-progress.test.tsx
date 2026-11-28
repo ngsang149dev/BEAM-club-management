@@ -378,11 +378,11 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
         onSearchChange={vi.fn()}
         onRetry={vi.fn()}
         onSelectTask={vi.fn()}
-        onOpenComments={vi.fn()}
       />,
       { permissions: ['member.view'] }
     );
     expect(publicHtml).toContain('Trần Thị Minh Anh');
+    expect(publicHtml).not.toContain('prog-comment-pill');
     expect(publicHtml).not.toContain('2131200012');
     expect(publicHtml).not.toContain('minhanh.tran@eiu.edu.vn');
 
@@ -407,7 +407,6 @@ describe('CR-13-01 Member Progress helpers & workspace', () => {
         onSearchChange={vi.fn()}
         onRetry={vi.fn()}
         onSelectTask={vi.fn()}
-        onOpenComments={vi.fn()}
       />,
       { permissions: ['member.view', 'member.view_detail'] }
     );
