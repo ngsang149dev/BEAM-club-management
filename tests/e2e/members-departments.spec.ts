@@ -788,6 +788,30 @@ test.describe('Members & Departments E2E (S07, S09, S11, CR-01)', () => {
         error: { code: 'FORBIDDEN' },
       });
 
+      // Verify S07 /members (canViewDetail=true 6-column table) keeps ".role-badge" ("Thành viên" / "Admin") on a single line without vertical overflow
+      await hrPage.goto('/members');
+      const hrDirTable = hrPage.locator('.directory-table-wrap table.ui-table');
+      await expect(hrDirTable).toBeVisible();
+      await hrPage.getByLabel(viMessages.members.searchLabel).fill(resetTargetFullName);
+      const memberRoleBadge = hrDirTable.locator('tbody tr', { hasText: resetTargetFullName }).locator('.role-badge');
+      await expect(memberRoleBadge).toHaveText(viMessages.members.roleMember);
+      const memberBadgeMetrics = await memberRoleBadge.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const textRects = range.getClientRects();
+        const box = el.getBoundingClientRect();
+        return {
+          whiteSpace: getComputedStyle(el).whiteSpace,
+          height: box.height,
+          textRectCount: textRects.length,
+          scrollWidthOverflow: el.scrollWidth - el.clientWidth,
+        };
+      });
+      expect(memberBadgeMetrics.whiteSpace).toBe('nowrap');
+      expect(memberBadgeMetrics.height).toBeLessThanOrEqual(30);
+      expect(memberBadgeMetrics.textRectCount).toBe(1);
+      expect(memberBadgeMetrics.scrollWidthOverflow).toBeLessThanOrEqual(1);
+
       await hrTracker.assertClean();
     } finally {
       await hrContext.close();

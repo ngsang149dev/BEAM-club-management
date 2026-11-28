@@ -1056,7 +1056,9 @@ svg {
 .role-badge {
   display: inline-flex;
   align-items: center;
-  height: 22px;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 22px;
   padding: 0 8px;
   border: 1px solid var(--ink);
   border-radius: 999px;
@@ -1064,6 +1066,8 @@ svg {
   color: var(--ink);
   font-size: 10.5px;
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .role-badge.is-admin {
@@ -1340,6 +1344,9 @@ svg {
   }
 
   .login-left-tag {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
     padding: 3px 9px;
     border: 1px solid var(--ink);
     border-radius: 999px;
@@ -1347,6 +1354,7 @@ svg {
     color: var(--ink);
     font-size: 10.5px;
     font-weight: 700;
+    white-space: nowrap;
   }
 
   .login-copy {
@@ -2112,12 +2120,15 @@ svg {
 .status-pill {
   display: inline-flex;
   align-items: center;
-  height: 22px;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 22px;
   padding: 0 8px;
   border-radius: 999px;
   border: 1px solid var(--ink);
   font-size: 11px;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -3503,9 +3514,11 @@ svg {
 
   .role-badge,
   .status-pill {
-    height: 26px;
+    min-height: 26px;
+    height: auto;
     padding: 0 10px;
     font-size: 12px;
+    white-space: nowrap;
   }
 
   .admin-card:not(.directory-list-card) {
@@ -5361,6 +5374,7 @@ svg {
 }
 
 .hcal-filter-pill {
+  flex-shrink: 0;
   padding: 4px 10px;
   border: 1.5px solid var(--line-soft);
   border-radius: 999px;
@@ -5368,6 +5382,7 @@ svg {
   color: var(--ink);
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease;
 }
@@ -6115,12 +6130,14 @@ svg {
 }
 
 .task-acceptance-count-pill {
+  flex-shrink: 0;
   padding: 2px 9px;
   border-radius: 999px;
   background: rgba(236, 72, 153, 0.15);
   color: var(--pink-deep);
   font-size: 11.5px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .task-acceptance-list {
@@ -6167,6 +6184,7 @@ svg {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .task-accept-pill.is-accepted {
@@ -6184,6 +6202,7 @@ svg {
 .task-status-pill {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   width: fit-content;
   padding: 4px 10px;
   border: 1.5px solid var(--ink);
@@ -6191,6 +6210,7 @@ svg {
   background: var(--surface);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .task-status-pill.is-done {
@@ -6394,6 +6414,7 @@ svg {
 }
 
 .prog-pop-pill {
+  flex-shrink: 0;
   padding: 4px 10px;
   border: 1px solid var(--line-soft);
   border-radius: 999px;
@@ -6401,6 +6422,7 @@ svg {
   color: var(--ink-2);
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
