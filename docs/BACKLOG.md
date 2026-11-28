@@ -27,7 +27,11 @@
 | **E11** | Gia cố Bảo mật Production: OWASP Headers, CSRF Origin Guard, Rate limit 2 lớp, CDN Cache branding & Runbook WAF `[RỦI RO CAO]` | NFR-01–NFR-05 | Done |
 | **CR-08** | Đăng nhập 1 thiết bị (tự đăng xuất phiên cũ) & Session trượt 30 phút (bỏ "Ghi nhớ đăng nhập") (`A3`, `[RỦI RO CAO]`) | Nâng cấp `FR-04`, `AC-05`, `AC-13` | Done |
 | **CR-09** | Trưởng ban, Tick "Đã nhận task", Nộp nhiều Link sản phẩm & Migration/OpenAPI Lịch công việc (`A2`, `A4`, `[RỦI RO CAO]`) | Nâng cấp Task, Ban & Thông báo | Done |
-| **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Ready for PR |
+| **CR-10** | Lịch Task trượt ngang (`Năm ⇄ Tháng ⇄ Tuần`), Viền & Lọc Deadline (bỏ Priority) & Cửa sổ Chi tiết Task gần full màn (`A1`, `A5`, `A6`) | Thay Board bằng Lịch Task | Done |
+| **CR-11** | CI/CD tự động deploy Neon (`db:migrate`) & Vercel Production (`deploy.yml`, `[RỦI RO CAO]`) | NFR-06, NFR-08 | Done |
+| **CR-12** | Email tự động Light / Soft Dark Card, làm giàu ngữ cảnh & đồng bộ Preview `/admin/reminders` (`[RỦI RO CAO]`) | FR-31, WQ-27, A4 | Done |
+| **CR-13** | Bảng Tiến độ công việc cá nhân `/progress` (Master–Detail, 2 card, Modal Bình luận, `member.view`/`member.view_detail`, `[RỦI RO CAO]`) | FR-20–26, FR-42 | Done |
+| **CR-14** | Ràng buộc `startAt`/`dueAt` (`0009`), Nhật ký 12 sự kiện `task.*` (`WQ-27`), gộp `/my-tasks` → `/progress`, tinh giản Preview & dọn mã thừa (`A1`–`A4`, `[RỦI RO CAO]`) | Nâng cấp & Tối ưu hệ thống | Done |
 
 ---
 
@@ -936,7 +940,7 @@
 
 ---
 
-## Epic CR-12 — Thiết kế lại Email gửi đi (Auto Light / Soft Dark) & Đồng bộ Xem trước `[RỦI RO CAO]` *(In Progress)*
+## Epic CR-12 — Thiết kế lại Email gửi đi (Auto Light / Soft Dark) & Đồng bộ Xem trước `[RỦI RO CAO]` *(Done — đã duyệt & merge `main`)*
 
 ### CR-12-01
 - **ID:** `CR-12-01`
@@ -951,7 +955,7 @@
   2. Email giao việc / Lead activity hiển thị thêm mô tả rút gọn (`<= 240` ký tự), thời gian bắt đầu, tình trạng hạn pill và `Deadline` (`Asia/Ho_Chi_Minh`); khi `isHiddenTask = true`, che hoàn toàn `title`, `description`, `startAt`, `dueAt`, `deliverableTitle`, `deliverableUrl` (`WQ-27`) và không rò rỉ PII.
   3. Email nhắc hạn (`reminders/email-template.ts`) bỏ hoàn toàn nhãn Priority và dòng footer dưới nút CTA, giữ gộp 1 email/người (`vi`/`en`) và `WQ-27`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR` *(đã xong `CR-12-01` — xanh `typecheck`, `eslint`, `arch:check`, `10/10` unit test notifications/reminders & `3/3` integration test PostgreSQL)*
+- **Trạng thái:** `Done (đã duyệt & merge main)` *(đã xong `CR-12-01` — xanh `typecheck`, `eslint`, `arch:check`, `10/10` unit test notifications/reminders & `3/3` integration test PostgreSQL)*
 
 ### CR-12-02
 - **ID:** `CR-12-02`
@@ -962,11 +966,11 @@
 - **Phạm vi file được sửa:** `src/features/reminders/components/ReminderEmailPreviewParts.tsx`, `src/app/globals.css`, `tests/unit/frontend/reminders-admin.test.tsx`
 - **Tiêu chí chấp nhận:** Khung xem trước `/admin/reminders` không còn `PreviewPriorityPill`, không còn dòng footer dưới nút CTA, header mang gradient Hồng → Cam, giữ `WQ-27` che task ẩn & 0 PII.
 - **Mức rủi ro:** Trung bình
-- **Trạng thái:** `Ready for PR` *(đã xong `CR-12-02` — xanh `typecheck`, `lint`, `arch:check`, `reminders-admin.test.tsx` & E2E `reminders.spec.ts` / `member-progress-and-emails.spec.ts`)*
+- **Trạng thái:** `Done (đã duyệt & merge main)` *(đã xong `CR-12-02` — xanh `typecheck`, `lint`, `arch:check`, `reminders-admin.test.tsx` & E2E `reminders.spec.ts` / `member-progress-and-emails.spec.ts`)*
 
 ---
 
-## Epic CR-13 — Bảng Tiến độ công việc cá nhân `/progress` (Master–Detail) `[RỦI RO CAO]` *(Ready for PR — chờ duyệt PR)*
+## Epic CR-13 — Bảng Tiến độ công việc cá nhân `/progress` (Master–Detail) `[RỦI RO CAO]` *(Done — đã duyệt & merge `main`)*
 
 ### CR-13-01
 - **ID:** `CR-13-01`
@@ -982,7 +986,7 @@
   4. Cột trái 7/12 danh sách 1 dòng gọn + lọc `Đang làm | Quá hạn | Chưa nhận | Đã xong | Tất cả` + tìm nhanh; cột phải 5/12 gồm **Card 1** (chi tiết + thanh Deadline đổi màu + `Nhận việc`/`Hoàn thành` + mở Modal Bình luận) và **Card 2** riêng cho `Link nộp sản phẩm` (`+ Nộp link`, link mở tab mới, xóa link); Modal Bình luận tái sử dụng `TaskCommentsSection`.
   5. Tuân thủ ngưỡng 6A.6 (`<= 300` dòng/file, `<= 40` dòng/hàm, `complexity <= 10`) và 100% khóa `messages/{vi,en}.json`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR` *(đã xong `CR-13-01` — xanh `typecheck`, `lint`, `arch:check` `392/1928`, `37/37` tệp unit frontend / `207` test)*
+- **Trạng thái:** `Done (đã duyệt & merge main)` *(đã xong `CR-13-01` — xanh `typecheck`, `lint`, `arch:check` `392/1928`, `37/37` tệp unit frontend / `207` test)*
 
 ### CR-13-02
 - **ID:** `CR-13-02`
@@ -993,11 +997,11 @@
 - **Phạm vi file được sửa:** `tests/e2e/member-progress-and-emails.spec.ts`
 - **Tiêu chí chấp nhận:** Đủ 9 cổng CI (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`, full Playwright E2E) + Audit `6A.8` (`13/13`), `§7` (PII & `WQ-27`), `§8` đạt `VERDICT: PASS`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (qa-reviewer ngữ cảnh sạch VERDICT: PASS — 9/9 cổng CI, 67/67 unit / 375 test, 22/22 integration / 43 test, db:restore:verify 24 bảng, next build 44/44 route, 54/54 Chrome E2E, 13/13 mục 6A.8, 0 Blocker, 0 Major)`
+- **Trạng thái:** `Done (đã duyệt & merge main — qa-reviewer ngữ cảnh sạch VERDICT: PASS: 9/9 cổng CI, 67/67 unit / 375 test, 22/22 integration / 43 test, db:restore:verify 24 bảng, next build 44/44 route, 54/54 Chrome E2E, 13/13 mục 6A.8, 0 Blocker, 0 Major)`
 
 ---
 
-## Epic CR-14 — Ràng buộc ngày Task, Nhật ký Task, Gộp `/my-tasks` -> `/progress` & Dọn mã dư thừa (`A1`–`A4`, `[RỦI RO CAO]`) *(Ready for PR — chờ duyệt PR)*
+## Epic CR-14 — Ràng buộc ngày Task, Nhật ký Task, Gộp `/my-tasks` -> `/progress` & Dọn mã dư thừa (`A1`–`A4`, `[RỦI RO CAO]`) *(Done — đã duyệt & merge `main`)*
 
 ### CR-14-01
 - **ID:** `CR-14-01`
@@ -1011,7 +1015,7 @@
   2. 12 hành động task/sản phẩm ghi `audit_logs` với che `WQ-27` ở cả lúc ghi & lúc đọc `GET /audit-logs`; email nhắc hạn trỏ CTA `/progress`.
   3. Loại bỏ toàn bộ `Promise.all` đồng thời trên cùng client `tx`, gộp `hydrateTaskRecords` & `loadUserSummariesMap`, tối ưu `AuthService.authenticateSession` (`Promise.all` + throttle `touchSession`), xóa `auth-http` `refreshSessionCookieIfRemembered` & `auth/schemas.ts`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR` *(đã xong `CR-14-01` — `0009` idempotent dev/test, `22/22` integration / `44` test không cảnh báo `pg`, `db:restore:verify -- --test` `24` bảng)*
+- **Trạng thái:** `Done (đã duyệt & merge main)` *(đã xong `CR-14-01` — `0009` idempotent dev/test, `22/22` integration / `44` test không cảnh báo `pg`, `db:restore:verify -- --test` `24` bảng)*
 
 ### CR-14-02
 - **ID:** `CR-14-02`
@@ -1026,7 +1030,7 @@
   3. `/my-tasks` redirect `/progress`; bỏ `myTasks` khỏi `WORKSPACE_NAV`; `/progress` (`Của tôi`) bổ sung tab `Việc của Ban` + dữ liệu `/me/tasks`.
   4. `/admin/audit` mặc định `all` + format đủ 12 mã `task.*` & `member.*`; `/archive` ẩn tab Board & bỏ Độ ưu tiên/Bảng·Cột; xóa sạch Kanban/CSS/i18n thừa; đủ ngưỡng 6A.6 & `i18n-parity` 100%.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Ready for PR` *(đã xong `CR-14-02` — xanh `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `373/1805`, `63/63` unit / `356` test)*
+- **Trạng thái:** `Done (đã duyệt & merge main)` *(đã xong `CR-14-02` — xanh `openapi:check`, `typecheck` `0`, `lint` `0`/`0`, `arch:check` `373/1805`, `63/63` unit / `356` test)*
 
 ### CR-14-03
 - **ID:** `CR-14-03`
@@ -1037,4 +1041,4 @@
 - **Phạm vi file được sửa:** `playwright.config.ts`, `tests/e2e/*.spec.ts`
 - **Tiêu chí chấp nhận:** Đủ 9 cổng CI (`openapi:check`, `typecheck`, `lint`, `arch:check`, `test:unit`, `test:integration`, `db:restore:verify -- --test`, `build`, full Playwright E2E không cảnh báo `pg`), `6A.8` `13/13`, `WQ-27` `audit_logs` an toàn, đạt `VERDICT: PASS`.
 - **Mức rủi ro:** Cao (`[RỦI RO CAO]`)
-- **Trạng thái:** `Done (qa-reviewer ngữ cảnh sạch VERDICT: PASS — 9/9 cổng CI, 63/63 unit / 356 test, npm test 85/400, 22/22 integration / 44 test, db:restore:verify 24 bảng, next build 44/44 route, 55/55 Chrome E2E 3.8m, 13/13 mục 6A.8, 0 Blocker, 0 Major)`
+- **Trạng thái:** `Done (đã duyệt & merge main — qa-reviewer ngữ cảnh sạch VERDICT: PASS: 9/9 cổng CI, 63/63 unit / 356 test, npm test 85/400, 22/22 integration / 44 test, db:restore:verify 24 bảng, next build 44/44 route, 55/55 Chrome E2E 3.8m, 13/13 mục 6A.8, 0 Blocker, 0 Major)`

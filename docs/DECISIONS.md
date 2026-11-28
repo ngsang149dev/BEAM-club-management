@@ -286,7 +286,7 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
      - **Loại bỏ hoàn toàn cột/nhãn Priority (`[Thấp/Trung bình/Cao/Khẩn]`)** khỏi email nhắc hạn và xem trước `/admin/reminders` (đồng bộ `CR-10`).
      - Bảo toàn nguyên tắc bảo mật `WQ-27` (che tiêu đề, mô tả, deadline và tên/link sản phẩm khi `isHiddenTask = true`) và `0` PII (`studentId`/`email` của người giao/nhận).
 - **Ảnh hưởng:** `src/server/shared/email-layout.ts`, `src/server/modules/{notifications,reminders}/*`, `src/features/reminders/components/ReminderEmailPreviewParts.tsx`, `src/app/globals.css`, `tests/*`. (`0` migration, `0` đổi `docs/openapi.yaml`).
-- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).
+- **Trạng thái:** `Done` (đã duyệt & merge `main`).
 
 ---
 
@@ -300,7 +300,7 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
      - Cột trái (`7/12`): Banner thành viên + tab lọc (`Đang làm`, `Quá hạn`, `Chưa nhận`, `Đã xong`, `Tất cả`) + tìm nhanh + danh sách gọn 1 hàng kèm thanh deadline mini.
      - Cột phải (`5/12`) tách làm **2 card xếp dọc độc lập**: Card trên gồm chi tiết tóm tắt, **thanh Deadline đổi màu động theo thời hạn** (`Xanh lá` → `Vàng` → `Cam` → `Đỏ` → `Xanh ngọc` Hoàn thành), thao tác `Nhận việc` / `Hoàn thành` và nút mở **Modal Bình luận riêng** (`TaskCommentsSection`); Card dưới dành riêng cho **`Link nộp sản phẩm (N)`** (`+ Nộp link`, danh sách link mở tab mới, xóa link).
 - **Ảnh hưởng:** `src/components/AppShellNav.tsx`, `src/app/progress/page.tsx`, `src/features/progress/*`, `src/app/globals.css`, `messages/{vi,en}.json`, `tests/*`. (`0` migration, `0` đổi `docs/openapi.yaml`).
-- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).
+- **Trạng thái:** `Done` (đã duyệt & merge `main`).
 
 ---
 
@@ -320,4 +320,4 @@ Trạng thái: Đã duyệt bởi chủ dự án Sang & merge vào `main` (`2026
      - Gỡ 4 gói npm không còn dùng (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`, `drizzle-kit`) và xóa `drizzle.config.ts`, 18 file Kanban cũ trong `src/features/boards/*` (tách `WorkspaceTrashModal` sạch sang `src/features/tasks/components/`), `optimistic-move.ts`, `ArchiveBoardsTable.tsx`, `src/server/modules/auth/schemas.ts`, cùng CSS/i18n/export thừa.
      - Ẩn tab `Board lưu trữ` & cột `Độ ưu tiên` / `Bảng · Cột` ở `/archive`, bỏ chip `X board` ở `/admin/departments`, tối ưu `AuthGuard`, gộp cache TanStack Query, bỏ `Promise.all` đồng thời trên cùng client `tx` (`pg@8.23`), và cắt giảm số truy vấn lặp/N+1 trong `AuthService` & các repository.
 - **Ảnh hưởng (`openapi`, `schema`, `package.json`, codebase):** `docs/openapi.yaml`, `src/features/shared/api/schema.d.ts`, `package.json`, `package-lock.json`, `db/migrations/0009_require_task_dates.sql`, `db/schema/tasks.ts`, `db/seed.sql`, `docs/ERD.md`, `src/lib/*`, `src/server/**`, `src/app/**`, `src/features/**`, `messages/{vi,en}.json`, `tests/**`.
-- **Trạng thái:** `Ready for PR` (chờ duyệt trước khi merge `main`).
+- **Trạng thái:** `Done` (đã duyệt & merge `main`).
